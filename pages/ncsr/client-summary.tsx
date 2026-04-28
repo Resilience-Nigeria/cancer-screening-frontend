@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/router";
-import { Badge, Button } from "@roketid/windmill-react-ui";
+import { Badge, Button, Modal, ModalHeader, ModalBody, ModalFooter } from "@roketid/windmill-react-ui";
 import {
   CalendarDays,
   ChevronRight,
@@ -16,19 +16,6 @@ import {
   Stethoscope,
   X,
   Check,
-  Heart,
-  AlertTriangle,
-  Droplets,
-  Wind,
-  Syringe,
-  Users,
-  Scale,
-  Ruler,
-  HeartPulse,
-  Wine,
-  Cigarette, // Changed from Smoking to Cigarette
-  FlaskConical, // Changed from TestTube to FlaskConical
-  Bone, // Alternative for medical/test related icons
 } from "lucide-react";
 import toast from "react-hot-toast";
 
@@ -38,7 +25,7 @@ import SectionTitle from "../components/Typography/SectionTitle";
 import NewVisitModal from "../components/modals/NewVisit";
 import RiskProfileModal from "../components/modals/RiskProfile";
 import ScreeningModuleSelector from "../components/modals/ScreeningModal";
-import OutcomeModal from "../components/modals/Outcome";
+// import OutcomeModal from "../components/modals/OutcomeModal";
 import api from "../../lib/api";
 
 type Visit = {
@@ -95,17 +82,6 @@ export default function ClientSummaryPage() {
       const riskProfiles = rawClient.risk_profiles || rawClient.riskProfiles || [];
       const latestRiskProfile = riskProfiles.length > 0 ? riskProfiles[0] : null;
 
-      // Fetch outcome separately if not included
-      let outcome = rawClient.outcome;
-      if (!outcome) {
-        try {
-          const outcomeRes = await api.get(`/clients/${clientId}/outcome`);
-          outcome = outcomeRes?.data?.data;
-        } catch (err) {
-          // No outcome found
-        }
-      }
-
       const mappedClient: ClientDetail = {
         clientId: rawClient.clientId ?? rawClient.id,
         fullName: rawClient.fullName ?? rawClient.full_name ?? "",
@@ -117,7 +93,7 @@ export default function ClientSummaryPage() {
         residence: rawClient.residence ?? "",
         registrationDate: rawClient.registrationDate ?? rawClient.registration_date ?? "",
         latestRiskProfile: latestRiskProfile,
-        outcome: outcome,
+        outcome: rawClient.outcome ?? null,
         visits: (rawClient.visits || []).map((visit: any) => ({
           visitId: visit.visitId ?? visit.id,
           visitDate: visit.visitDate ?? visit.visit_date,
@@ -157,22 +133,22 @@ export default function ClientSummaryPage() {
     setShowNewVisitModal(false);
     setSelectedVisitId(visitId);
     setShowScreeningModal(true);
-    fetchClient();
+    fetchClient(); // Refresh data
   }
 
   function handleRiskProfileComplete() {
     setShowRiskProfileModal(false);
-    fetchClient();
+    fetchClient(); // Refresh data
   }
 
   function handleScreeningComplete() {
     setShowScreeningModal(false);
-    fetchClient();
+    fetchClient(); // Refresh data
   }
 
   function handleOutcomeComplete() {
     setShowOutcomeModal(false);
-    fetchClient();
+    fetchClient(); // Refresh data
   }
 
   function openVisitScreening(visitId: number) {
@@ -209,18 +185,6 @@ export default function ClientSummaryPage() {
       visit.prostateScreening,
     ].filter(Boolean).length;
   }, 0) || 0;
-
-  // Helper function to format risk profile display
-  const formatRiskValue = (value: any) => {
-    if (!value || value === "") return "Not provided";
-    if (value === "yes") return "Yes";
-    if (value === "no") return "No";
-    if (value === "non_smoker") return "Non-smoker";
-    if (value === "active_smoker") return "Active Smoker";
-    if (value === "former_smoker") return "Former Smoker";
-    if (value === "passive_smoker") return "Passive Smoker";
-    return value;
-  };
 
   return (
     <Layout>
@@ -267,7 +231,7 @@ export default function ClientSummaryPage() {
                   onClick={() => setShowRiskProfileModal(true)}
                 >
                   <Activity className="w-4 h-4 mr-2" />
-                  {hasRiskProfile ? "Edit Risk Profile" : "Add Risk Profile"}
+                  Risk Profile
                 </Button>
 
                 <Button
@@ -276,7 +240,7 @@ export default function ClientSummaryPage() {
                   onClick={() => setShowOutcomeModal(true)}
                 >
                   <FileText className="w-4 h-4 mr-2" />
-                  {client.outcome ? "Edit Outcome" : "Add Outcome"}
+                  Outcome
                 </Button>
               </div>
             </div>
@@ -331,211 +295,13 @@ export default function ClientSummaryPage() {
               ? new Date(client.registrationDate).toLocaleDateString()
               : "—"}
           </p>
+          <div className="mt-3">
+            <Badge type={hasRiskProfile ? "success" : "warning"}>
+              {hasRiskProfile ? "Risk Profile Complete" : "Risk Profile Pending"}
+            </Badge>
+          </div>
         </div>
       </div>
-
-      {/* Risk Profile Section */}
-      {hasRiskProfile && client.latestRiskProfile && (
-        <div className="mb-8">
-          <div className="flex items-center justify-between mb-5">
-            <div className="flex items-center gap-2">
-              <Activity className="w-5 h-5 text-green-600" />
-              <SectionTitle>Risk Profile Assessment</SectionTitle>
-            </div>
-            <Button
-              size="small"
-              layout="outline"
-              className="rounded-xl"
-              onClick={() => setShowRiskProfileModal(true)}
-            >
-              Edit Risk Profile
-            </Button>
-          </div>
-
-          <div className="rounded-3xl border border-gray-100 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-sm overflow-hidden">
-            <div className="p-6">
-              <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-                {/* Basic Health */}
-                <div className="space-y-3">
-                  <h4 className="font-semibold text-gray-800 dark:text-gray-100 flex items-center gap-2">
-                    <HeartPulse className="w-4 h-4 text-green-600" />
-                    Basic Health
-                  </h4>
-                  <div className="space-y-2 text-sm">
-                    <p><span className="text-gray-500">Weight:</span> {formatRiskValue(client.latestRiskProfile.weight)} kg</p>
-                    <p><span className="text-gray-500">Height:</span> {formatRiskValue(client.latestRiskProfile.height)} cm</p>
-                    <p><span className="text-gray-500">BMI:</span> {formatRiskValue(client.latestRiskProfile.bmi)}</p>
-                    <p><span className="text-gray-500">Blood Pressure:</span> {formatRiskValue(client.latestRiskProfile.bloodPressure)}</p>
-                    <p><span className="text-gray-500">Diabetes:</span> {formatRiskValue(client.latestRiskProfile.diabetes)}</p>
-                    <p><span className="text-gray-500">Hypertension:</span> {formatRiskValue(client.latestRiskProfile.hypertension)}</p>
-                  </div>
-                </div>
-
-                {/* Smoking - Using Cigarette icon instead of Smoking */}
-                <div className="space-y-3">
-                  <h4 className="font-semibold text-gray-800 dark:text-gray-100 flex items-center gap-2">
-                    <Cigarette className="w-4 h-4 text-orange-600" />
-                    Smoking History
-                  </h4>
-                  <div className="space-y-2 text-sm">
-                    <p><span className="text-gray-500">Status:</span> {formatRiskValue(client.latestRiskProfile.smokingStatus)}</p>
-                    {client.latestRiskProfile.cigarettesPerDay && (
-                      <p><span className="text-gray-500">Cigarettes/Day:</span> {client.latestRiskProfile.cigarettesPerDay}</p>
-                    )}
-                    {client.latestRiskProfile.smokingDurationYears && (
-                      <p><span className="text-gray-500">Duration:</span> {client.latestRiskProfile.smokingDurationYears} years</p>
-                    )}
-                  </div>
-                </div>
-
-                {/* Alcohol */}
-                <div className="space-y-3">
-                  <h4 className="font-semibold text-gray-800 dark:text-gray-100 flex items-center gap-2">
-                    <Wine className="w-4 h-4 text-purple-600" />
-                    Alcohol History
-                  </h4>
-                  <div className="space-y-2 text-sm">
-                    <p><span className="text-gray-500">Frequency:</span> {formatRiskValue(client.latestRiskProfile.alcoholFrequency)}</p>
-                    {client.latestRiskProfile.alcoholUnitsPerWeek && (
-                      <p><span className="text-gray-500">Units/Week:</span> {client.latestRiskProfile.alcoholUnitsPerWeek}</p>
-                    )}
-                  </div>
-                </div>
-
-                {/* HIV Status */}
-                <div className="space-y-3">
-                  <h4 className="font-semibold text-gray-800 dark:text-gray-100 flex items-center gap-2">
-                    <FlaskConical className="w-4 h-4 text-red-600" />
-                    HIV Status
-                  </h4>
-                  <div className="space-y-2 text-sm">
-                    <p>{formatRiskValue(client.latestRiskProfile.hivStatus)}</p>
-                  </div>
-                </div>
-
-                {/* Family History */}
-                <div className="space-y-3">
-                  <h4 className="font-semibold text-gray-800 dark:text-gray-100 flex items-center gap-2">
-                    <Users className="w-4 h-4 text-blue-600" />
-                    Family History
-                  </h4>
-                  <div className="space-y-2 text-sm">
-                    <p><span className="text-gray-500">Family History of Cancer:</span> {formatRiskValue(client.latestRiskProfile.familyHistoryOfCancer)}</p>
-                    {client.latestRiskProfile.cancerTypes?.length > 0 && (
-                      <p><span className="text-gray-500">Cancer Types:</span> {client.latestRiskProfile.cancerTypes.join(", ")}</p>
-                    )}
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Outcome Section */}
-      {client.outcome && (
-        <div className="mb-8">
-          <div className="flex items-center justify-between mb-5">
-            <div className="flex items-center gap-2">
-              <FileText className="w-5 h-5 text-green-600" />
-              <SectionTitle>Case Outcome</SectionTitle>
-            </div>
-            <Button
-              size="small"
-              layout="outline"
-              className="rounded-xl"
-              onClick={() => setShowOutcomeModal(true)}
-            >
-              Edit Outcome
-            </Button>
-          </div>
-
-          <div className="rounded-3xl border border-gray-100 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-sm overflow-hidden">
-            <div className="p-6">
-              <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-                {/* Screening Result */}
-                <div className="space-y-3">
-                  <h4 className="font-semibold text-gray-800 dark:text-gray-100 flex items-center gap-2">
-                    <Stethoscope className="w-4 h-4 text-blue-600" />
-                    Screening Result
-                  </h4>
-                  <div className="space-y-2 text-sm">
-                    <p><span className="text-gray-500">Result:</span> 
-                      <Badge type={client.outcome.screeningResult === "positive" ? "danger" : "success"} className="ml-2">
-                        {formatRiskValue(client.outcome.screeningResult)}
-                      </Badge>
-                    </p>
-                    {client.outcome.screeningDate && (
-                      <p><span className="text-gray-500">Date:</span> {new Date(client.outcome.screeningDate).toLocaleDateString()}</p>
-                    )}
-                  </div>
-                </div>
-
-                {/* Diagnosis (if positive) */}
-                {client.outcome.screeningResult === "positive" && client.outcome.cancerType && (
-                  <div className="space-y-3">
-                    <h4 className="font-semibold text-gray-800 dark:text-gray-100 flex items-center gap-2">
-                      <AlertTriangle className="w-4 h-4 text-orange-600" />
-                      Diagnosis
-                    </h4>
-                    <div className="space-y-2 text-sm">
-                      <p><span className="text-gray-500">Cancer Type:</span> {formatRiskValue(client.outcome.cancerType)}</p>
-                      {client.outcome.cancerStage && (
-                        <p><span className="text-gray-500">Stage:</span> {formatRiskValue(client.outcome.cancerStage)}</p>
-                      )}
-                      {client.outcome.diagnosisDate && (
-                        <p><span className="text-gray-500">Diagnosis Date:</span> {new Date(client.outcome.diagnosisDate).toLocaleDateString()}</p>
-                      )}
-                    </div>
-                  </div>
-                )}
-
-                {/* Treatment Status */}
-                {(client.outcome.treatmentStatus || client.outcome.treatmentCommenced) && (
-                  <div className="space-y-3">
-                    <h4 className="font-semibold text-gray-800 dark:text-gray-100 flex items-center gap-2">
-                      <Heart className="w-4 h-4 text-red-600" />
-                      Treatment
-                    </h4>
-                    <div className="space-y-2 text-sm">
-                      {client.outcome.treatmentCommenced && (
-                        <p><span className="text-gray-500">Commenced:</span> {formatRiskValue(client.outcome.treatmentCommenced)}</p>
-                      )}
-                      {client.outcome.treatmentStatus && (
-                        <p><span className="text-gray-500">Status:</span> {formatRiskValue(client.outcome.treatmentStatus)}</p>
-                      )}
-                      {client.outcome.clinicalOutcome && (
-                        <p><span className="text-gray-500">Clinical Outcome:</span> {formatRiskValue(client.outcome.clinicalOutcome)}</p>
-                      )}
-                    </div>
-                  </div>
-                )}
-
-                {/* Follow-up */}
-                {client.outcome.nextFollowUpDate && (
-                  <div className="space-y-3">
-                    <h4 className="font-semibold text-gray-800 dark:text-gray-100 flex items-center gap-2">
-                      <CalendarDays className="w-4 h-4 text-green-600" />
-                      Follow-up
-                    </h4>
-                    <div className="space-y-2 text-sm">
-                      <p><span className="text-gray-500">Next Follow-up Date:</span> {new Date(client.outcome.nextFollowUpDate).toLocaleDateString()}</p>
-                    </div>
-                  </div>
-                )}
-
-                {/* Remarks */}
-                {client.outcome.remarks && (
-                  <div className="md:col-span-2 lg:col-span-3 space-y-3">
-                    <h4 className="font-semibold text-gray-800 dark:text-gray-100">Remarks</h4>
-                    <p className="text-sm text-gray-600 dark:text-gray-400">{client.outcome.remarks}</p>
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Summary Cards Row */}
       <div className="grid gap-5 md:grid-cols-3 mb-8">
@@ -557,11 +323,11 @@ export default function ClientSummaryPage() {
 
         <div className="rounded-3xl border border-gray-100 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-sm p-5">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="font-semibold text-gray-800 dark:text-gray-100">Risk Profile Status</h3>
-            <ShieldCheck className="w-5 h-5 text-green-600" />
+            <h3 className="font-semibold text-gray-800 dark:text-gray-100">Outcome Status</h3>
+            <FileText className="w-5 h-5 text-green-600" />
           </div>
-          <Badge type={hasRiskProfile ? "success" : "warning"}>
-            {hasRiskProfile ? "Completed" : "Pending"}
+          <Badge type={client.outcome ? "success" : "neutral"}>
+            {client.outcome ? "Recorded" : "Not Recorded"}
           </Badge>
         </div>
       </div>
@@ -617,6 +383,7 @@ export default function ClientSummaryPage() {
                         </p>
                       )}
 
+                      {/* Show completed modules */}
                       {modulesCompleted > 0 && (
                         <div className="mt-3 flex flex-wrap gap-2">
                           {visit.cervicalScreening && <Badge type="success">Cervical ✓</Badge>}
@@ -690,13 +457,13 @@ export default function ClientSummaryPage() {
         onComplete={handleScreeningComplete}
       />
 
-      <OutcomeModal
+      {/* <OutcomeModal
         isOpen={showOutcomeModal}
         onClose={() => setShowOutcomeModal(false)}
         clientId={Number(clientId)}
         existingOutcome={client.outcome}
         onComplete={handleOutcomeComplete}
-      />
+      /> */}
     </Layout>
   );
 }
