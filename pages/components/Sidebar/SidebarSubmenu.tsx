@@ -5,8 +5,9 @@ import { usePathname } from "next/navigation";
 import { useContext, useEffect, useMemo, useState } from "react";
 import { ChevronDown } from "lucide-react";
 import SidebarContext from "../../../context/SidebarContext";
-import type { IRoute } from "../../../routes/sidebar2";
-import { routeIsActive } from "../../../routes/sidebar2";
+import type { IRoute } from "../../../routes/sidebar";
+import { routeIsActive } from "../../../routes/sidebar";
+import { getUser } from "../../../lib/auth";
 
 interface ISidebarSubmenuProps {
   route: IRoute;
@@ -20,13 +21,36 @@ export default function SidebarSubmenu({
   const pathname = usePathname();
   const { saveScroll } = useContext(SidebarContext);
 
-  const subRoutes = route?.routes ?? [];
+  // Get current user
+  const user = getUser();
+  const userRole = user?.role;
 
-  if (subRoutes.length === 0) return null;
+  // Filter sub-routes based on user role
+  const visibleSubRoutes = useMemo(() => {
+    const subRoutes = route?.routes ?? [];
+    
+    return subRoutes.filter((subRoute) => {
+      // If sub-route has no roles specified, it's visible to everyone
+      if (!subRoute.roles || subRoute.roles.length === 0) {
+        return true;
+      }
+
+      // If user has no role, only show routes without role restrictions
+      if (!userRole) {
+        return false;
+      }
+
+      // Check if user's role is in the allowed roles
+      return subRoute.roles.includes(userRole);
+    });
+  }, [route?.routes, userRole]);
+
+  // Don't render if no visible sub-routes
+  if (visibleSubRoutes.length === 0) return null;
 
   const hasActiveSubroute = useMemo(() => {
-    return subRoutes.some((subRoute) => routeIsActive(pathname, subRoute));
-  }, [pathname, subRoutes]);
+    return visibleSubRoutes.some((subRoute) => routeIsActive(pathname, subRoute));
+  }, [pathname, visibleSubRoutes]);
 
   const [isDropdownMenuOpen, setIsDropdownMenuOpen] =
     useState(hasActiveSubroute);
@@ -49,7 +73,7 @@ export default function SidebarSubmenu({
         aria-expanded={isDropdownMenuOpen}
       >
         <span className="flex items-center gap-3">
-          {ParentIcon && <ParentIcon className="w-5 h-5" />}
+          {ParentIcon && <ParentIcon className="w-5 h-5 text-green-700" />}
           <span>{route.name}</span>
         </span>
 
@@ -62,7 +86,7 @@ export default function SidebarSubmenu({
 
       {isDropdownMenuOpen && (
         <ul className="mt-2 ml-6 space-y-1 text-sm">
-          {subRoutes
+          {visibleSubRoutes
             .filter(
               (
                 subRoute,

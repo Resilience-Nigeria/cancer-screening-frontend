@@ -184,7 +184,7 @@ function Header() {
               <span className="absolute right-2 top-2 inline-flex h-2.5 w-2.5 rounded-full bg-red-500 ring-2 ring-white dark:ring-gray-800" />
             </button>
 
-            {isNotificationsOpen && (
+            {/* {isNotificationsOpen && (
               <div className="absolute right-0 mt-3 w-72 overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl dark:border-gray-700 dark:bg-gray-800">
                 <div className="border-b border-gray-100 px-4 py-3 dark:border-gray-700">
                   <p className="text-sm font-semibold text-gray-800 dark:text-gray-100">
@@ -220,7 +220,7 @@ function Header() {
                   </button>
                 </div>
               </div>
-            )}
+            )} */}
           </li>
 
           <li className="relative" ref={profileRef}>

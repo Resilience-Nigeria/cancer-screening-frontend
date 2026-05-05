@@ -2,12 +2,14 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useContext, useState } from "react";
+import { useContext, useState, useMemo } from "react";
 import { LogOut } from "lucide-react";
 import SidebarContext from "../../../context/SidebarContext";
 import routes, { IRoute, routeIsActive } from "../../../routes/sidebar";
 import SidebarSubmenu from "./SidebarSubmenu";
 import Image from "next/image";
+import { logout } from "../../../lib/logout";
+import { getUser } from "../../../lib/auth";
 
 interface SidebarContentProps {
   linkClicked?: () => void;
@@ -19,96 +21,38 @@ export default function SidebarContent({ linkClicked }: SidebarContentProps) {
   const { closeSidebar, saveScroll } = useContext(SidebarContext);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
 
-  const safeRoutes = routes.filter((route): route is IRoute => Boolean(route));
+  // Get current user
+  const user = getUser();
+  const userRole = user?.role;
 
-  // Helper function to delete all cookies
-  function deleteAllCookies() {
-    const cookies = document.cookie.split(";");
+  // Filter routes based on user role
+  const visibleRoutes = useMemo(() => {
+    return routes.filter((route): route is IRoute => {
+      if (!route) return false;
 
-    for (let i = 0; i < cookies.length; i++) {
-      const cookie = cookies[i];
-      const eqPos = cookie.indexOf("=");
-      const name = eqPos > -1 ? cookie.substring(0, eqPos).trim() : cookie.trim();
+      // If route has no roles specified, it's visible to everyone
+      if (!route.roles || route.roles.length === 0) {
+        return true;
+      }
 
-      // Delete cookie for current domain
-      document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;`;
-      
-      // Delete cookie for all possible paths
-      document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; domain=${window.location.hostname}`;
-      
-      // Delete cookie for root domain (handles subdomains)
-      const domain = window.location.hostname.split('.').slice(-2).join('.');
-      document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; domain=.${domain}`;
-    }
-  }
+      // If user has no role, only show routes without role restrictions
+      if (!userRole) {
+        return false;
+      }
+
+      // Check if user's role is in the allowed roles
+      return route.roles.includes(userRole);
+    });
+  }, [userRole]);
 
   async function handleLogout() {
     if (isLoggingOut) return;
 
     setIsLoggingOut(true);
 
-    try {
-      // Get token from multiple sources
-      const token =
-        localStorage.getItem("token") ||
-        localStorage.getItem("accessToken") ||
-        sessionStorage.getItem("token") ||
-        sessionStorage.getItem("accessToken");
-
-      // Call backend logout endpoint
-      if (token) {
-        try {
-          await fetch(`${process.env.NEXT_PUBLIC_API_URL}/logout`, {
-            method: "POST",
-            headers: {
-              Accept: "application/json",
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${token}`,
-            },
-            credentials: "include", // Important for cookie handling
-          });
-        } catch (error) {
-          console.error("Backend logout failed:", error);
-          // Continue with client-side cleanup even if backend fails
-        }
-      }
-
-      // Clear localStorage
-      const localStorageKeys = [
-        "token",
-        "accessToken",
-        "refreshToken",
-        "user",
-        "authUser",
-        "userData",
-      ];
-      localStorageKeys.forEach((key) => localStorage.removeItem(key));
-
-      // Clear sessionStorage
-      const sessionStorageKeys = [
-        "token",
-        "accessToken",
-        "refreshToken",
-        "user",
-        "authUser",
-        "userData",
-      ];
-      sessionStorageKeys.forEach((key) => sessionStorage.removeItem(key));
-
-      // Delete all cookies
-      deleteAllCookies();
-
-      // Optional: Clear all storage if needed
-      // localStorage.clear();
-      // sessionStorage.clear();
-
-      // Redirect to login page
-      window.location.href = "/";
-    } catch (error) {
-      console.error("Logout error:", error);
-      alert("Logout failed. Please try again.");
-      setIsLoggingOut(false);
-    }
+    // Call the reusable logout utility
+    // This handles backend logout, clearing auth data, and redirect
+    await logout();
   }
 
   function handleLinkClick(listEl: HTMLElement | null) {
@@ -126,7 +70,7 @@ export default function SidebarContent({ linkClicked }: SidebarContentProps) {
       <div className="flex-1 overflow-y-auto">
         {/* Logo */}
         <Link
-          href="/issam"
+          href="/ncsr/dashboard"
           className="ml-6 block text-lg font-bold text-gray-800 dark:text-gray-200"
           onClick={(e) => {
             const listEl = e.currentTarget.closest("ul") as HTMLElement | null;
@@ -143,9 +87,24 @@ export default function SidebarContent({ linkClicked }: SidebarContentProps) {
           />
         </Link>
 
+        {/* User Info - Optional: Display current user */}
+        {user && (
+          <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+            <p className="text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase">
+              {user.facility?.facilityName || "NCSR"}
+            </p>
+            <p className="text-sm font-medium text-gray-800 dark:text-gray-200 mt-1">
+              {user.firstName} {user.lastName}
+            </p>
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+              {user.role}
+            </p>
+          </div>
+        )}
+
         {/* Navigation */}
         <ul id="sidebar" className="mt-6">
-          {safeRoutes.map((route) => {
+          {visibleRoutes.map((route) => {
             // Handle submenu routes
             if (route.routes && route.routes.length > 0) {
               return (

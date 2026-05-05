@@ -31,7 +31,7 @@ const nextConfig = {
   //   domains: [], // Add your image domains here
   // },
   
-  allowedDevOrigins: ['https://ncsr-api.resiliencegroup.com.ng'],
+  allowedDevOrigins: ['https://ncsr-api.resiliencegroup.com.ng', 'http://localhost:8002'],
 
 }
 
