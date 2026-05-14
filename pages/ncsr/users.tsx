@@ -53,9 +53,9 @@ interface Stats {
 }
 
 interface Role {
-  value: string;
-  label: string;
-  description: string;
+  roleId: string;
+  roleName: string;
+  roleDescription: string;
 }
 
 interface FormData {
@@ -261,6 +261,7 @@ export default function UsersManagementPage() {
   function getRoleBadgeColor(role: string) {
     const colors: Record<string, string> = {
       super_admin: "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400",
+      facility_admin: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400",
       admin: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400",
       doctor: "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400",
       nurse: "bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-400",
@@ -269,9 +270,17 @@ export default function UsersManagementPage() {
     return colors[role] || "bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-400";
   }
 
+  function formatRoleName(roleName: string): string {
+    // Remove underscores and capitalize each word
+    return roleName
+      .split('_')
+      .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+      .join(' ');
+  }
+
   function getRoleLabel(role: string) {
-    const roleObj = roles.find((r) => r.value === role);
-    return roleObj?.label || role;
+    const roleObj = roles.find((r) => r.roleId === role);
+    return roleObj?.roleName ? formatRoleName(roleObj.roleName) : formatRoleName(role);
   }
 
   if (loading) {
@@ -453,8 +462,8 @@ export default function UsersManagementPage() {
               >
                 <option value="all">All Roles</option>
                 {roles.map((role) => (
-                  <option key={role.value} value={role.value}>
-                    {role.label}
+                  <option key={role.roleId} value={role.roleId}>
+                    {formatRoleName(role.roleName)}
                   </option>
                 ))}
               </select>
@@ -928,8 +937,8 @@ export default function UsersManagementPage() {
                       >
                         <option value="">Select Role</option>
                         {roles.map((role) => (
-                          <option key={role.value} value={role.value}>
-                            {role.label}
+                          <option key={role.roleId} value={role.roleId}>
+                            {formatRoleName(role.roleName)}
                           </option>
                         ))}
                       </select>

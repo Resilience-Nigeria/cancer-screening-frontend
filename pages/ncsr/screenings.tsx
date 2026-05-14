@@ -14,6 +14,7 @@ import {
   FileText,
   Eye,
   Loader2,
+  Filter,
 } from "lucide-react";
 import toast from "react-hot-toast";
 
@@ -28,6 +29,7 @@ type Screening = {
   clientName: string;
   clientScreeningId: string;
   screeningDate: string;
+  screeningType?: string;
   result?: string;
   notes?: string;
 };
@@ -42,6 +44,7 @@ export default function ScreeningsPage() {
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
   const [totalResults, setTotalResults] = useState(0);
+  const [filterType, setFilterType] = useState<string>("all");
 
   const resultsPerPage = 10;
 
@@ -51,16 +54,45 @@ export default function ScreeningsPage() {
     prostate: "Prostate Screening",
     colorectal: "Colorectal Screening",
     liver: "Liver Screening",
+    all: "All Screenings",
   };
 
-  const screeningTitle = screeningTypeMap[type as string] || "Screenings";
+  const screeningTypes = [
+    { value: "all", label: "All Types" },
+    { value: "cervical", label: "Cervical" },
+    { value: "breast", label: "Breast" },
+    { value: "prostate", label: "Prostate" },
+    { value: "colorectal", label: "Colorectal" },
+    { value: "liver", label: "Liver" },
+  ];
+
+  // Determine if we're showing all screenings or a specific type
+  const isAllScreenings = !type || type === "all";
+  const currentType = (type as string) || "all";
+  const screeningTitle = screeningTypeMap[currentType] || "All Screenings";
 
   async function fetchScreenings() {
     setLoading(true);
     try {
-      const { data } = await api.get(`/dashboard/screenings/${type}`, {
-        params: { page, search, limit: resultsPerPage },
-      });
+      let endpoint = "/dashboard/screenings";
+      
+      // If a specific type is selected (not "all"), use the type-specific endpoint
+      if (!isAllScreenings) {
+        endpoint = `/dashboard/screenings/${type}`;
+      }
+
+      const params: any = { 
+        page, 
+        search, 
+        limit: resultsPerPage 
+      };
+
+      // Add type filter for "all screenings" view if a filter is selected
+      if (isAllScreenings && filterType !== "all") {
+        params.type = filterType;
+      }
+
+      const { data } = await api.get(endpoint, { params });
 
       const rawScreenings = data?.data || [];
       const mappedScreenings: Screening[] = rawScreenings.map((item: any) => ({
@@ -70,6 +102,7 @@ export default function ScreeningsPage() {
         clientName: item.client?.fullName ?? item.client?.full_name ?? "Unknown",
         clientScreeningId: item.client?.screeningId ?? item.client?.screening_id ?? "—",
         screeningDate: item.screeningDate ?? item.screening_date ?? item.created_at,
+        screeningType: item.screeningType ?? item.screening_type ?? type,
         result: item.result ?? item.viaResult ?? item.cbeResult,
         notes: item.notes ?? item.remarks,
       }));
@@ -84,10 +117,8 @@ export default function ScreeningsPage() {
   }
 
   useEffect(() => {
-    if (type) {
-      fetchScreenings();
-    }
-  }, [page, search, type]);
+    fetchScreenings();
+  }, [page, search, type, filterType]);
 
   function handleSearchSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -103,6 +134,23 @@ export default function ScreeningsPage() {
     return "warning";
   }
 
+  function getScreeningTypeBadge(type?: string) {
+    const badges: Record<string, { color: string; label: string }> = {
+      cervical: { color: "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400", label: "Cervical" },
+      breast: { color: "bg-pink-100 text-pink-700 dark:bg-pink-900/30 dark:text-pink-400", label: "Breast" },
+      prostate: { color: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400", label: "Prostate" },
+      colorectal: { color: "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400", label: "Colorectal" },
+      liver: { color: "bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-400", label: "Liver" },
+    };
+
+    const badge = badges[type?.toLowerCase() || ""] || { 
+      color: "bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-400", 
+      label: type || "Unknown" 
+    };
+
+    return badge;
+  }
+
   return (
     <Layout>
       <div className="mb-8">
@@ -116,11 +164,14 @@ export default function ScreeningsPage() {
               </div>
 
               <h2 className="mt-4 text-2xl sm:text-3xl font-bold leading-tight">
-                All {screeningTitle} Records
+                {isAllScreenings ? "All Screening Records" : `All ${screeningTitle} Records`}
               </h2>
 
               <p className="mt-3 text-sm sm:text-base text-green-100 leading-6">
-                View and search through all {screeningTitle.toLowerCase()} records across your facility.
+                {isAllScreenings 
+                  ? "View and search through all screening records across your facility."
+                  : `View and search through all ${screeningTitle.toLowerCase()} records across your facility.`
+                }
               </p>
             </div>
           </div>
@@ -128,24 +179,55 @@ export default function ScreeningsPage() {
       </div>
 
       <div className="mb-6 rounded-3xl bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 shadow-lg p-4 sm:p-5">
-        <form onSubmit={handleSearchSubmit} className="flex gap-3">
-          <div className="relative flex-1">
-            <Input
-              className="pl-11 h-12 rounded-2xl border-gray-200 dark:border-gray-600 shadow-sm"
-              placeholder="Search by client name or screening ID"
-              value={searchInput}
-              onChange={(e) => setSearchInput(e.target.value)}
-            />
-            <div className="absolute inset-y-0 left-0 flex items-center ml-4 text-gray-400 pointer-events-none">
-              <Search className="w-4 h-4" />
+        <form onSubmit={handleSearchSubmit} className="space-y-4">
+          <div className="flex gap-3">
+            <div className="relative flex-1">
+              <Input
+                className="pl-11 h-12 rounded-2xl border-gray-200 dark:border-gray-600 shadow-sm"
+                placeholder="Search by client name or screening ID"
+                value={searchInput}
+                onChange={(e) => setSearchInput(e.target.value)}
+              />
+              <div className="absolute inset-y-0 left-0 flex items-center ml-4 text-gray-400 pointer-events-none">
+                <Search className="w-4 h-4" />
+              </div>
             </div>
+            <Button
+              className="rounded-2xl h-12 bg-green-700 border-green-700 hover:bg-green-800 hover:border-green-800"
+              type="submit"
+            >
+              Search
+            </Button>
           </div>
-          <Button
-            className="rounded-2xl h-12 bg-green-700 border-green-700 hover:bg-green-800 hover:border-green-800"
-            type="submit"
-          >
-            Search
-          </Button>
+
+          {/* Filter by type - only show when viewing all screenings */}
+          {isAllScreenings && (
+            <div className="flex items-center gap-3">
+              <Filter className="w-4 h-4 text-gray-500 dark:text-gray-400" />
+              <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                Filter by type:
+              </label>
+              <div className="flex flex-wrap gap-2">
+                {screeningTypes.map((st) => (
+                  <button
+                    key={st.value}
+                    type="button"
+                    onClick={() => {
+                      setFilterType(st.value);
+                      setPage(1);
+                    }}
+                    className={`px-4 py-2 rounded-xl text-sm font-medium transition-colors ${
+                      filterType === st.value
+                        ? "bg-green-700 text-white"
+                        : "bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600"
+                    }`}
+                  >
+                    {st.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
         </form>
       </div>
 
@@ -187,6 +269,15 @@ export default function ScreeningsPage() {
                     )}
                   </div>
 
+                  {/* Show screening type badge for "all screenings" view */}
+                  {isAllScreenings && screening.screeningType && (
+                    <div className="mb-3">
+                      <span className={`inline-flex px-3 py-1 rounded-full text-xs font-semibold ${getScreeningTypeBadge(screening.screeningType).color}`}>
+                        {getScreeningTypeBadge(screening.screeningType).label}
+                      </span>
+                    </div>
+                  )}
+
                   <div className="space-y-2 text-sm mb-4">
                     <div className="flex items-center gap-2 text-gray-600 dark:text-gray-300">
                       <Calendar className="w-4 h-4" />
@@ -218,6 +309,7 @@ export default function ScreeningsPage() {
                 <thead>
                   <tr className="text-left text-xs font-semibold tracking-wide uppercase border-b bg-gray-50 dark:bg-gray-800/60 text-gray-500 dark:text-gray-400">
                     <th className="px-6 py-4">Client</th>
+                    {isAllScreenings && <th className="px-6 py-4">Type</th>}
                     <th className="px-6 py-4">Screening Date</th>
                     <th className="px-6 py-4">Result</th>
                     <th className="px-6 py-4">Notes</th>
@@ -237,10 +329,22 @@ export default function ScreeningsPage() {
                             {screening.clientName}
                           </p>
                           <p className="text-xs text-gray-500 dark:text-gray-400">
-                            {screening.clientScreeningId}
+                            {screening.screeningId}
                           </p>
                         </div>
                       </td>
+
+                      {isAllScreenings && (
+                        <td className="px-6 py-4">
+                          {screening.screeningType ? (
+                            <span className={`inline-flex px-3 py-1 rounded-full text-xs font-semibold ${getScreeningTypeBadge(screening.screeningType).color}`}>
+                              {getScreeningTypeBadge(screening.screeningType).label}
+                            </span>
+                          ) : (
+                            <span className="text-sm text-gray-500">—</span>
+                          )}
+                        </td>
+                      )}
 
                       <td className="px-6 py-4 text-sm">
                         {new Date(screening.screeningDate).toLocaleDateString()}

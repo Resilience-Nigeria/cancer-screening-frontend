@@ -54,6 +54,7 @@ type Visit = {
 };
 
 type ClientDetail = {
+  id: number;
   clientId: number;
   fullName: string;
   gender: string;

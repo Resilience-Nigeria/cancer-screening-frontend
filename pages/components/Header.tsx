@@ -8,8 +8,7 @@ import {
   LogOut,
   Menu,
   Moon,
-  Search,
-  Settings,
+  Building2,
   Sun,
   User,
 } from "lucide-react";
@@ -25,12 +24,38 @@ function Header() {
   const { mode, toggleMode } = useContext(WindmillContext);
   const { toggleSidebar } = useContext(SidebarContext);
 
-  const [search, setSearch] = useState("");
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
+  const [userName, setUserName] = useState("User");
+  const [facilityName, setFacilityName] = useState("Loading...");
 
   const notificationsRef = useRef<HTMLLIElement | null>(null);
   const profileRef = useRef<HTMLLIElement | null>(null);
+
+  // Load user data from localStorage
+  useEffect(() => {
+    try {
+      const userData = localStorage.getItem("csr_user");
+      if (userData) {
+        const user = JSON.parse(userData);
+        
+        // Set user full name
+        const fullName = `${user.firstName || ""} ${user.lastName || ""}`.trim();
+        setUserName(fullName || user.email || "User");
+        
+        // Set facility name
+        if (user.facility?.facilityName) {
+          setFacilityName(user.facility.facilityName);
+        } else if (user.facilityName) {
+          setFacilityName(user.facilityName);
+        } else {
+          setFacilityName("No Facility Assigned");
+        }
+      }
+    } catch (error) {
+      console.error("Error loading user data:", error);
+    }
+  }, []);
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -84,6 +109,7 @@ function Header() {
       const token =
         localStorage.getItem("token") ||
         localStorage.getItem("accessToken") ||
+        localStorage.getItem("csr_token") ||
         sessionStorage.getItem("token") ||
         sessionStorage.getItem("accessToken");
 
@@ -106,17 +132,15 @@ function Header() {
       // Clear storage
       localStorage.removeItem("token");
       localStorage.removeItem("accessToken");
+      localStorage.removeItem("csr_token");
       localStorage.removeItem("user");
+      localStorage.removeItem("csr_user");
       localStorage.removeItem("authUser");
 
       sessionStorage.removeItem("token");
       sessionStorage.removeItem("accessToken");
       sessionStorage.removeItem("user");
       sessionStorage.removeItem("authUser");
-
-      // Optional: clear everything if your auth is fully client-side
-      // localStorage.clear();
-      // sessionStorage.clear();
 
       // Hard redirect works better for logout flows
       window.location.href = "/";
@@ -139,19 +163,20 @@ function Header() {
           <Menu className="h-5 w-5" />
         </button>
 
+        {/* Facility Name Display - Replaces Search Bar */}
         <div className="min-w-0 flex-1">
-          <div className="relative w-full max-w-2xl">
-            <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-4 text-gray-400">
-              <Search className="h-4 w-4" />
+          <div className="flex items-center gap-3 rounded-2xl border border-gray-200 bg-gray-50 px-4 py-2.5 dark:border-gray-700 dark:bg-gray-900">
+            {/* <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-green-100 dark:bg-green-900/30">
+              <Building2 className="h-4 w-4 text-green-600 dark:text-green-400" />
+            </div> */}
+            <div className="min-w-0 flex-1">
+              <p className="text-xs text-gray-500 dark:text-gray-400">
+                Logged In Facility:
+              </p>
+              <p className="truncate text-sm font-semibold text-gray-800 dark:text-gray-100">
+                {facilityName}
+              </p>
             </div>
-
-            <Input
-              className="h-11 w-full rounded-2xl border border-gray-200 bg-gray-50 pl-11 pr-4 text-sm text-gray-700 placeholder:text-gray-400 focus:border-green-600 focus:ring-2 focus:ring-green-100 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100 dark:placeholder:text-gray-500"
-              placeholder="Search dashboard, reports, users..."
-              aria-label="Search"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
           </div>
         </div>
 
@@ -183,44 +208,6 @@ function Header() {
               <Bell className="h-5 w-5" />
               <span className="absolute right-2 top-2 inline-flex h-2.5 w-2.5 rounded-full bg-red-500 ring-2 ring-white dark:ring-gray-800" />
             </button>
-
-            {/* {isNotificationsOpen && (
-              <div className="absolute right-0 mt-3 w-72 overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl dark:border-gray-700 dark:bg-gray-800">
-                <div className="border-b border-gray-100 px-4 py-3 dark:border-gray-700">
-                  <p className="text-sm font-semibold text-gray-800 dark:text-gray-100">
-                    Notifications
-                  </p>
-                  <p className="text-xs text-gray-500 dark:text-gray-400">
-                    Recent updates and activity
-                  </p>
-                </div>
-
-                <div className="p-2">
-                  <button
-                    type="button"
-                    className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-sm text-gray-700 transition hover:bg-gray-50 dark:text-gray-200 dark:hover:bg-gray-700"
-                  >
-                    <span>Messages</span>
-                    <Badge type="danger">13</Badge>
-                  </button>
-
-                  <button
-                    type="button"
-                    className="mt-1 flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-sm text-gray-700 transition hover:bg-gray-50 dark:text-gray-200 dark:hover:bg-gray-700"
-                  >
-                    <span>Sales</span>
-                    <Badge type="danger">2</Badge>
-                  </button>
-
-                  <button
-                    type="button"
-                    className="mt-1 flex w-full items-center rounded-xl px-3 py-2 text-left text-sm text-gray-700 transition hover:bg-gray-50 dark:text-gray-200 dark:hover:bg-gray-700"
-                  >
-                    <span>System alerts</span>
-                  </button>
-                </div>
-              </div>
-            )} */}
           </li>
 
           <li className="relative" ref={profileRef}>
@@ -234,12 +221,12 @@ function Header() {
             >
               <Avatar
                 className="h-9 w-9 rounded-full"
-                src="/assets/img/avatar.svg"
+                src="/assets/img/avatar-15.png"
                 alt="User avatar"
               />
               <div className="hidden sm:block">
                 <p className="text-sm font-semibold text-gray-800 dark:text-gray-100">
-                  Account
+                  {userName}
                 </p>
                 <p className="text-xs text-gray-500 dark:text-gray-400">
                   Manage profile
@@ -252,7 +239,7 @@ function Header() {
               <div className="absolute right-0 mt-3 w-64 overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl dark:border-gray-700 dark:bg-gray-800">
                 <div className="border-b border-gray-100 px-4 py-3 dark:border-gray-700">
                   <p className="text-sm font-semibold text-gray-800 dark:text-gray-100">
-                    My Account
+                    {userName}
                   </p>
                   <p className="text-xs text-gray-500 dark:text-gray-400">
                     Profile and preferences
@@ -269,22 +256,14 @@ function Header() {
                     <span>Profile</span>
                   </Link>
 
-                  <Link
-                    href="#"
-                    className="mt-1 flex items-center rounded-xl px-3 py-2 text-sm text-gray-700 transition hover:bg-gray-50 dark:text-gray-200 dark:hover:bg-gray-700"
-                    onClick={() => setIsProfileOpen(false)}
-                  >
-                    <Settings className="mr-3 h-4 w-4" />
-                    <span>Settings</span>
-                  </Link>
-
                   <button
                     type="button"
                     onClick={handleLogout}
-                    className="mt-1 flex w-full items-center rounded-xl px-3 py-2 text-left text-sm text-red-600 transition hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-900/20"
+                    disabled={isLoggingOut}
+                    className="mt-1 flex w-full items-center rounded-xl px-3 py-2 text-left text-sm text-red-600 transition hover:bg-red-50 disabled:opacity-50 dark:text-red-400 dark:hover:bg-red-900/20"
                   >
                     <LogOut className="mr-3 h-4 w-4" />
-                    <span>Log out</span>
+                    <span>{isLoggingOut ? "Logging out..." : "Log out"}</span>
                   </button>
                 </div>
               </div>

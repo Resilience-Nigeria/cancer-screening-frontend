@@ -192,7 +192,7 @@ export default function VisitsIndexPage() {
       <div className="mb-8">
         <PageTitle>{pageInfo.title}</PageTitle>
 
-        <div className={`mt-4 rounded-3xl overflow-hidden bg-gradient-to-r ${pageInfo.gradient} shadow-xl`}>
+        <div className={`mt-4 rounded-3xl overflow-hidden bg-gradient-to-r from-green-900 via-green-800 to-green-700  shadow-xl`}>
           <div className="px-5 py-6 sm:px-8 sm:py-8 text-white">
             <div className="max-w-3xl">
               <div className="inline-flex items-center rounded-full bg-white/10 px-3 py-1 text-xs font-semibold tracking-wide uppercase">

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useContext, useState, useMemo } from "react";
+import { useContext, useState, useMemo, useEffect } from "react";
 import { LogOut } from "lucide-react";
 import SidebarContext from "../../../context/SidebarContext";
 import routes, { IRoute, routeIsActive } from "../../../routes/sidebar";
@@ -20,9 +20,16 @@ export default function SidebarContent({ linkClicked }: SidebarContentProps) {
   const router = useRouter();
   const { closeSidebar, saveScroll } = useContext(SidebarContext);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
+  const [isMounted, setIsMounted] = useState(false);
+  const [user, setUser] = useState<any>(null);
 
-  // Get current user
-  const user = getUser();
+  // Load user data after component mounts (client-side only)
+  useEffect(() => {
+    setIsMounted(true);
+    const userData = getUser();
+    setUser(userData);
+  }, []);
+
   const userRole = user?.role;
 
   // Filter routes based on user role
@@ -87,8 +94,8 @@ export default function SidebarContent({ linkClicked }: SidebarContentProps) {
           />
         </Link>
 
-        {/* User Info - Optional: Display current user */}
-        {user && (
+        {/* User Info - Only render after mount to prevent hydration errors */}
+        {isMounted && user && (
           <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
             <p className="text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase">
               {user.facility?.facilityName || "NCSR"}
@@ -96,8 +103,8 @@ export default function SidebarContent({ linkClicked }: SidebarContentProps) {
             <p className="text-sm font-medium text-gray-800 dark:text-gray-200 mt-1">
               {user.firstName} {user.lastName}
             </p>
-            <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-              {user.role}
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 capitalize">
+              {user.role?.replace(/_/g, ' ') || 'User'}
             </p>
           </div>
         )}

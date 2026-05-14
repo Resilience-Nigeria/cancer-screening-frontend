@@ -8,6 +8,7 @@ import {
   Pagination,
   Label,
   Select,
+  Textarea,
 } from "@roketid/windmill-react-ui";
 import {
   Search,
@@ -18,23 +19,34 @@ import {
   Eye,
   Plus,
   X,
+  Edit,
 } from "lucide-react";
 import toast from "react-hot-toast";
 
 import Layout from "../containers/Layout";
 import PageTitle from "../components/Typography/PageTitle";
 import api from "../../lib/api";
+import { 
+  nigerianStates, 
+  lgasByState, 
+  getStateCode, 
+  getLGACode 
+} from "../../lib/nigerianstates";
 
 type Client = {
-  clientId: number;
+  id: number;
+  clientId: string;
   fullName: string;
   gender: string;
   phoneNumber?: string | null;
   screeningCategory?: string;
-  state?: string | null;
-  lga?: string | null;
-  residence?: string | null;
+  stateOfOrigin?: string | null;
+  lgaOfOrigin?: string | null;
+  stateOfResidence?: string | null;
+  lgaOfResidence?: string | null;
+  address?: string | null;
   registrationDate?: string | null;
+  dateOfBirth?: string | null;
 };
 
 type ClientsResponse = {
@@ -43,15 +55,17 @@ type ClientsResponse = {
   total?: number;
 };
 
-type NewClientForm = {
+type ClientForm = {
   fullName: string;
   gender: string;
   dateOfBirth: string;
   phoneNumber: string;
   screeningCategory: string;
-  state: string;
-  lga: string;
-  residence: string;
+  stateOfOrigin: string;
+  lgaOfOrigin: string;
+  stateOfResidence: string;
+  lgaOfResidence: string;
+  address: string;
   registrationDate: string;
 };
 
@@ -68,28 +82,33 @@ function getCategoryBadgeType(value?: string | null) {
   return "primary";
 }
 
+const initialFormData: ClientForm = {
+  fullName: "",
+  gender: "",
+  dateOfBirth: "",
+  phoneNumber: "",
+  screeningCategory: "",
+  stateOfOrigin: "",
+  lgaOfOrigin: "",
+  stateOfResidence: "",
+  lgaOfResidence: "",
+  address: "",
+  registrationDate: new Date().toISOString().split("T")[0],
+};
+
 export default function ClientsIndexPage() {
   const [clients, setClients] = useState<Client[]>([]);
   const [loading, setLoading] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [editingClient, setEditingClient] = useState<Client | null>(null);
 
   const [page, setPage] = useState(1);
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
   const [totalResults, setTotalResults] = useState(0);
 
-  const [formData, setFormData] = useState<NewClientForm>({
-    fullName: "",
-    gender: "",
-    dateOfBirth: "",
-    phoneNumber: "",
-    screeningCategory: "",
-    state: "",
-    lga: "",
-    residence: "",
-    registrationDate: new Date().toISOString().split("T")[0],
-  });
+  const [formData, setFormData] = useState<ClientForm>(initialFormData);
 
   const resultsPerPage = 10;
 
@@ -104,17 +123,21 @@ export default function ClientsIndexPage() {
       const rawClients = data?.data || data?.clients || [];
 
       const mappedClients: Client[] = rawClients.map((client: any) => ({
+        id: client.id,
         clientId: client.clientId ?? client.id,
         fullName: client.fullName ?? client.full_name ?? "",
         gender: client.gender ?? "",
         phoneNumber: client.phoneNumber ?? client.phone_number ?? "",
         screeningCategory:
           client.screeningCategory ?? client.screening_category ?? "",
-        state: client.state ?? "",
-        lga: client.lga ?? "",
-        residence: client.residence ?? "",
+        stateOfOrigin: client.stateOfOrigin ?? client.state_of_origin ?? "",
+        lgaOfOrigin: client.lgaOfOrigin ?? client.lga_of_origin ?? "",
+        stateOfResidence: client.stateOfResidence ?? client.state_of_residence ?? "",
+        lgaOfResidence: client.lgaOfResidence ?? client.lga_of_residence ?? "",
+        address: client.address ?? "",
         registrationDate:
           client.registrationDate ?? client.registration_date ?? "",
+        dateOfBirth: client.dateOfBirth ?? client.date_of_birth ?? "",
       }));
 
       setClients(mappedClients);
@@ -137,29 +160,66 @@ export default function ClientsIndexPage() {
   }
 
   function openModal() {
+    setEditingClient(null);
+    setFormData(initialFormData);
     setIsModalOpen(true);
   }
 
+  
+  // Add this helper function near the top of the component, after the type definitions
+function formatDateForInput(dateString?: string | null): string {
+  if (!dateString) return "";
+  try {
+    // Extract just the date part if it's in ISO format
+    const dateOnly = dateString.split('T')[0];
+    return dateOnly;
+  } catch (e) {
+    return "";
+  }
+}
+
+// Then update openEditModal to use it:
+function openEditModal(client: Client) {
+  setEditingClient(client);
+  setFormData({
+    fullName: client.fullName || "",
+    gender: client.gender || "",
+    dateOfBirth: formatDateForInput(client.dateOfBirth),
+    phoneNumber: client.phoneNumber || "",
+    screeningCategory: client.screeningCategory || "",
+    stateOfOrigin: client.stateOfOrigin || "",
+    lgaOfOrigin: client.lgaOfOrigin || "",
+    stateOfResidence: client.stateOfResidence || "",
+    lgaOfResidence: client.lgaOfResidence || "",
+    address: client.address || "",
+    registrationDate: formatDateForInput(client.registrationDate),
+  });
+  setIsModalOpen(true);
+}
+
   function closeModal() {
     setIsModalOpen(false);
-    setFormData({
-      fullName: "",
-      gender: "",
-      dateOfBirth: "",
-      phoneNumber: "",
-      screeningCategory: "",
-      state: "",
-      lga: "",
-      residence: "",
-      registrationDate: new Date().toISOString().split("T")[0],
-    });
+    setEditingClient(null);
+    setFormData(initialFormData);
   }
 
   function handleInputChange(
-    e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>
+    e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>
   ) {
     const { name, value } = e.target;
-    setFormData((prev) => ({ ...prev, [name]: value }));
+    setFormData((prev) => {
+      const newData = { ...prev, [name]: value };
+      
+      // Reset LGA when state changes
+      if (name === "stateOfOrigin") {
+        newData.lgaOfOrigin = "";
+      }
+      if (name === "stateOfResidence") {
+        newData.lgaOfResidence = "";
+      }
+      
+      return newData;
+    });
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -167,13 +227,21 @@ export default function ClientsIndexPage() {
     setIsSubmitting(true);
 
     try {
-      await api.post("/clients", formData);
-      toast.success("Client added successfully!");
+      if (editingClient) {
+        // Update existing client
+        await api.patch(`/clients/${editingClient.clientId}`, formData);
+        toast.success("Client updated successfully!");
+      } else {
+        // Create new client
+        await api.post("/clients", formData);
+        toast.success("Client added successfully!");
+      }
       closeModal();
       fetchClients(); // Refresh the list
     } catch (err: any) {
       toast.error(
-        err?.response?.data?.message || "Failed to add client. Please try again."
+        err?.response?.data?.message || 
+        `Failed to ${editingClient ? "update" : "add"} client. Please try again.`
       );
     } finally {
       setIsSubmitting(false);
@@ -261,7 +329,7 @@ export default function ClientsIndexPage() {
         </div>
       </div>
 
-      {/* Custom Modal */}
+      {/* Add/Edit Client Modal */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
           <div
@@ -274,7 +342,7 @@ export default function ClientsIndexPage() {
             {/* Modal Header */}
             <div className="flex items-center justify-between px-6 py-5 border-b border-gray-100 dark:border-gray-700">
               <h3 className="text-xl font-semibold text-gray-800 dark:text-gray-100">
-                Add New Client
+                {editingClient ? "Edit Client" : "Add New Client"}
               </h3>
               <button
                 onClick={closeModal}
@@ -383,49 +451,119 @@ export default function ClientsIndexPage() {
                     </Label>
                   </div>
 
-                  {/* State and LGA */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <Label>
-                      <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                        State
-                      </span>
-                      <Input
-                        name="state"
-                        value={formData.state}
-                        onChange={handleInputChange}
-                        className="mt-1 rounded-xl"
-                        placeholder="Enter state"
-                        disabled={isSubmitting}
-                      />
-                    </Label>
+                  {/* State and LGA of Origin */}
+                  <div>
+                    <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">
+                      State of Origin
+                    </h4>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <Label>
+                        <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                          State <span className="text-red-500">*</span>
+                        </span>
+                        <Select
+                          name="stateOfOrigin"
+                          value={formData.stateOfOrigin}
+                          onChange={handleInputChange}
+                          className="mt-1 rounded-xl"
+                          required
+                          disabled={isSubmitting}
+                        >
+                          <option value="">Select State</option>
+                          {nigerianStates.map((state) => (
+                            <option key={state.code} value={state.name}>
+                              {state.name}
+                            </option>
+                          ))}
+                        </Select>
+                      </Label>
 
-                    <Label>
-                      <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                        LGA
-                      </span>
-                      <Input
-                        name="lga"
-                        value={formData.lga}
-                        onChange={handleInputChange}
-                        className="mt-1 rounded-xl"
-                        placeholder="Enter LGA"
-                        disabled={isSubmitting}
-                      />
-                    </Label>
+                      <Label>
+                        <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                          LGA <span className="text-red-500">*</span>
+                        </span>
+                        <Select
+                          name="lgaOfOrigin"
+                          value={formData.lgaOfOrigin}
+                          onChange={handleInputChange}
+                          className="mt-1 rounded-xl"
+                          required
+                          disabled={!formData.stateOfOrigin || isSubmitting}
+                        >
+                          <option value="">Select LGA</option>
+                          {formData.stateOfOrigin && lgasByState[getStateCode(formData.stateOfOrigin)]?.map((lga) => (
+                            <option key={lga} value={lga}>
+                              {lga}
+                            </option>
+                          ))}
+                        </Select>
+                      </Label>
+                    </div>
                   </div>
 
-                  {/* Residence */}
+                  {/* State and LGA of Residence */}
+                  <div>
+                    <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">
+                      State of Residence
+                    </h4>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <Label>
+                        <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                          State <span className="text-red-500">*</span>
+                        </span>
+                        <Select
+                          name="stateOfResidence"
+                          value={formData.stateOfResidence}
+                          onChange={handleInputChange}
+                          className="mt-1 rounded-xl"
+                          required
+                          disabled={isSubmitting}
+                        >
+                          <option value="">Select State</option>
+                          {nigerianStates.map((state) => (
+                            <option key={state.code} value={state.name}>
+                              {state.name}
+                            </option>
+                          ))}
+                        </Select>
+                      </Label>
+
+                      <Label>
+                        <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                          LGA <span className="text-red-500">*</span>
+                        </span>
+                        <Select
+                          name="lgaOfResidence"
+                          value={formData.lgaOfResidence}
+                          onChange={handleInputChange}
+                          className="mt-1 rounded-xl"
+                          required
+                          disabled={!formData.stateOfResidence || isSubmitting}
+                        >
+                          <option value="">Select LGA</option>
+                          {formData.stateOfResidence && lgasByState[getStateCode(formData.stateOfResidence)]?.map((lga) => (
+                            <option key={lga} value={lga}>
+                              {lga}
+                            </option>
+                          ))}
+                        </Select>
+                      </Label>
+                    </div>
+                  </div>
+
+                  {/* Address */}
                   <div>
                     <Label>
                       <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                        Residence Address
+                        Residential Address
                       </span>
-                      <Input
-                        name="residence"
-                        value={formData.residence}
+                      <Textarea
+                        name="address"
+                        value={formData.address}
                         onChange={handleInputChange}
                         className="mt-1 rounded-xl"
-                        placeholder="Enter residence address"
+                        placeholder="Enter full residential address"
+                        rows={3}
                         disabled={isSubmitting}
                       />
                     </Label>
@@ -489,10 +627,10 @@ export default function ClientsIndexPage() {
                           d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
                         />
                       </svg>
-                      Adding...
+                      {editingClient ? "Updating..." : "Adding..."}
                     </span>
                   ) : (
-                    "Add Client"
+                    editingClient ? "Update Client" : "Add Client"
                   )}
                 </Button>
               </div>
@@ -526,6 +664,11 @@ export default function ClientsIndexPage() {
                   <h3 className="text-base font-semibold text-gray-800 dark:text-gray-100">
                     {client.fullName}
                   </h3>
+                  <div className="flex items-start gap-2 mt-1">
+                    <span className="text-xs text-gray-500 dark:text-gray-400">
+                      ID: {client.clientId || "-"}
+                    </span>
+                  </div>
                   <p className="mt-1 text-sm text-gray-500 dark:text-gray-400 capitalize">
                     {client.gender || "—"}
                   </p>
@@ -546,10 +689,24 @@ export default function ClientsIndexPage() {
 
                 <div className="flex items-start gap-2">
                   <MapPin className="w-4 h-4 mt-0.5 shrink-0" />
-                  <span>
-                    {[client.lga, client.state].filter(Boolean).join(", ") ||
-                      "No location"}
-                  </span>
+                  <div className="flex flex-col gap-1">
+                    {client.address && (
+                      <>
+                        <span className="text-xs text-gray-500">Address:</span>
+                        <span>{client.address}</span>
+                      </>
+                    )}
+                    <span className="text-xs text-gray-500 mt-1">Origin:</span>
+                    <span>
+                      {[client.lgaOfOrigin, client.stateOfOrigin].filter(Boolean).join(", ") ||
+                        "Not specified"}
+                    </span>
+                    <span className="text-xs text-gray-500 mt-1">Residence:</span>
+                    <span>
+                      {[client.lgaOfResidence, client.stateOfResidence].filter(Boolean).join(", ") ||
+                        "Not specified"}
+                    </span>
+                  </div>
                 </div>
 
                 <div className="flex items-start gap-2">
@@ -562,15 +719,22 @@ export default function ClientsIndexPage() {
                 </div>
               </div>
 
-              <div className="mt-5">
-                <Link href={`/ncsr/client-details?clientId=${client.clientId}`}>
-                  <Button className="rounded-xl bg-green-700 border-green-700 hover:bg-green-800 hover:border-green-800">
+              <div className="mt-5 flex gap-3">
+                <Link href={`/ncsr/client-details?clientId=${client.clientId}`} className="flex-1">
+                  <Button className="w-full rounded-xl bg-green-700 border-green-700 hover:bg-green-800 hover:border-green-800">
                     <span className="inline-flex items-center gap-2">
                       <Eye className="w-4 h-4" />
                       Open Client
                     </span>
                   </Button>
                 </Link>
+                <Button
+                  layout="outline"
+                  onClick={() => openEditModal(client)}
+                  className="rounded-xl"
+                >
+                  <Edit className="w-4 h-4" />
+                </Button>
               </div>
             </div>
           ))
@@ -604,13 +768,15 @@ export default function ClientsIndexPage() {
           <table className="w-full whitespace-normal">
             <thead>
               <tr className="text-left text-xs font-semibold tracking-wide uppercase border-b bg-gray-50 dark:bg-gray-800/60 text-gray-500 dark:text-gray-400">
+                <th className="px-6 py-4">Client ID</th>
                 <th className="px-6 py-4">Client</th>
                 <th className="px-6 py-4">Gender</th>
                 <th className="px-6 py-4">Phone</th>
                 <th className="px-6 py-4">Category</th>
-                <th className="px-6 py-4">Location</th>
+                <th className="px-6 py-4">Origin</th>
+                <th className="px-6 py-4">Residence</th>
                 <th className="px-6 py-4">Registered</th>
-                <th className="px-6 py-4">Action</th>
+                <th className="px-6 py-4">Actions</th>
               </tr>
             </thead>
 
@@ -618,6 +784,9 @@ export default function ClientsIndexPage() {
               {loading ? (
                 Array.from({ length: 6 }).map((_, i) => (
                   <tr key={i}>
+                    <td className="px-6 py-4">
+                      <div className="h-4 w-24 bg-gray-200 dark:bg-gray-700 rounded animate-pulse" />
+                    </td>
                     <td className="px-6 py-4">
                       <div className="h-4 w-40 bg-gray-200 dark:bg-gray-700 rounded animate-pulse" />
                     </td>
@@ -629,6 +798,9 @@ export default function ClientsIndexPage() {
                     </td>
                     <td className="px-6 py-4">
                       <div className="h-6 w-24 bg-gray-200 dark:bg-gray-700 rounded-full animate-pulse" />
+                    </td>
+                    <td className="px-6 py-4">
+                      <div className="h-4 w-28 bg-gray-200 dark:bg-gray-700 rounded animate-pulse" />
                     </td>
                     <td className="px-6 py-4">
                       <div className="h-4 w-28 bg-gray-200 dark:bg-gray-700 rounded animate-pulse" />
@@ -647,6 +819,9 @@ export default function ClientsIndexPage() {
                     key={client.clientId}
                     className="hover:bg-gray-50/70 dark:hover:bg-gray-700/20 transition"
                   >
+                    <td className="px-6 py-4 text-sm">
+                      {client.clientId || "—"}
+                    </td>
                     <td className="px-6 py-4">
                       <div className="flex items-center text-sm">
                         <div className="flex items-center justify-center w-10 h-10 rounded-full bg-green-100 text-green-700 font-semibold mr-3">
@@ -656,8 +831,8 @@ export default function ClientsIndexPage() {
                           <p className="font-semibold text-gray-800 dark:text-gray-100">
                             {client.fullName}
                           </p>
-                          <p className="text-xs text-gray-600 dark:text-gray-400">
-                            {client.residence || "No address"}
+                          <p className="text-xs text-gray-600 dark:text-gray-400 capitalize">
+                            {client.gender || "—"}
                           </p>
                         </div>
                       </div>
@@ -679,7 +854,11 @@ export default function ClientsIndexPage() {
                       </Badge>
                     </td>
                     <td className="px-6 py-4 text-sm">
-                      {[client.lga, client.state].filter(Boolean).join(", ") ||
+                      {[client.lgaOfOrigin, client.stateOfOrigin].filter(Boolean).join(", ") ||
+                        "—"}
+                    </td>
+                    <td className="px-6 py-4 text-sm">
+                      {[client.lgaOfResidence, client.stateOfResidence].filter(Boolean).join(", ") ||
                         "—"}
                     </td>
                     <td className="px-6 py-4 text-sm">
@@ -688,22 +867,31 @@ export default function ClientsIndexPage() {
                         : "—"}
                     </td>
                     <td className="px-6 py-4">
-                      <Link
-                        href={`/ncsr/client-details?clientId=${client.clientId}`}
-                      >
-                        <Button layout="outline" className="rounded-xl">
-                          <span className="inline-flex items-center gap-2">
-                            <Eye className="w-4 h-4" />
-                            Open
-                          </span>
+                      <div className="flex gap-2">
+                        <Link
+                          href={`/ncsr/client-details?clientId=${client.clientId}`}
+                        >
+                          <Button layout="outline" className="rounded-xl">
+                            <span className="inline-flex items-center gap-2">
+                              <Eye className="w-4 h-4" />
+                              Open
+                            </span>
+                          </Button>
+                        </Link>
+                        <Button
+                          layout="outline"
+                          onClick={() => openEditModal(client)}
+                          className="rounded-xl"
+                        >
+                          <Edit className="w-4 h-4" />
                         </Button>
-                      </Link>
+                      </div>
                     </td>
                   </tr>
                 ))
               ) : (
                 <tr>
-                  <td colSpan={7} className="px-6 py-12 text-center">
+                  <td colSpan={9} className="px-6 py-12 text-center">
                     <Users className="w-10 h-10 mx-auto text-gray-400" />
                     <h4 className="mt-4 text-lg font-semibold text-gray-800 dark:text-gray-100">
                       No clients found

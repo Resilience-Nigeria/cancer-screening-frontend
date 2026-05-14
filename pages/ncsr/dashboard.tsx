@@ -70,6 +70,12 @@ type DashboardStats = {
   positiveFindings: number;
 };
 
+type MonthlyTrendData = {
+  month: string;
+  screenings: number;
+  referrals: number;
+};
+
 type StatCardProps = {
   title: string;
   value: string;
@@ -241,6 +247,7 @@ function Dashboard() {
     liverScreenings: 0,
     positiveFindings: 0,
   });
+  const [monthlyTrend, setMonthlyTrend] = useState<MonthlyTrendData[]>([]);
   const [activities, setActivities] = useState<ScreeningActivity[]>([]);
   const [page, setPage] = useState(1);
   const [totalResults, setTotalResults] = useState(0);
@@ -282,6 +289,24 @@ function Dashboard() {
     }
   }
 
+  async function fetchMonthlyTrend() {
+    try {
+      const trendResponse = await api.get("/dashboard/monthly-trends");
+      const trendData = trendResponse.data?.data || trendResponse.data?.trend || [];
+
+      const mappedTrend: MonthlyTrendData[] = trendData.map((item: any) => ({
+        month: item.month,
+        screenings: item.screenings ?? item.total_screenings ?? 0,
+        referrals: item.referrals ?? item.total_referrals ?? 0,
+      }));
+
+      setMonthlyTrend(mappedTrend);
+    } catch (err: any) {
+      console.error("Error fetching monthly trend:", err);
+      // Don't show error toast for this - it's not critical
+    }
+  }
+
   async function fetchRecentActivity() {
     try {
       const activitiesResponse = await api.get("/dashboard/recent-activity", {
@@ -307,8 +332,8 @@ function Dashboard() {
           screeningId:
             item.screeningId ??
             item.screening_id ??
-            item.client?.screeningId ??
-            item.client?.screening_id ??
+            item.client?.clientId ??
+            item.client?.client_id ??
             "—",
           screeningType: item.screeningType ?? item.screening_type ?? "General Screening",
           status: item.status ?? "Pending",
@@ -334,6 +359,7 @@ function Dashboard() {
 
   useEffect(() => {
     fetchDashboardData();
+    fetchMonthlyTrend();
   }, []);
 
   useEffect(() => {
@@ -371,6 +397,14 @@ function Dashboard() {
 
   function handleProstateScreeningsClick() {
     router.push("/ncsr/screenings?type=prostate");
+  }
+
+  function handleColorectalScreeningsClick() {
+    router.push("/ncsr/screenings?type=colorectal");
+  }
+
+  function handleLiverScreeningsClick() {
+    router.push("/ncsr/screenings?type=liver");
   }
 
   function handlePositiveFindingsClick() {
@@ -412,15 +446,20 @@ function Dashboard() {
     },
   };
 
+  // Use dynamic data from backend or fallback to empty arrays
   const monthlyTrendData = {
     data: {
-      labels: ["Sep", "Oct", "Nov", "Dec", "Jan", "Feb", "Mar"],
+      labels: monthlyTrend.length > 0 
+        ? monthlyTrend.map(item => item.month)
+        : ["No Data"],
       datasets: [
         {
           label: "Screenings",
           backgroundColor: "rgba(21, 128, 61, 0.15)",
           borderColor: "#15803d",
-          data: [420, 510, 630, 590, 740, 810, stats.screeningsThisMonth],
+          data: monthlyTrend.length > 0
+            ? monthlyTrend.map(item => item.screenings)
+            : [0],
           fill: true,
           tension: 0.35,
         },
@@ -428,7 +467,9 @@ function Dashboard() {
           label: "Referrals",
           backgroundColor: "rgba(217, 119, 6, 0.12)",
           borderColor: "#d97706",
-          data: [35, 44, 51, 48, 56, 62, stats.referralAlerts],
+          data: monthlyTrend.length > 0
+            ? monthlyTrend.map(item => item.referrals)
+            : [0],
           fill: true,
           tension: 0.35,
         },
@@ -563,39 +604,54 @@ function Dashboard() {
         />
       </div>
 
-      <div className="grid gap-4 sm:gap-5 mb-6 sm:mb-8 grid-cols-1 sm:grid-cols-2 xl:grid-cols-4">
+      {/* Updated Module Cards Grid - Now shows all 5 screening types plus positive findings */}
+      <div className="grid gap-4 sm:gap-5 mb-6 sm:mb-8 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
         <ModuleCard
           title="Cervical Screening"
           value={stats.cervicalScreenings.toLocaleString()}
-          note="Click to view all cervical screenings"
+          note="View all cervical screenings"
           icon={<ArrowUpRight className="w-4 h-4 text-green-600" />}
           onClick={handleCervicalScreeningsClick}
         />
         <ModuleCard
           title="Breast Screening"
           value={stats.breastScreenings.toLocaleString()}
-          note="Click to view all breast screenings"
+          note="View all breast screenings"
           icon={<ArrowUpRight className="w-4 h-4 text-green-600" />}
           onClick={handleBreastScreeningsClick}
         />
         <ModuleCard
           title="Prostate Screening"
           value={stats.prostateScreenings.toLocaleString()}
-          note="Click to view all prostate screenings"
+          note="View all prostate screenings"
           icon={<ArrowUpRight className="w-4 h-4 text-green-600" />}
           onClick={handleProstateScreeningsClick}
         />
         <ModuleCard
+          title="Colorectal Screening"
+          value={stats.colorectalScreenings.toLocaleString()}
+          note="View all colorectal screenings"
+          icon={<ArrowUpRight className="w-4 h-4 text-green-600" />}
+          onClick={handleColorectalScreeningsClick}
+        />
+        <ModuleCard
+          title="Liver Screening"
+          value={stats.liverScreenings.toLocaleString()}
+          note="View all liver screenings"
+          icon={<ArrowUpRight className="w-4 h-4 text-green-600" />}
+          onClick={handleLiverScreeningsClick}
+        />
+        <ModuleCard
           title="Positive Findings"
           value={stats.positiveFindings.toLocaleString()}
-          note="Click to view confirmed cases"
+          note="View confirmed cases"
           noteColor="text-red-500"
           icon={<Activity className="w-4 h-4 text-red-500" />}
           onClick={handlePositiveFindingsClick}
         />
       </div>
 
-      {/* Rest of the dashboard - Recent Activity and Charts remain the same */}
+      {/* Recent Activity section */}
       <div className="mb-6 sm:mb-8">
         <PageTitle>Recent Screening Activity</PageTitle>
 
@@ -639,7 +695,7 @@ function Dashboard() {
                     <TableHeader>
                       <tr>
                         <TableCell>Client</TableCell>
-                        <TableCell>Screening ID</TableCell>
+                        <TableCell>Client ID</TableCell>
                         <TableCell>Screening Type</TableCell>
                         <TableCell>Status</TableCell>
                         <TableCell>Facility</TableCell>
@@ -758,29 +814,45 @@ function Dashboard() {
               Monthly Screening and Referral Trend
             </h2>
 
-            <div className="mt-4 min-w-0 w-full overflow-hidden">
-              <div className="relative w-full h-[260px] sm:h-[320px] lg:h-[360px] xl:h-[320px]">
-                <Line
-                  data={monthlyTrendData.data}
-                  options={monthlyTrendData.options as any}
-                />
-              </div>
-            </div>
-
-            <div className="mt-5 flex flex-wrap gap-3">
-              {[
-                ["Screenings", "bg-green-700"],
-                ["Referrals", "bg-amber-500"],
-              ].map(([label, color]) => (
-                <div
-                  key={label}
-                  className="inline-flex items-center gap-2 rounded-full bg-gray-50 dark:bg-gray-700 px-3 py-1.5 text-xs sm:text-sm text-gray-700 dark:text-gray-200"
-                >
-                  <span className={`w-3 h-3 rounded-full ${color}`} />
-                  <span className="whitespace-nowrap">{label}</span>
+            {monthlyTrend.length > 0 ? (
+              <>
+                <div className="mt-4 min-w-0 w-full overflow-hidden">
+                  <div className="relative w-full h-[260px] sm:h-[320px] lg:h-[360px] xl:h-[320px]">
+                    <Line
+                      data={monthlyTrendData.data}
+                      options={monthlyTrendData.options as any}
+                    />
+                  </div>
                 </div>
-              ))}
-            </div>
+
+                <div className="mt-5 flex flex-wrap gap-3">
+                  {[
+                    ["Screenings", "bg-green-700"],
+                    ["Referrals", "bg-amber-500"],
+                  ].map(([label, color]) => (
+                    <div
+                      key={label}
+                      className="inline-flex items-center gap-2 rounded-full bg-gray-50 dark:bg-gray-700 px-3 py-1.5 text-xs sm:text-sm text-gray-700 dark:text-gray-200"
+                    >
+                      <span className={`w-3 h-3 rounded-full ${color}`} />
+                      <span className="whitespace-nowrap">{label}</span>
+                    </div>
+                  ))}
+                </div>
+              </>
+            ) : (
+              <div className="mt-4 flex items-center justify-center h-[260px] sm:h-[320px] lg:h-[360px] xl:h-[320px]">
+                <div className="text-center">
+                  <Activity className="w-12 h-12 mx-auto text-gray-300 dark:text-gray-600" />
+                  <p className="mt-4 text-sm text-gray-500 dark:text-gray-400">
+                    No trend data available yet
+                  </p>
+                  <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">
+                    Data will appear as screenings are recorded
+                  </p>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>
