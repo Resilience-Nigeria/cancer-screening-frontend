@@ -45,6 +45,7 @@ type Client = {
   stateOfResidence?: string | null;
   lgaOfResidence?: string | null;
   address?: string | null;
+  landmark?: string | null;
   registrationDate?: string | null;
   dateOfBirth?: string | null;
 };
@@ -66,6 +67,7 @@ type ClientForm = {
   stateOfResidence: string;
   lgaOfResidence: string;
   address: string;
+  landmark: string;
   registrationDate: string;
 };
 
@@ -93,6 +95,7 @@ const initialFormData: ClientForm = {
   stateOfResidence: "",
   lgaOfResidence: "",
   address: "",
+  landmark: "",
   registrationDate: new Date().toISOString().split("T")[0],
 };
 
@@ -135,6 +138,7 @@ export default function ClientsIndexPage() {
         stateOfResidence: client.stateOfResidence ?? client.state_of_residence ?? "",
         lgaOfResidence: client.lgaOfResidence ?? client.lga_of_residence ?? "",
         address: client.address ?? "",
+        landmark: client.landmark ?? "",
         registrationDate:
           client.registrationDate ?? client.registration_date ?? "",
         dateOfBirth: client.dateOfBirth ?? client.date_of_birth ?? "",
@@ -192,6 +196,7 @@ function openEditModal(client: Client) {
     stateOfResidence: client.stateOfResidence || "",
     lgaOfResidence: client.lgaOfResidence || "",
     address: client.address || "",
+    landmark: client.landmark || "",
     registrationDate: formatDateForInput(client.registrationDate),
   });
   setIsModalOpen(true);
@@ -416,7 +421,7 @@ function openEditModal(client: Client) {
                   <div>
                     <Label>
                       <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                        Phone Number
+                        Phone Number <span className="text-red-500">*</span>
                       </span>
                       <Input
                         name="phoneNumber"
@@ -426,6 +431,7 @@ function openEditModal(client: Client) {
                         placeholder="Enter phone number"
                         type="tel"
                         disabled={isSubmitting}
+                        required
                       />
                     </Label>
                   </div>
@@ -569,6 +575,23 @@ function openEditModal(client: Client) {
                     </Label>
                   </div>
 
+                  {/* Landmark */}
+                  <div>
+                    <Label>
+                      <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                        Landmark
+                      </span>
+                      <Input
+                        name="landmark"
+                        value={formData.landmark}
+                        onChange={handleInputChange}
+                        className="mt-1 rounded-xl"
+                        placeholder="Enter nearby landmark (e.g., near City Mall, opposite Central Mosque)"
+                        disabled={isSubmitting}
+                      />
+                    </Label>
+                  </div>
+
                   {/* Registration Date */}
                   <div>
                     <Label>
@@ -694,6 +717,12 @@ function openEditModal(client: Client) {
                       <>
                         <span className="text-xs text-gray-500">Address:</span>
                         <span>{client.address}</span>
+                      </>
+                    )}
+                    {client.landmark && (
+                      <>
+                        <span className="text-xs text-gray-500 mt-1">Landmark:</span>
+                        <span>{client.landmark}</span>
                       </>
                     )}
                     <span className="text-xs text-gray-500 mt-1">Origin:</span>

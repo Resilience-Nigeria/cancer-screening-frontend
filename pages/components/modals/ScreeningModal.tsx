@@ -121,9 +121,10 @@ export default function ScreeningModuleSelector({
     ...(clientGender === "female"
       ? [
           { id: "cervical", name: "Cervical Screening" },
-          { id: "breast", name: "Breast Screening" },
         ]
       : []),
+
+    { id: "breast", name: "Breast Screening" },
 
     ...(clientGender === "male"
       ? [{ id: "prostate", name: "Prostate Screening" }]

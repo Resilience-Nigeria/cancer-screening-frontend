@@ -13,7 +13,7 @@ import api from "../../../lib/api";
 type RiskProfileModalProps = {
   isOpen: boolean;
   onClose: () => void;
-  clientId: number;
+  clientId: string;
   existingProfile?: any;
   onComplete: () => void;
 };
@@ -252,6 +252,7 @@ export default function RiskProfileModal({
                   <option value="">Select</option>
                   <option value="yes">Yes</option>
                   <option value="no">No</option>
+                  <option value="unknown">Unknown</option>
                 </Select>
               </Label>
 
@@ -265,6 +266,7 @@ export default function RiskProfileModal({
                   <option value="">Select</option>
                   <option value="yes">Yes</option>
                   <option value="no">No</option>
+                  <option value="unknown">Unknown</option>
                 </Select>
               </Label>
             </div>

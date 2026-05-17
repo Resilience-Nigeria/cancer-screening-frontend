@@ -26,9 +26,9 @@ import {
   Ruler,
   HeartPulse,
   Wine,
-  Cigarette, // Changed from Smoking to Cigarette
-  FlaskConical, // Changed from TestTube to FlaskConical
-  Bone, // Alternative for medical/test related icons
+  Cigarette,
+  FlaskConical,
+  Bone,
 } from "lucide-react";
 import toast from "react-hot-toast";
 
@@ -55,7 +55,7 @@ type Visit = {
 
 type ClientDetail = {
   id: number;
-  clientId: number;
+  clientId: string;
   fullName: string;
   gender: string;
   phoneNumber?: string | null;
@@ -68,6 +68,121 @@ type ClientDetail = {
   outcome?: any;
   visits?: Visit[];
 };
+
+/**
+ * Calculate risk level based on risk profile data
+ * Returns: 'high' | 'medium' | 'low' | 'unknown'
+ */
+function calculateRiskLevel(riskProfile: any): 'high' | 'medium' | 'low' | 'unknown' {
+  if (!riskProfile) return 'unknown';
+  
+  let riskScore = 0;
+  
+  // Smoking (High risk factor for multiple cancers)
+  if (riskProfile.smokingStatus === 'active_smoker') {
+    riskScore += 3;
+    // Heavy smoker gets additional points
+    if (riskProfile.cigarettesPerDay && riskProfile.cigarettesPerDay > 10) {
+      riskScore += 2;
+    }
+    // Long-term smoker gets additional points
+    if (riskProfile.smokingDurationYears && riskProfile.smokingDurationYears > 10) {
+      riskScore += 2;
+    }
+  } else if (riskProfile.smokingStatus === 'former_smoker') {
+    riskScore += 1;
+  } else if (riskProfile.smokingStatus === 'passive_smoker') {
+    riskScore += 1;
+  }
+  
+  // Alcohol consumption
+  if (riskProfile.alcoholFrequency === 'daily' || riskProfile.alcoholFrequency === 'several_times_per_week') {
+    riskScore += 2;
+    // Heavy drinking gets additional points
+    if (riskProfile.alcoholUnitsPerWeek && riskProfile.alcoholUnitsPerWeek > 14) {
+      riskScore += 2;
+    }
+  } else if (riskProfile.alcoholFrequency === 'weekly' || riskProfile.alcoholFrequency === 'monthly') {
+    riskScore += 1;
+  }
+  
+  // HIV Status (associated with certain cancers)
+  if (riskProfile.hivStatus === 'positive') {
+    riskScore += 2;
+  }
+  
+  // Family history of cancer (strong risk factor)
+  if (riskProfile.familyHistoryOfCancer === 'yes') {
+    riskScore += 3;
+    // Multiple cancer types in family increases risk
+    if (riskProfile.cancerTypes && riskProfile.cancerTypes.length > 1) {
+      riskScore += 1;
+    }
+  }
+  
+  // Diabetes
+  if (riskProfile.diabetes === 'yes') {
+    riskScore += 1;
+  }
+  
+  // Hypertension
+  if (riskProfile.hypertension === 'yes') {
+    riskScore += 1;
+  }
+  
+  // BMI assessment (obesity is a risk factor)
+  if (riskProfile.bmi) {
+    const bmi = parseFloat(riskProfile.bmi);
+    if (bmi >= 30) { // Obese
+      riskScore += 2;
+    } else if (bmi >= 25) { // Overweight
+      riskScore += 1;
+    }
+  }
+  
+  // Categorize based on total score
+  if (riskScore >= 8) {
+    return 'high';
+  } else if (riskScore >= 4) {
+    return 'medium';
+  } else if (riskScore > 0) {
+    return 'low';
+  }
+  
+  return 'low'; // Default to low if no risk factors identified
+}
+
+/**
+ * Get badge type for risk level
+ */
+function getRiskBadgeType(riskLevel: 'high' | 'medium' | 'low' | 'unknown'): string {
+  switch (riskLevel) {
+    case 'high':
+      return 'danger';
+    case 'medium':
+      return 'warning';
+    case 'low':
+      return 'success';
+    default:
+      return 'neutral';
+  }
+}
+
+/**
+ * Get display text for risk level
+ */
+function getRiskLevelText(riskLevel: 'high' | 'medium' | 'low' | 'unknown'): string {
+  switch (riskLevel) {
+    case 'high':
+      return 'High Risk';
+    case 'medium':
+      return 'Medium Risk';
+    case 'low':
+      return 'Low Risk';
+    default:
+      return 'Not Assessed';
+  }
+}
 
 export default function ClientSummaryPage() {
   const router = useRouter();
@@ -83,6 +198,11 @@ export default function ClientSummaryPage() {
   const [showScreeningModal, setShowScreeningModal] = useState(false);
   const [showOutcomeModal, setShowOutcomeModal] = useState(false);
   const [selectedVisitId, setSelectedVisitId] = useState<number | null>(null);
+
+  // Calculate risk level
+  const riskLevel = client?.latestRiskProfile 
+    ? calculateRiskLevel(client.latestRiskProfile)
+    : 'unknown';
 
   async function fetchClient() {
     if (!clientId) return;
@@ -108,6 +228,7 @@ export default function ClientSummaryPage() {
       }
 
       const mappedClient: ClientDetail = {
+        id: rawClient.id,
         clientId: rawClient.clientId ?? rawClient.id,
         fullName: rawClient.fullName ?? rawClient.full_name ?? "",
         gender: rawClient.gender ?? "",
@@ -335,13 +456,16 @@ export default function ClientSummaryPage() {
         </div>
       </div>
 
-      {/* Risk Profile Section */}
+      {/* Risk Profile Section - Add Risk Level Badge */}
       {hasRiskProfile && client.latestRiskProfile && (
         <div className="mb-8">
           <div className="flex items-center justify-between mb-5">
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-3">
               <Activity className="w-5 h-5 text-green-600" />
               <SectionTitle>Risk Profile Assessment</SectionTitle>
+              <Badge type={getRiskBadgeType(riskLevel) as any}>
+                {getRiskLevelText(riskLevel)}
+              </Badge>
             </div>
             <Button
               size="small"
@@ -353,6 +477,7 @@ export default function ClientSummaryPage() {
             </Button>
           </div>
 
+          {/* Rest of Risk Profile section remains the same */}
           <div className="rounded-3xl border border-gray-100 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-sm overflow-hidden">
             <div className="p-6">
               <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
@@ -372,7 +497,7 @@ export default function ClientSummaryPage() {
                   </div>
                 </div>
 
-                {/* Smoking - Using Cigarette icon instead of Smoking */}
+                {/* Smoking */}
                 <div className="space-y-3">
                   <h4 className="font-semibold text-gray-800 dark:text-gray-100 flex items-center gap-2">
                     <Cigarette className="w-4 h-4 text-orange-600" />
@@ -433,7 +558,7 @@ export default function ClientSummaryPage() {
         </div>
       )}
 
-      {/* Outcome Section */}
+      {/* Outcome Section - Remains the same */}
       {client.outcome && (
         <div className="mb-8">
           <div className="flex items-center justify-between mb-5">
@@ -538,7 +663,7 @@ export default function ClientSummaryPage() {
         </div>
       )}
 
-      {/* Summary Cards Row */}
+      {/* Summary Cards Row - Updated Risk Assessment Card */}
       <div className="grid gap-5 md:grid-cols-3 mb-8">
         <div className="rounded-3xl border border-gray-100 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-sm p-5">
           <div className="flex items-center justify-between mb-4">
@@ -558,16 +683,26 @@ export default function ClientSummaryPage() {
 
         <div className="rounded-3xl border border-gray-100 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-sm p-5">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="font-semibold text-gray-800 dark:text-gray-100">Risk Profile Status</h3>
+            <h3 className="font-semibold text-gray-800 dark:text-gray-100">Risk Assessment</h3>
             <ShieldCheck className="w-5 h-5 text-green-600" />
           </div>
-          <Badge type={hasRiskProfile ? "success" : "warning"}>
-            {hasRiskProfile ? "Completed" : "Pending"}
-          </Badge>
+          
+          {hasRiskProfile ? (
+            <div className="space-y-2">
+              <Badge type={getRiskBadgeType(riskLevel) as any}>
+                {getRiskLevelText(riskLevel)}
+              </Badge>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
+                Based on profile assessment
+              </p>
+            </div>
+          ) : (
+            <Badge type="warning">Not Assessed</Badge>
+          )}
         </div>
       </div>
 
-      {/* Visit History */}
+      {/* Visit History - Remains the same */}
       <div className="mb-8">
         <div className="flex items-center justify-between mb-5">
           <SectionTitle>Visit History</SectionTitle>
@@ -670,7 +805,7 @@ export default function ClientSummaryPage() {
       <NewVisitModal
         isOpen={showNewVisitModal}
         onClose={() => setShowNewVisitModal(false)}
-        clientId={Number(clientId)}
+        clientId={String(clientId)}
         clientName={client.fullName}
         onVisitCreated={handleVisitCreated}
       />
@@ -678,7 +813,7 @@ export default function ClientSummaryPage() {
       <RiskProfileModal
         isOpen={showRiskProfileModal}
         onClose={() => setShowRiskProfileModal(false)}
-        clientId={Number(clientId)}
+        clientId={String(clientId)}
         existingProfile={client.latestRiskProfile}
         onComplete={handleRiskProfileComplete}
       />
@@ -694,7 +829,7 @@ export default function ClientSummaryPage() {
       <OutcomeModal
         isOpen={showOutcomeModal}
         onClose={() => setShowOutcomeModal(false)}
-        clientId={Number(clientId)}
+        clientId={String(clientId)}
         existingOutcome={client.outcome}
         onComplete={handleOutcomeComplete}
       />

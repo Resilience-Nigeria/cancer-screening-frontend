@@ -37,6 +37,13 @@ export default function OutcomePage() {
   const [serverError, setServerError] = useState("");
   const [errors, setErrors] = useState<Record<string, string>>({});
 
+  // ✅ FIX: Set today's date as default for screeningDate
+  const getTodayDate = () => {
+    const today = new Date().toISOString().split('T')[0];
+    console.log("Setting default screening date to:", today);
+    return today;
+  };
+
   const [form, setForm] = useState({
     // PRE-SCREENING COUNSELING
     preScreeningCounselingDate: "",
@@ -45,7 +52,7 @@ export default function OutcomePage() {
     
     // SCREENING OUTCOME (COMES FIRST)
     screeningResult: "",
-    screeningDate: "",
+    screeningDate: getTodayDate(), // ✅ Default to today
     
     // POST-SCREENING COUNSELING
     postScreeningCounselingDate: "",
@@ -59,7 +66,7 @@ export default function OutcomePage() {
     diagnosis: "",
     cancerType: "",
     cancerStage: "",
-    stagingComments: "", // NEW FIELD - Required comments/remarks for staging
+    stagingComments: "",
     diagnosisDate: "",
     
     // TREATMENT COMMENCEMENT
@@ -141,6 +148,12 @@ export default function OutcomePage() {
       console.log("Parsed outcome:", rawOutcome);
 
       if (rawOutcome) {
+        const defaultScreeningDate = new Date().toISOString().split('T')[0];
+        const screeningDateToUse = rawOutcome.screeningDate ?? rawOutcome.screening_date ?? defaultScreeningDate;
+        console.log("Screening date from API:", rawOutcome.screeningDate ?? rawOutcome.screening_date);
+        console.log("Using screening date:", screeningDateToUse);
+
+        // ✅ FIX: Preserve today's date as default if no saved screening date
         setForm({
           // Pre-screening
           preScreeningCounselingDate: rawOutcome.preScreeningCounselingDate ?? rawOutcome.pre_screening_counseling_date ?? "",
@@ -149,7 +162,7 @@ export default function OutcomePage() {
           
           // Screening outcome
           screeningResult: rawOutcome.screeningResult ?? rawOutcome.screening_result ?? "",
-          screeningDate: rawOutcome.screeningDate ?? rawOutcome.screening_date ?? "",
+          screeningDate: screeningDateToUse,
           
           // Post-screening
           postScreeningCounselingDate: rawOutcome.postScreeningCounselingDate ?? rawOutcome.post_screening_counseling_date ?? "",
@@ -193,6 +206,9 @@ export default function OutcomePage() {
           
           remarks: rawOutcome.remarks ?? "",
         });
+      } else {
+        // No existing outcome - ensure screening date stays as today
+        console.log("No existing outcome data, keeping default screening date");
       }
 
       console.log("Data fetch completed successfully");
@@ -209,6 +225,16 @@ export default function OutcomePage() {
   useEffect(() => {
     fetchData();
   }, [clientId]);
+
+  // ✅ Auto-calculate next follow-up date (6 months from screening date) when negative
+  useEffect(() => {
+    if (form.screeningResult === "negative" && form.screeningDate && !form.nextFollowUpDate) {
+      const screeningDate = new Date(form.screeningDate);
+      const sixMonthsLater = new Date(screeningDate.setMonth(screeningDate.getMonth() + 6));
+      const formattedDate = sixMonthsLater.toISOString().split('T')[0];
+      setForm((prev) => ({ ...prev, nextFollowUpDate: formattedDate }));
+    }
+  }, [form.screeningResult, form.screeningDate]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -303,7 +329,7 @@ export default function OutcomePage() {
                 </h2>
 
                 <p className="mt-3 text-sm sm:text-base text-green-100 leading-6">
-                  {/* NEW WORKFLOW: Pre-screening counseling → Screening outcome → Post-screening counseling → Diagnosis/Staging (if positive) → Treatment journey with adherence tracking → Treatment outcome */}
+                  Pre-screening counseling → Screening outcome → Post-screening counseling → Diagnosis/Staging (if positive) → Treatment journey with adherence tracking → Treatment outcome
                 </p>
 
                 <div className="mt-5 flex items-center gap-2 text-sm text-green-100">
@@ -393,12 +419,12 @@ export default function OutcomePage() {
           </div>
         </div>
 
-        {/* 2. SCREENING OUTCOME - MOVED UP (BEFORE DIAGNOSIS) */}
+        {/* 2. SCREENING OUTCOME */}
         <div className="rounded-3xl bg-white dark:bg-gray-800 shadow-lg border border-gray-100 dark:border-gray-700 overflow-hidden">
           <div className="border-b border-gray-100 dark:border-gray-700 px-5 py-4 sm:px-6 bg-purple-50/70 dark:bg-purple-900/20">
             <SectionTitle>2. Screening Outcome</SectionTitle>
             <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
-              {/* This now comes BEFORE diagnosis and staging */}
+              This comes before diagnosis and staging
             </p>
           </div>
 
@@ -425,6 +451,7 @@ export default function OutcomePage() {
                 value={form.screeningDate}
                 onChange={(e) => setField("screeningDate", e.target.value)}
               />
+              <HelperText>Defaults to today's date</HelperText>
             </Label>
           </div>
         </div>
@@ -434,7 +461,7 @@ export default function OutcomePage() {
           <div className="border-b border-gray-100 dark:border-gray-700 px-5 py-4 sm:px-6 bg-blue-50/70 dark:bg-blue-900/20">
             <SectionTitle>3. Post-Screening Counseling</SectionTitle>
             <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
-              {/* For both positive and negative results */}
+              For both positive and negative results
             </p>
           </div>
 
@@ -467,20 +494,20 @@ export default function OutcomePage() {
             <div className="border-b border-gray-100 dark:border-gray-700 px-5 py-4 sm:px-6 bg-green-50/70 dark:bg-green-900/20">
               <SectionTitle>4. Follow-up (For Negative Screening)</SectionTitle>
               <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
-                AUTOMATIC: System schedules 6-month follow-up
+                System auto-schedules 6-month follow-up
               </p>
             </div>
 
             <div className="px-5 py-6 sm:px-6 grid gap-5 md:grid-cols-2">
               <Label>
-                <span className="text-sm font-semibold">Next Follow-up Date (Automatic - 6 months)</span>
+                <span className="text-sm font-semibold">Next Follow-up Date</span>
                 <Input
                   className="mt-2 rounded-2xl h-12 shadow-sm"
                   type="date"
                   value={form.nextFollowUpDate}
                   onChange={(e) => setField("nextFollowUpDate", e.target.value)}
                 />
-                <HelperText>System auto-calculates 6 months from screening date</HelperText>
+                <HelperText>Auto-calculated as 6 months from screening date</HelperText>
               </Label>
 
               <Label>
@@ -504,9 +531,9 @@ export default function OutcomePage() {
           <>
             <div className="rounded-3xl bg-white dark:bg-gray-800 shadow-lg border border-gray-100 dark:border-gray-700 overflow-hidden">
               <div className="border-b border-gray-100 dark:border-gray-700 px-5 py-4 sm:px-6 bg-orange-50/70 dark:bg-orange-900/20">
-                <SectionTitle>5. Diagnosis & Staging (Only for Positive Screening)</SectionTitle>
+                <SectionTitle>5. Diagnosis & Staging</SectionTitle>
                 <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
-                  With comments/remarks field for staging details
+                  For positive screening results only
                 </p>
               </div>
 
@@ -534,7 +561,7 @@ export default function OutcomePage() {
                     <option value="prostate">Prostate</option>
                     <option value="colorectal">Colorectal</option>
                     <option value="liver">Liver</option>
-                    <option value="skin">Skin (NEW)</option>
+                    <option value="skin">Skin</option>
                   </Select>
                 </Label>
 
@@ -667,12 +694,12 @@ export default function OutcomePage() {
               </div>
             </div>
 
-            {/* 8. ADHERENCE TO TREATMENT SCHEDULE (BEFORE COMPLETION) */}
+            {/* 8. ADHERENCE TO TREATMENT SCHEDULE */}
             <div className="rounded-3xl bg-white dark:bg-gray-800 shadow-lg border border-gray-100 dark:border-gray-700 overflow-hidden">
               <div className="border-b border-gray-100 dark:border-gray-700 px-5 py-4 sm:px-6 bg-yellow-50/70 dark:bg-yellow-900/20">
-                <SectionTitle>8. Adherence to Treatment Schedule </SectionTitle>
+                <SectionTitle>8. Adherence to Treatment Schedule</SectionTitle>
                 <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
-                  {/* This comes BEFORE treatment completion status */}
+                  Track patient adherence before treatment completion
                 </p>
               </div>
 
@@ -685,10 +712,10 @@ export default function OutcomePage() {
                     onChange={(e) => setField("adherenceRating", e.target.value)}
                   >
                     <option value="">Select</option>
-                    <option value="excellent">Excellent (90% adherence)</option>
+                    <option value="excellent">Excellent (≥90% adherence)</option>
                     <option value="good">Good (75-90% adherence)</option>
                     <option value="fair">Fair (50-74% adherence)</option>
-                    <option value="poor">Poor (50% adherence)</option>
+                    <option value="poor">Poor (&lt;50% adherence)</option>
                   </Select>
                 </Label>
 
@@ -707,7 +734,7 @@ export default function OutcomePage() {
                 {parseInt(form.missedAppointments) > 0 && (
                   <>
                     <div>
-                      <span className="text-sm font-semibold block mb-3">Reasons for Missed Appointments (Select all that apply)</span>
+                      <span className="text-sm font-semibold block mb-3">Reasons for Missed Appointments</span>
                       <div className="grid gap-2 md:grid-cols-2">
                         {['financial', 'transportation', 'side_effects', 'feeling_better', 'lost_to_followup', 'other'].map((reason) => (
                           <Label key={reason} check>
@@ -723,7 +750,7 @@ export default function OutcomePage() {
                     </div>
 
                     <div>
-                      <span className="text-sm font-semibold block mb-3">Interventions Provided (Select all that apply)</span>
+                      <span className="text-sm font-semibold block mb-3">Interventions Provided</span>
                       <div className="grid gap-2 md:grid-cols-2">
                         {['counseling', 'financial_support', 'transportation_assistance', 'side_effect_management', 'other'].map((intervention) => (
                           <Label key={intervention} check>
@@ -810,7 +837,7 @@ export default function OutcomePage() {
               </div>
             </div>
 
-            {/* 10. TREATMENT OUTCOME (AFTER COMPLETION) */}
+            {/* 10. TREATMENT OUTCOME */}
             <div className="rounded-3xl bg-white dark:bg-gray-800 shadow-lg border border-gray-100 dark:border-gray-700 overflow-hidden">
               <div className="border-b border-gray-100 dark:border-gray-700 px-5 py-4 sm:px-6 bg-teal-50/70 dark:bg-teal-900/20">
                 <SectionTitle>10. Treatment Outcome</SectionTitle>

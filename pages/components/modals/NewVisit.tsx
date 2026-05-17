@@ -7,7 +7,7 @@ import api from "../../../lib/api";
 type Props = {
   isOpen: boolean;
   onClose: () => void;
-  clientId: number;
+  clientId: string;
   clientName: string;
   onVisitCreated: (visitId: number) => void;
   isFirstVisit?: boolean;

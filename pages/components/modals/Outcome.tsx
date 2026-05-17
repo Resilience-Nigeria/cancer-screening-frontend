@@ -38,7 +38,10 @@ export default function OutcomeModal({
   const [currentStep, setCurrentStep] = useState(1);
   const [submitting, setSubmitting] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [facilities, setFacilities] = useState<any[]>([]);
+  const [loadingFacilities, setLoadingFacilities] = useState(false);
 
+  // ✅ FIX: Auto-set screening date to today
   const [form, setForm] = useState({
     // Step 1: Pre-Screening Counseling
     preScreeningCounselingDate: "",
@@ -47,7 +50,7 @@ export default function OutcomeModal({
 
     // Step 2: Screening Outcome
     screeningResult: "",
-    screeningDate: "",
+    screeningDate: new Date().toISOString().split('T')[0], // ✅ Auto-set to today
 
     // Step 3: Post-Screening Counseling
     postScreeningCounselingDate: "",
@@ -101,7 +104,7 @@ export default function OutcomeModal({
         preScreeningConsent: existingOutcome.preScreeningConsent || existingOutcome.pre_screening_consent || "",
 
         screeningResult: existingOutcome.screeningResult || existingOutcome.screening_result || "",
-        screeningDate: existingOutcome.screeningDate || existingOutcome.screening_date || "",
+        screeningDate: existingOutcome.screeningDate || existingOutcome.screening_date || new Date().toISOString().split('T')[0], // ✅ Default to today if no existing date
 
         postScreeningCounselingDate: existingOutcome.postScreeningCounselingDate || existingOutcome.post_screening_counseling_date || "",
         postScreeningCounselor: existingOutcome.postScreeningCounselor || existingOutcome.post_screening_counselor || "",
@@ -140,7 +143,28 @@ export default function OutcomeModal({
     }
   }, [existingOutcome]);
 
-  // Auto-calculate follow-up date (6 months from screening date)
+  // ✅ Fetch facilities from API endpoint
+  useEffect(() => {
+    async function fetchFacilities() {
+      setLoadingFacilities(true);
+      try {
+        const response = await api.get('/facilities');
+        // Handle different possible response structures
+        const facilitiesData = response.data?.facilities || response.data?.data || response.data || [];
+        setFacilities(facilitiesData);
+      } catch (err) {
+        console.error('Error loading facilities:', err);
+        toast.error('Unable to load treatment facilities');
+        setFacilities([]);
+      } finally {
+        setLoadingFacilities(false);
+      }
+    }
+
+    fetchFacilities();
+  }, []);
+
+  // ✅ Auto-calculate follow-up date (6 months from screening date)
   useEffect(() => {
     if (form.screeningDate && form.screeningResult === "negative" && !form.nextFollowUpDate) {
       const screeningDate = new Date(form.screeningDate);
@@ -189,77 +213,18 @@ export default function OutcomeModal({
     setSubmitting(true);
 
     try {
-    //   const payload = {
-    //     ...form,
-    //     missedAppointments: form.missedAppointments ? parseInt(form.missedAppointments) : null,
-    //     cancerConfirmed: form.screeningResult === "positive" ? "yes" : "no",
-    //     linkageToTreatment: form.treatmentCommenced === "yes" ? "yes" : "no",
-    //     treatmentCompleted:
-    //       form.treatmentStatus === "completed"
-    //         ? "yes"
-    //         : form.treatmentStatus === "discontinued"
-    //         ? "no"
-    //         : "ongoing",
-    //   };
-
-    const payload = {
-  clientId,
-
-  // derived
-  cancerConfirmed: form.screeningResult === "positive" ? "yes" : "no",
-  linkageToTreatment: form.treatmentCommenced === "yes" ? "yes" : "no",
-  treatmentCompleted:
-    form.treatmentStatus === "completed"
-      ? "yes"
-      : form.treatmentStatus === "discontinued"
-      ? "no"
-      : "ongoing",
-
-  // 🔥 map EVERYTHING to snake_case
-  pre_screening_counseling_date: form.preScreeningCounselingDate || null,
-  pre_screening_counselor: form.preScreeningCounselor || null,
-  pre_screening_consent: form.preScreeningConsent || null,
-
-  screening_result: form.screeningResult || null,
-  screening_date: form.screeningDate || null,
-
-  post_screening_counseling_date: form.postScreeningCounselingDate || null,
-  post_screening_counselor: form.postScreeningCounselor || null,
-
-  next_follow_up_date: form.nextFollowUpDate || null,
-  follow_up_established: form.followUpEstablished || null,
-
-  diagnosis: form.diagnosis || null,
-  cancer_type: form.cancerType || null,
-  cancer_stage: form.cancerStage || null,
-  staging_comments: form.stagingComments || null,
-  diagnosis_date: form.diagnosisDate || null,
-
-  treatment_commenced: form.treatmentCommenced || null,
-  treatment_commencement_date: form.treatmentCommencementDate || null,
-  treatment_delay_reason: form.treatmentDelayReason || null,
-
-  treatment_type: form.treatmentType || null,
-  treatment_facility: form.treatmentFacility || null,
-
-  adherence_rating: form.adherenceRating || null,
-  missed_appointments: form.missedAppointments
-    ? parseInt(form.missedAppointments)
-    : null,
-
-  missed_appointment_reasons: form.missedAppointmentReasons,
-  adherence_interventions: form.adherenceInterventions,
-
-  treatment_status: form.treatmentStatus || null,
-  treatment_completion_date: form.treatmentCompletionDate || null,
-  discontinuation_reason: form.discontinuationReason || null,
-  treatment_duration: form.treatmentDuration || null,
-
-  clinical_outcome: form.clinicalOutcome || null,
-  outcome_assessment_date: form.outcomeAssessmentDate || null,
-
-  remarks: form.remarks || null,
-};
+      const payload = {
+        ...form,
+        missedAppointments: form.missedAppointments ? parseInt(form.missedAppointments) : null,
+        cancerConfirmed: form.screeningResult === "positive" ? "yes" : "no",
+        linkageToTreatment: form.treatmentCommenced === "yes" ? "yes" : "no",
+        treatmentCompleted:
+          form.treatmentStatus === "completed"
+            ? "yes"
+            : form.treatmentStatus === "discontinued"
+            ? "no"
+            : "ongoing",
+      };
 
       await api.put(`/clients/${clientId}/outcome`, payload);
       toast.success("Outcome saved successfully.");
@@ -363,6 +328,7 @@ export default function OutcomeModal({
                   value={form.screeningDate}
                   onChange={(e) => setField("screeningDate", e.target.value)}
                 />
+                <HelperText>Defaults to today's date</HelperText>
               </Label>
             </div>
           </div>
@@ -604,6 +570,7 @@ export default function OutcomeModal({
                     <option value="surgery">Surgery</option>
                     <option value="chemotherapy">Chemotherapy</option>
                     <option value="radiotherapy">Radiotherapy</option>
+                    <option value="brachytherapy">Brachytherapy</option>
                     <option value="hormonal">Hormonal Therapy</option>
                     <option value="immunotherapy">Immunotherapy</option>
                     <option value="combination">Combination Therapy</option>
@@ -613,12 +580,27 @@ export default function OutcomeModal({
 
                 <Label>
                   <span className="text-sm font-semibold">Treatment Facility</span>
-                  <Input
+                  <Select
                     className="mt-2 rounded-2xl h-12 shadow-sm"
                     value={form.treatmentFacility}
                     onChange={(e) => setField("treatmentFacility", e.target.value)}
-                    placeholder="Enter facility name"
-                  />
+                    disabled={loadingFacilities}
+                  >
+                    <option value="">
+                      {loadingFacilities ? "Loading facilities..." : "Select facility"}
+                    </option>
+                    {facilities.map((facility) => (
+                      <option 
+                        key={facility.id || facility.facilityId || facility.name} 
+                        value={facility.name || facility.facilityName}
+                      >
+                        {facility.name || facility.facilityName}
+                      </option>
+                    ))}
+                  </Select>
+                  {loadingFacilities && (
+                    <HelperText>Loading available facilities...</HelperText>
+                  )}
                 </Label>
               </div>
             </div>
