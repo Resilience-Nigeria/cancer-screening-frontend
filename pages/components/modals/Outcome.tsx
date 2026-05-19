@@ -143,7 +143,7 @@ export default function OutcomeModal({
     }
   }, [existingOutcome]);
 
-  // ✅ Fetch facilities from API endpoint
+  // ✅ Fetch facilities from API endpoint (filter to treatment centers only)
   useEffect(() => {
     async function fetchFacilities() {
       setLoadingFacilities(true);
@@ -151,7 +151,13 @@ export default function OutcomeModal({
         const response = await api.get('/facilities');
         // Handle different possible response structures
         const facilitiesData = response.data?.facilities || response.data?.data || response.data || [];
-        setFacilities(facilitiesData);
+        
+        // ✅ Filter to show only treatment centers
+        const treatmentFacilities = facilitiesData.filter((facility: any) => 
+          facility.isTreatmentCenter === true
+        );
+        
+        setFacilities(treatmentFacilities);
       } catch (err) {
         console.error('Error loading facilities:', err);
         toast.error('Unable to load treatment facilities');
@@ -587,19 +593,28 @@ export default function OutcomeModal({
                     disabled={loadingFacilities}
                   >
                     <option value="">
-                      {loadingFacilities ? "Loading facilities..." : "Select facility"}
+                      {loadingFacilities 
+                        ? "Loading treatment facilities..." 
+                        : facilities.length === 0 
+                        ? "No treatment facilities available"
+                        : "Select treatment facility"}
                     </option>
                     {facilities.map((facility) => (
                       <option 
-                        key={facility.id || facility.facilityId || facility.name} 
-                        value={facility.name || facility.facilityName}
+                        key={facility.id || facility.facilityId} 
+                        value={facility.facilityName || facility.name}
                       >
-                        {facility.name || facility.facilityName}
+                        {facility.facilityName || facility.name} - {facility.facilityCode || ''}
                       </option>
                     ))}
                   </Select>
+                  {facilities.length === 0 && !loadingFacilities && (
+                    <HelperText className="text-orange-600">
+                      No treatment facilities found. Only facilities marked as treatment centers are shown.
+                    </HelperText>
+                  )}
                   {loadingFacilities && (
-                    <HelperText>Loading available facilities...</HelperText>
+                    <HelperText>Loading available treatment facilities...</HelperText>
                   )}
                 </Label>
               </div>

@@ -18,7 +18,7 @@ interface IRoute {
   routes?: IRoute[];
   checkActive?: (pathname: string, route: IRoute) => boolean;
   exact?: boolean;
-  roles?: string[]; // Add roles field - if undefined, visible to all
+  roles?: Array<'SUPER_ADMIN' | 'NICRAT_STAFF' | 'HOSPITAL_ADMIN' | 'DATA_CLERK'>;
 }
 
 export function routeIsActive(pathname: string, route: IRoute): boolean {
@@ -73,46 +73,20 @@ const routes: IRoute[] = [
     path: "/ncsr/users",
     icon: UserCog,
     name: "User Management",
-    roles: ["ADMIN", "SUPER_ADMIN"], // Only admins can see this
+    roles: ["SUPER_ADMIN", "HOSPITAL_ADMIN"], // Can create users
   },
   {
     path: "/ncsr/facilities",
     icon: Building2,
     name: "Facilities",
-    roles: ["ADMIN", "SUPER_ADMIN"], // Only admins can see this
+    roles: ["SUPER_ADMIN"], // Only super admin manages facilities
   },
   {
     path: "/ncsr/settings",
     icon: Settings,
     name: "Settings",
-    roles: ["ADMIN", "SUPER_ADMIN"], // Only admins can see this
+    roles: ["SUPER_ADMIN", "HOSPITAL_ADMIN"], // Admins can change settings
   },
-  
-  // Example: Submenu with role-based items
-  // {
-  //   icon: Settings,
-  //   name: "Administration",
-  //   routes: [
-  //     {
-  //       path: "/ncsr/users",
-  //       name: "Users",
-  //       icon: UserCog,
-  //       roles: ["admin", "super_admin"],
-  //     },
-  //     {
-  //       path: "/ncsr/facilities",
-  //       name: "Facilities",
-  //       icon: Building2,
-  //       roles: ["admin", "super_admin"],
-  //     },
-  //     {
-  //       path: "/ncsr/settings",
-  //       name: "Settings",
-  //       icon: Settings,
-  //       roles: ["admin"],
-  //     },
-  //   ],
-  // },
 ];
 
 export type { IRoute };

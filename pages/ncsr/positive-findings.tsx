@@ -158,7 +158,7 @@ export default function PositiveFindingsPage() {
                         {finding.clientName}
                       </h3>
                       <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                        {finding.screeningId}
+                        {finding.clientId}
                       </p>
                     </div>
                     <Badge type="danger">Confirmed</Badge>
@@ -233,7 +233,7 @@ export default function PositiveFindingsPage() {
                             {finding.clientName}
                           </p>
                           <p className="text-xs text-gray-500 dark:text-gray-400">
-                            {finding.screeningId}
+                            {finding.clientId}
                           </p>
                         </div>
                       </td>

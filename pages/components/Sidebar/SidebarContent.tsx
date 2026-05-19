@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useContext, useState, useMemo, useEffect } from "react";
-import { LogOut } from "lucide-react";
+import { LogOut, Shield, Database, Building2, Users } from "lucide-react";
 import SidebarContext from "../../../context/SidebarContext";
 import routes, { IRoute, routeIsActive } from "../../../routes/sidebar";
 import SidebarSubmenu from "./SidebarSubmenu";
@@ -30,7 +30,8 @@ export default function SidebarContent({ linkClicked }: SidebarContentProps) {
     setUser(userData);
   }, []);
 
-  const userRole = user?.role;
+  // Get role name from user_role relationship (new RBAC) or fallback to old role field
+  const userRoleName = user?.user_role?.roleName || user?.role;
 
   // Filter routes based on user role
   const visibleRoutes = useMemo(() => {
@@ -43,28 +44,70 @@ export default function SidebarContent({ linkClicked }: SidebarContentProps) {
       }
 
       // If user has no role, only show routes without role restrictions
-      if (!userRole) {
+      if (!userRoleName) {
         return false;
       }
 
       // Check if user's role is in the allowed roles
-      return route.roles.includes(userRole);
+      return route.roles.includes(userRoleName);
     });
-  }, [userRole]);
+  }, [userRoleName]);
+
+  // Get role display name
+  function getRoleDisplayName(): string {
+    if (!userRoleName) return 'User';
+    
+    const roleNames: Record<string, string> = {
+      'SUPER_ADMIN': 'Super Administrator',
+      'NICRAT_STAFF': 'NICRAT Staff',
+      'HOSPITAL_ADMIN': 'Hospital Administrator',
+      'DATA_CLERK': 'Data Clerk',
+    };
+    
+    return roleNames[userRoleName] || userRoleName.replace(/_/g, ' ');
+  }
+
+  // Get role icon
+  function getRoleIcon() {
+    if (!userRoleName) return null;
+    
+    const icons: Record<string, JSX.Element> = {
+      'SUPER_ADMIN': <Shield className="w-3.5 h-3.5" />,
+      'NICRAT_STAFF': <Database className="w-3.5 h-3.5" />,
+      'HOSPITAL_ADMIN': <Building2 className="w-3.5 h-3.5" />,
+      'DATA_CLERK': <Users className="w-3.5 h-3.5" />,
+    };
+    
+    return icons[userRoleName];
+  }
+
+  // Get role badge color
+  function getRoleBadgeColor(): string {
+    if (!userRoleName) return 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300';
+    
+    const colors: Record<string, string> = {
+      'SUPER_ADMIN': 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400',
+      'NICRAT_STAFF': 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
+      'HOSPITAL_ADMIN': 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
+      'DATA_CLERK': 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400',
+    };
+    
+    return colors[userRoleName] || 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300';
+  }
+
+  // Check if user has national access
+  function hasNationalAccess(): boolean {
+    return userRoleName === 'SUPER_ADMIN' || userRoleName === 'NICRAT_STAFF';
+  }
 
   async function handleLogout() {
     if (isLoggingOut) return;
-
     setIsLoggingOut(true);
-
-    // Call the reusable logout utility
-    // This handles backend logout, clearing auth data, and redirect
     await logout();
   }
 
   function handleLinkClick(listEl: HTMLElement | null) {
     saveScroll(listEl);
-
     if (linkClicked) {
       linkClicked();
     } else {
@@ -94,18 +137,34 @@ export default function SidebarContent({ linkClicked }: SidebarContentProps) {
           />
         </Link>
 
-        {/* User Info - Only render after mount to prevent hydration errors */}
+        {/* Enhanced User Info with Role Badge */}
         {isMounted && user && (
           <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+            {/* Facility Name or Organization Name
             <p className="text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase">
-              {user.facility?.facilityName || "NCSR"}
+              {hasNationalAccess() ? "NCSR - National Cancer Screening Register" : (user.facility?.facilityName || "NCSR")}
             </p>
+          
             <p className="text-sm font-medium text-gray-800 dark:text-gray-200 mt-1">
               {user.firstName} {user.lastName}
-            </p>
-            <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 capitalize">
-              {user.role?.replace(/_/g, ' ') || 'User'}
-            </p>
+            </p> */}
+            
+            {/* Role Badge with Icon */}
+            <div className="mt-2 flex items-center gap-2">
+              <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold ${getRoleBadgeColor()}`}>
+                {getRoleIcon()}
+                {getRoleDisplayName()}
+              </span>
+            </div>
+
+            {/* National Access Indicator */}
+            {hasNationalAccess() && (
+              <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold`}>
+              <p className="text-xs text-green-600 dark:text-green-400 mt-2 font-medium">
+                🌍 National Access
+              </p>
+              </span>
+            )}
           </div>
         )}
 
@@ -114,10 +173,20 @@ export default function SidebarContent({ linkClicked }: SidebarContentProps) {
           {visibleRoutes.map((route) => {
             // Handle submenu routes
             if (route.routes && route.routes.length > 0) {
+              // Filter submenu routes by role as well
+              const visibleSubRoutes = route.routes.filter((subRoute) => {
+                if (!subRoute.roles || subRoute.roles.length === 0) return true;
+                if (!userRoleName) return false;
+                return subRoute.roles.includes(userRoleName);
+              });
+
+              // Don't show parent if no child routes are visible
+              if (visibleSubRoutes.length === 0) return null;
+
               return (
                 <SidebarSubmenu
                   key={route.name}
-                  route={route}
+                  route={{ ...route, routes: visibleSubRoutes }}
                   linkClicked={linkClicked || closeSidebar}
                 />
               );

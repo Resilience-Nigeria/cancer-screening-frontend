@@ -9,6 +9,7 @@ import ChartLegend from "../components/Chart/ChartLegend";
 import PageTitle from "../components/Typography/PageTitle";
 import Layout from "../containers/Layout";
 import api from "../../lib/api";
+import { getUser } from "../../lib/auth";
 
 import {
   TableBody,
@@ -45,6 +46,9 @@ import {
   CalendarDays,
   FileText,
   Loader2,
+  Filter,
+  X,
+  Globe,
 } from "lucide-react";
 
 type ScreeningActivity = {
@@ -74,6 +78,12 @@ type MonthlyTrendData = {
   month: string;
   screenings: number;
   referrals: number;
+};
+
+type Facility = {
+  facilityId: string;
+  facilityName: string;
+  facilityCode: string;
 };
 
 type StatCardProps = {
@@ -222,6 +232,11 @@ function ActivityCard({
 
 function Dashboard() {
   const router = useRouter();
+  const currentUser = getUser();
+  
+  // Check if user has national access (SUPER_ADMIN or NICRAT_STAFF)
+  const userRole = currentUser?.user_role?.roleName || currentUser?.role;
+  const hasNationalAccess = ['SUPER_ADMIN', 'NICRAT_STAFF'].includes(userRole);
 
   Chart.register(
     ArcElement,
@@ -252,12 +267,49 @@ function Dashboard() {
   const [page, setPage] = useState(1);
   const [totalResults, setTotalResults] = useState(0);
 
+  // Filter states (only for national users)
+  const [facilities, setFacilities] = useState<Facility[]>([]);
+  const [showFilters, setShowFilters] = useState(false);
+  const [selectedFacility, setSelectedFacility] = useState<string>("all");
+  const [dateFrom, setDateFrom] = useState<string>("");
+  const [dateTo, setDateTo] = useState<string>("");
+  const [filtersApplied, setFiltersApplied] = useState(false);
+
   const resultsPerPage = 6;
+
+  // Fetch facilities for national users
+  async function fetchFacilities() {
+    if (!hasNationalAccess) return;
+    
+    try {
+      const { data } = await api.get("/facilities");
+      if (data.status) {
+        setFacilities(data.facilities || data.data || []);
+      }
+    } catch (err) {
+      console.error("Error fetching facilities:", err);
+    }
+  }
 
   async function fetchDashboardData() {
     setLoading(true);
     try {
-      const statsResponse = await api.get("/dashboard/stats");
+      // Build query params with filters
+      const params: any = {};
+      
+      if (hasNationalAccess) {
+        if (selectedFacility !== "all") {
+          params.facilityId = selectedFacility;
+        }
+        if (dateFrom) {
+          params.dateFrom = dateFrom;
+        }
+        if (dateTo) {
+          params.dateTo = dateTo;
+        }
+      }
+
+      const statsResponse = await api.get("/dashboard/stats", { params });
       const statsData = statsResponse.data?.stats || statsResponse.data;
 
       setStats({
@@ -291,7 +343,21 @@ function Dashboard() {
 
   async function fetchMonthlyTrend() {
     try {
-      const trendResponse = await api.get("/dashboard/monthly-trends");
+      const params: any = {};
+      
+      if (hasNationalAccess) {
+        if (selectedFacility !== "all") {
+          params.facilityId = selectedFacility;
+        }
+        if (dateFrom) {
+          params.dateFrom = dateFrom;
+        }
+        if (dateTo) {
+          params.dateTo = dateTo;
+        }
+      }
+
+      const trendResponse = await api.get("/dashboard/monthly-trends", { params });
       const trendData = trendResponse.data?.data || trendResponse.data?.trend || [];
 
       const mappedTrend: MonthlyTrendData[] = trendData.map((item: any) => ({
@@ -303,15 +369,26 @@ function Dashboard() {
       setMonthlyTrend(mappedTrend);
     } catch (err: any) {
       console.error("Error fetching monthly trend:", err);
-      // Don't show error toast for this - it's not critical
     }
   }
 
   async function fetchRecentActivity() {
     try {
-      const activitiesResponse = await api.get("/dashboard/recent-activity", {
-        params: { page, limit: resultsPerPage },
-      });
+      const params: any = { page, limit: resultsPerPage };
+      
+      if (hasNationalAccess) {
+        if (selectedFacility !== "all") {
+          params.facilityId = selectedFacility;
+        }
+        if (dateFrom) {
+          params.dateFrom = dateFrom;
+        }
+        if (dateTo) {
+          params.dateTo = dateTo;
+        }
+      }
+
+      const activitiesResponse = await api.get("/dashboard/recent-activity", { params });
 
       const rawActivities =
         activitiesResponse.data?.data ||
@@ -332,7 +409,7 @@ function Dashboard() {
           screeningId:
             item.screeningId ??
             item.screening_id ??
-            item.client?.clientId ??
+            item.clientId ??
             item.client?.client_id ??
             "—",
           screeningType: item.screeningType ?? item.screening_type ?? "General Screening",
@@ -357,7 +434,37 @@ function Dashboard() {
     }
   }
 
+  // Clear filters
+  function clearFilters() {
+    setSelectedFacility("all");
+    setDateFrom("");
+    setDateTo("");
+    setFiltersApplied(false);
+    setPage(1);
+  }
+
+  // Auto-apply filters when they change
   useEffect(() => {
+    if (!hasNationalAccess) return;
+    
+    // Update filters applied status
+    const hasActiveFilters = 
+      selectedFacility !== "all" || dateFrom !== "" || dateTo !== "";
+    setFiltersApplied(hasActiveFilters);
+    
+    // Reset to first page when filters change
+    setPage(1);
+    
+    // Fetch data with new filters
+    fetchDashboardData();
+    fetchMonthlyTrend();
+    fetchRecentActivity();
+  }, [selectedFacility, dateFrom, dateTo]);
+
+  useEffect(() => {
+    if (hasNationalAccess) {
+      fetchFacilities();
+    }
     fetchDashboardData();
     fetchMonthlyTrend();
   }, []);
@@ -446,7 +553,6 @@ function Dashboard() {
     },
   };
 
-  // Use dynamic data from backend or fallback to empty arrays
   const monthlyTrendData = {
     data: {
       labels: monthlyTrend.length > 0 
@@ -536,24 +642,137 @@ function Dashboard() {
 
         <div className="mt-4 rounded-2xl bg-gradient-to-r from-green-800 via-green-700 to-green-600 text-white shadow-lg p-4 sm:p-6 md:p-8">
           <div className="max-w-3xl">
-            <p className="inline-flex items-center px-3 py-1 text-[10px] sm:text-xs font-semibold tracking-wide uppercase rounded-full bg-white/15 mb-3">
-              National program overview
-            </p>
+            <div className="flex items-center gap-2 mb-3">
+              <p className="inline-flex items-center px-3 py-1 text-[10px] sm:text-xs font-semibold tracking-wide uppercase rounded-full bg-white/15">
+                {hasNationalAccess && (
+                  <Globe className="w-3 h-3 mr-1.5" />
+                )}
+                {hasNationalAccess ? "National program overview" : "Facility overview"}
+              </p>
+              
+              {filtersApplied && (
+                <span className="inline-flex items-center px-2 py-1 text-xs font-medium bg-white/20 rounded-full">
+                  Filtered
+                </span>
+              )}
+            </div>
 
             <h2 className="text-lg sm:text-2xl md:text-3xl font-bold leading-tight">
               Monitor screening activity, referrals, and follow-up outcomes
-              across facilities
+              {hasNationalAccess ? " across facilities" : ""}
             </h2>
 
             <p className="mt-3 text-sm sm:text-base text-green-100 leading-6">
               Track client registration, screening module performance, referral
-              completion, and recent activity from one central operational
-              dashboard.
+              completion, and recent activity from{" "}
+              {hasNationalAccess ? "one central operational dashboard" : "your facility dashboard"}.
             </p>
           </div>
         </div>
+
+        {/* Filters Section - Only for National Users */}
+        {hasNationalAccess && (
+          <div className="mt-4">
+            <button
+              onClick={() => setShowFilters(!showFilters)}
+              className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-750 transition-colors shadow-sm"
+            >
+              <Filter className="w-4 h-4" />
+              <span className="font-medium">Filters</span>
+              {filtersApplied && (
+                <span className="ml-1 px-2 py-0.5 text-xs bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300 rounded-full">
+                  Active
+                </span>
+              )}
+            </button>
+
+            {showFilters && (
+              <div className="mt-4 p-6 rounded-2xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 shadow-lg">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+                    Filter Dashboard Data
+                  </h3>
+                  <button
+                    onClick={() => setShowFilters(false)}
+                    className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                  >
+                    <X className="w-5 h-5 text-gray-500" />
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                  {/* Facility Filter */}
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
+                      Facility
+                    </label>
+                    <select
+                      value={selectedFacility}
+                      onChange={(e) => setSelectedFacility(e.target.value)}
+                      className="w-full px-4 py-2.5 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                    >
+                      <option value="all">All Facilities</option>
+                      {facilities.map((facility) => (
+                        <option key={facility.facilityId} value={facility.facilityId}>
+                          {facility.facilityName}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Date From */}
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
+                      From Date
+                    </label>
+                    <input
+                      type="date"
+                      value={dateFrom}
+                      onChange={(e) => setDateFrom(e.target.value)}
+                      className="w-full px-4 py-2.5 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                    />
+                  </div>
+
+                  {/* Date To */}
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
+                      To Date
+                    </label>
+                    <input
+                      type="date"
+                      value={dateTo}
+                      onChange={(e) => setDateTo(e.target.value)}
+                      className="w-full px-4 py-2.5 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                    />
+                  </div>
+                </div>
+
+                {/* Clear Filters Button and Help Text */}
+                {filtersApplied ? (
+                  <div className="flex items-center gap-3">
+                    <button
+                      onClick={clearFilters}
+                      className="flex items-center gap-2 px-6 py-2.5 rounded-xl border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors font-medium"
+                    >
+                      <X className="w-4 h-4" />
+                      Clear All Filters
+                    </button>
+                    <p className="text-sm text-gray-600 dark:text-gray-400">
+                      Filters are applied automatically
+                    </p>
+                  </div>
+                ) : (
+                  <p className="text-sm text-gray-500 dark:text-gray-400 italic">
+                    Select filters above - they will be applied automatically
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
+      {/* Rest of the dashboard remains the same - Stats cards, Module cards, Charts, etc. */}
       <div className="grid gap-4 sm:gap-5 mb-6 sm:mb-8 grid-cols-1 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard
           title="Total Registered Clients"
@@ -604,7 +823,7 @@ function Dashboard() {
         />
       </div>
 
-      {/* Updated Module Cards Grid - Now shows all 5 screening types plus positive findings */}
+      {/* Module Cards Grid */}
       <div className="grid gap-4 sm:gap-5 mb-6 sm:mb-8 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
         <ModuleCard
           title="Cervical Screening"
@@ -651,7 +870,7 @@ function Dashboard() {
         />
       </div>
 
-      {/* Recent Activity section */}
+      {/* Recent Activity section - same as before */}
       <div className="mb-6 sm:mb-8">
         <PageTitle>Recent Screening Activity</PageTitle>
 
@@ -770,6 +989,7 @@ function Dashboard() {
         )}
       </div>
 
+      {/* Analytics & Trends - same as before */}
       <PageTitle>Analytics & Trends</PageTitle>
 
       <div className="grid grid-cols-1 gap-6 mb-8 xl:grid-cols-2">

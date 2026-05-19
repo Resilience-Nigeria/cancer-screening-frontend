@@ -18,6 +18,9 @@ import {
   X,
   Loader2,
   AlertCircle,
+  Stethoscope,
+  Hospital,
+  CheckCircle2,
 } from "lucide-react";
 import api from "../../lib/api";
 import Layout from "../containers/Layout";
@@ -34,6 +37,10 @@ interface Facility {
   activeUsers: number;
   totalScreenings: number;
   status: "active" | "inactive";
+  isScreeningCenter: boolean;
+  isTreatmentCenter: boolean;
+  facilityTypes: string;
+  facilityTypesArray: string[];
 }
 
 interface Stats {
@@ -41,6 +48,9 @@ interface Stats {
   active: number;
   inactive: number;
   totalUsers: number;
+  screeningCenters: number;
+  treatmentCenters: number;
+  bothTypes: number;
 }
 
 interface FormData {
@@ -52,6 +62,8 @@ interface FormData {
   phoneNumber: string;
   email: string;
   status: "active" | "inactive";
+  isScreeningCenter: boolean;
+  isTreatmentCenter: boolean;
 }
 
 export default function FacilitiesManagementPage() {
@@ -62,12 +74,16 @@ export default function FacilitiesManagementPage() {
     active: 0,
     inactive: 0,
     totalUsers: 0,
+    screeningCenters: 0,
+    treatmentCenters: 0,
+    bothTypes: 0,
   });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [filterState, setFilterState] = useState<string>("all");
   const [filterStatus, setFilterStatus] = useState<string>("all");
+  const [filterType, setFilterType] = useState<string>("all");
   const [showFilters, setShowFilters] = useState(false);
   const [selectedFacility, setSelectedFacility] = useState<Facility | null>(null);
   const [showModal, setShowModal] = useState(false);
@@ -82,6 +98,8 @@ export default function FacilitiesManagementPage() {
     phoneNumber: "",
     email: "",
     status: "active",
+    isScreeningCenter: true,
+    isTreatmentCenter: false,
   });
 
   // Fetch facilities and states on mount
@@ -133,9 +151,15 @@ export default function FacilitiesManagementPage() {
       const matchesStatus =
         filterStatus === "all" || facility.status === filterStatus;
 
-      return matchesSearch && matchesState && matchesStatus;
+      const matchesType =
+        filterType === "all" ||
+        (filterType === "screening" && facility.isScreeningCenter) ||
+        (filterType === "treatment" && facility.isTreatmentCenter) ||
+        (filterType === "both" && facility.isScreeningCenter && facility.isTreatmentCenter);
+
+      return matchesSearch && matchesState && matchesStatus && matchesType;
     });
-  }, [facilities, searchQuery, filterState, filterStatus]);
+  }, [facilities, searchQuery, filterState, filterStatus, filterType]);
 
   function openModal(mode: "view" | "add" | "edit", facility?: Facility) {
     setModalMode(mode);
@@ -151,6 +175,8 @@ export default function FacilitiesManagementPage() {
         phoneNumber: "",
         email: "",
         status: "active",
+        isScreeningCenter: true,
+        isTreatmentCenter: false,
       });
     } else if (facility) {
       setFormData({
@@ -162,6 +188,8 @@ export default function FacilitiesManagementPage() {
         phoneNumber: facility.phoneNumber,
         email: facility.email,
         status: facility.status,
+        isScreeningCenter: facility.isScreeningCenter,
+        isTreatmentCenter: facility.isTreatmentCenter,
       });
     }
     
@@ -176,6 +204,13 @@ export default function FacilitiesManagementPage() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    
+    // Validate at least one type is selected
+    if (!formData.isScreeningCenter && !formData.isTreatmentCenter) {
+      alert("Please select at least one facility type");
+      return;
+    }
+
     setSubmitting(true);
 
     try {
@@ -264,7 +299,7 @@ export default function FacilitiesManagementPage() {
       </div>
 
       {/* Stats Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7 gap-4 mb-8">
         <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 border border-gray-200 dark:border-gray-700 shadow-sm hover:shadow-md transition-shadow">
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center justify-center w-10 h-10 rounded-xl bg-blue-100 dark:bg-blue-900/30">
@@ -320,6 +355,48 @@ export default function FacilitiesManagementPage() {
             Total Active Users
           </p>
         </div>
+
+        <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 border border-gray-200 dark:border-gray-700 shadow-sm hover:shadow-md transition-shadow">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center justify-center w-10 h-10 rounded-xl bg-teal-100 dark:bg-teal-900/30">
+              <Stethoscope className="w-5 h-5 text-teal-600 dark:text-teal-400" />
+            </div>
+            <span className="text-2xl font-bold text-gray-900 dark:text-white">
+              {stats.screeningCenters}
+            </span>
+          </div>
+          <p className="text-sm font-medium text-gray-600 dark:text-gray-400">
+            Screening Centers
+          </p>
+        </div>
+
+        <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 border border-gray-200 dark:border-gray-700 shadow-sm hover:shadow-md transition-shadow">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center justify-center w-10 h-10 rounded-xl bg-red-100 dark:bg-red-900/30">
+              <Hospital className="w-5 h-5 text-red-600 dark:text-red-400" />
+            </div>
+            <span className="text-2xl font-bold text-gray-900 dark:text-white">
+              {stats.treatmentCenters}
+            </span>
+          </div>
+          <p className="text-sm font-medium text-gray-600 dark:text-gray-400">
+            Treatment Centers
+          </p>
+        </div>
+
+        <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 border border-gray-200 dark:border-gray-700 shadow-sm hover:shadow-md transition-shadow">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center justify-center w-10 h-10 rounded-xl bg-indigo-100 dark:bg-indigo-900/30">
+              <CheckCircle2 className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
+            </div>
+            <span className="text-2xl font-bold text-gray-900 dark:text-white">
+              {stats.bothTypes}
+            </span>
+          </div>
+          <p className="text-sm font-medium text-gray-600 dark:text-gray-400">
+            Both Types
+          </p>
+        </div>
       </div>
 
       {/* Search and Filters */}
@@ -365,7 +442,7 @@ export default function FacilitiesManagementPage() {
 
         {/* Expanded Filters */}
         {showFilters && (
-          <div className="mt-6 pt-6 border-t border-gray-200 dark:border-gray-700 grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="mt-6 pt-6 border-t border-gray-200 dark:border-gray-700 grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
               <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
                 State
@@ -396,6 +473,22 @@ export default function FacilitiesManagementPage() {
                 <option value="all">All Status</option>
                 <option value="active">Active</option>
                 <option value="inactive">Inactive</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
+                Facility Type
+              </label>
+              <select
+                value={filterType}
+                onChange={(e) => setFilterType(e.target.value)}
+                className="w-full px-4 py-2.5 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-green-500 focus:border-transparent"
+              >
+                <option value="all">All Types</option>
+                <option value="screening">Screening Center Only</option>
+                <option value="treatment">Treatment Center Only</option>
+                <option value="both">Both Types</option>
               </select>
             </div>
           </div>
@@ -431,6 +524,22 @@ export default function FacilitiesManagementPage() {
               >
                 {facility.status === "active" ? "Active" : "Inactive"}
               </span>
+            </div>
+
+            {/* Facility Types */}
+            <div className="flex flex-wrap gap-2 mb-4">
+              {facility.isScreeningCenter && (
+                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-400">
+                  <Stethoscope className="w-3 h-3" />
+                  Screening
+                </span>
+              )}
+              {facility.isTreatmentCenter && (
+                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400">
+                  <Hospital className="w-3 h-3" />
+                  Treatment
+                </span>
+              )}
             </div>
 
             {/* Location */}
@@ -524,6 +633,7 @@ export default function FacilitiesManagementPage() {
               setSearchQuery("");
               setFilterState("all");
               setFilterStatus("all");
+              setFilterType("all");
             }}
             className="px-6 py-2.5 rounded-xl bg-green-600 text-white hover:bg-green-700 transition-colors font-medium"
           >
@@ -564,6 +674,27 @@ export default function FacilitiesManagementPage() {
                     <p className="text-sm font-mono text-gray-500 dark:text-gray-400">
                       {selectedFacility.facilityCode}
                     </p>
+                  </div>
+
+                  {/* Facility Types */}
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
+                      Facility Types
+                    </label>
+                    <div className="flex flex-wrap gap-2">
+                      {selectedFacility.isScreeningCenter && (
+                        <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-400">
+                          <Stethoscope className="w-4 h-4" />
+                          Screening Center
+                        </span>
+                      )}
+                      {selectedFacility.isTreatmentCenter && (
+                        <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400">
+                          <Hospital className="w-4 h-4" />
+                          Treatment Center
+                        </span>
+                      )}
+                    </div>
                   </div>
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -737,6 +868,49 @@ export default function FacilitiesManagementPage() {
                       />
                     </div>
 
+                    {/* Facility Types */}
+                    <div className="md:col-span-2">
+                      <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">
+                        Facility Type(s) * <span className="text-xs font-normal text-gray-500">(Select at least one)</span>
+                      </label>
+                      <div className="space-y-3">
+                        <label className="flex items-center gap-3 p-4 border border-gray-300 dark:border-gray-600 rounded-xl cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
+                          <input
+                            type="checkbox"
+                            checked={formData.isScreeningCenter}
+                            onChange={(e) => setFormData({ ...formData, isScreeningCenter: e.target.checked })}
+                            className="w-5 h-5 text-green-600 border-gray-300 rounded focus:ring-green-500 focus:ring-2"
+                          />
+                          <div className="flex items-center gap-2">
+                            <Stethoscope className="w-5 h-5 text-teal-600" />
+                            <span className="font-medium text-gray-900 dark:text-white">
+                              Screening Center
+                            </span>
+                          </div>
+                        </label>
+
+                        <label className="flex items-center gap-3 p-4 border border-gray-300 dark:border-gray-600 rounded-xl cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
+                          <input
+                            type="checkbox"
+                            checked={formData.isTreatmentCenter}
+                            onChange={(e) => setFormData({ ...formData, isTreatmentCenter: e.target.checked })}
+                            className="w-5 h-5 text-green-600 border-gray-300 rounded focus:ring-green-500 focus:ring-2"
+                          />
+                          <div className="flex items-center gap-2">
+                            <Hospital className="w-5 h-5 text-red-600" />
+                            <span className="font-medium text-gray-900 dark:text-white">
+                              Treatment Center
+                            </span>
+                          </div>
+                        </label>
+                      </div>
+                      {!formData.isScreeningCenter && !formData.isTreatmentCenter && (
+                        <p className="mt-2 text-sm text-red-600 dark:text-red-400">
+                          Please select at least one facility type
+                        </p>
+                      )}
+                    </div>
+
                     <div className="md:col-span-2">
                       <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
                         Status
@@ -764,8 +938,8 @@ export default function FacilitiesManagementPage() {
                     </button>
                     <button
                       type="submit"
-                      disabled={submitting}
-                      className="flex items-center gap-2 px-6 py-2.5 rounded-xl bg-green-600 text-white hover:bg-green-700 transition-colors font-semibold disabled:opacity-50"
+                      disabled={submitting || (!formData.isScreeningCenter && !formData.isTreatmentCenter)}
+                      className="flex items-center gap-2 px-6 py-2.5 rounded-xl bg-green-600 text-white hover:bg-green-700 transition-colors font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
                       {submitting ? "Saving..." : modalMode === "add" ? "Add Facility" : "Save Changes"}

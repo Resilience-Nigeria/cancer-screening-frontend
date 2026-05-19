@@ -18,16 +18,17 @@ import {
   X,
   Loader2,
   AlertCircle,
-  EyeOff,
-  MoreVertical,
+  Info,
 } from "lucide-react";
 import api from "../../lib/api";
 import Layout from "../containers/Layout";
+import { getUser } from "../../lib/auth";
 
 interface Facility {
   id: number;
   facilityName: string;
   facilityCode: string;
+  facilityId: string;
 }
 
 interface User {
@@ -64,7 +65,6 @@ interface FormData {
   email: string;
   phoneNumber: string;
   alternatePhoneNumber: string;
-  password: string;
   role: string;
   facilityId: string;
   status: "active" | "inactive";
@@ -91,20 +91,28 @@ export default function UsersManagementPage() {
   const [showModal, setShowModal] = useState(false);
   const [modalMode, setModalMode] = useState<"view" | "add" | "edit">("view");
   const [submitting, setSubmitting] = useState(false);
-  const [showPassword, setShowPassword] = useState(false);
+  const [currentUser, setCurrentUser] = useState<any>(null);
   const [formData, setFormData] = useState<FormData>({
     firstName: "",
     lastName: "",
     email: "",
     phoneNumber: "",
     alternatePhoneNumber: "",
-    password: "",
     role: "",
     facilityId: "",
     status: "active",
   });
 
+  // Get current user role
+  const currentUserRole = currentUser?.user_role?.roleName || currentUser?.role;
+  const isHospitalAdmin = currentUserRole === 'HOSPITAL_ADMIN';
+  const isSuperAdmin = currentUserRole === 'SUPER_ADMIN';
+
   useEffect(() => {
+    // Get current user
+    const userData = getUser();
+    setCurrentUser(userData);
+    
     fetchUsers();
     fetchFacilities();
     fetchRoles();
@@ -175,15 +183,19 @@ export default function UsersManagementPage() {
     setSelectedUser(user || null);
 
     if (mode === "add") {
+      // For Hospital Admin, auto-set their facility
+      const initialFacilityId = isHospitalAdmin && currentUser?.facilityId 
+        ? currentUser.facilityId.toString() 
+        : "";
+
       setFormData({
         firstName: "",
         lastName: "",
         email: "",
         phoneNumber: "",
         alternatePhoneNumber: "",
-        password: "",
         role: "",
-        facilityId: "",
+        facilityId: initialFacilityId,
         status: "active",
       });
     } else if (user) {
@@ -193,7 +205,6 @@ export default function UsersManagementPage() {
         email: user.email,
         phoneNumber: user.phoneNumber,
         alternatePhoneNumber: user.alternatePhoneNumber || "",
-        password: "",
         role: user.role,
         facilityId: user.facilityId.toString(),
         status: user.status,
@@ -207,7 +218,6 @@ export default function UsersManagementPage() {
     setShowModal(false);
     setSelectedUser(null);
     setSubmitting(false);
-    setShowPassword(false);
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -220,16 +230,14 @@ export default function UsersManagementPage() {
         if (data.status) {
           await fetchUsers();
           closeModal();
+          alert(`✅ User created successfully!\n\nLogin credentials have been sent to ${formData.email}`);
         }
       } else if (modalMode === "edit" && selectedUser) {
-        const updateData = { ...formData };
-        if (!updateData.password) {
-          delete updateData.password;
-        }
-        const { data } = await api.put(`/users/${selectedUser.id}`, updateData);
+        const { data } = await api.put(`/users/${selectedUser.id}`, formData);
         if (data.status) {
           await fetchUsers();
           closeModal();
+          alert("User updated successfully!");
         }
       }
     } catch (err: any) {
@@ -260,18 +268,22 @@ export default function UsersManagementPage() {
 
   function getRoleBadgeColor(role: string) {
     const colors: Record<string, string> = {
-      super_admin: "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400",
-      facility_admin: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400",
-      admin: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400",
-      doctor: "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400",
-      nurse: "bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-400",
-      data_clerk: "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400",
+      'SUPER_ADMIN': 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400',
+      'NICRAT_STAFF': 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
+      'HOSPITAL_ADMIN': 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
+      'DATA_CLERK': 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400',
+      
+      'super_admin': 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400',
+      'facility_admin': 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
+      'admin': 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
+      'doctor': 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
+      'nurse': 'bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-400',
+      'data_clerk': 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400',
     };
-    return colors[role] || "bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-400";
+    return colors[role] || 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-400';
   }
 
   function formatRoleName(roleName: string): string {
-    // Remove underscores and capitalize each word
     return roleName
       .split('_')
       .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
@@ -433,23 +445,26 @@ export default function UsersManagementPage() {
 
         {showFilters && (
           <div className="mt-6 pt-6 border-t border-gray-200 dark:border-gray-700 grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
-                Facility
-              </label>
-              <select
-                value={filterFacility}
-                onChange={(e) => setFilterFacility(e.target.value)}
-                className="w-full px-4 py-2.5 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-green-500 focus:border-transparent"
-              >
-                <option value="all">All Facilities</option>
-                {facilities.map((facility) => (
-                  <option key={facility.id} value={facility.id}>
-                    {facility.facilityName}
-                  </option>
-                ))}
-              </select>
-            </div>
+            {/* Only show facility filter for Super Admin */}
+            {isSuperAdmin && (
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
+                  Facility
+                </label>
+                <select
+                  value={filterFacility}
+                  onChange={(e) => setFilterFacility(e.target.value)}
+                  className="w-full px-4 py-2.5 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                >
+                  <option value="all">All Facilities</option>
+                  {facilities.map((facility) => (
+                    <option key={facility.facilityId} value={facility.facilityId}>
+                      {facility.facilityName}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
 
             <div>
               <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
@@ -596,7 +611,6 @@ export default function UsersManagementPage() {
           </table>
         </div>
 
-        {/* Empty State for Table */}
         {filteredUsers.length === 0 && (
           <div className="text-center py-12">
             <Users className="w-12 h-12 text-gray-400 mx-auto mb-4" />
@@ -617,7 +631,6 @@ export default function UsersManagementPage() {
             key={user.id}
             className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-200 dark:border-gray-700 p-6 shadow-sm hover:shadow-xl transition-all duration-300"
           >
-            {/* Header */}
             <div className="flex items-start justify-between mb-4">
               <div className="flex-1">
                 <h3 className="font-bold text-lg text-gray-900 dark:text-white">
@@ -643,7 +656,6 @@ export default function UsersManagementPage() {
               </span>
             </div>
 
-            {/* Contact Info */}
             <div className="space-y-3 mb-6">
               <div className="flex items-center gap-3">
                 <Mail className="w-4 h-4 text-gray-400 flex-shrink-0" />
@@ -672,7 +684,6 @@ export default function UsersManagementPage() {
               )}
             </div>
 
-            {/* Actions */}
             <div className="flex items-center gap-2">
               <button
                 onClick={() => openModal("view", user)}
@@ -697,7 +708,6 @@ export default function UsersManagementPage() {
           </div>
         ))}
 
-        {/* Empty State for Cards */}
         {filteredUsers.length === 0 && (
           <div className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-200 dark:border-gray-700 p-12 text-center">
             <div className="flex items-center justify-center w-16 h-16 mx-auto mb-4 rounded-2xl bg-gray-100 dark:bg-gray-700">
@@ -812,6 +822,36 @@ export default function UsersManagementPage() {
                 </div>
               ) : (
                 <form onSubmit={handleSubmit} className="space-y-6">
+                  {/* Auto-Password Info Box */}
+                  {modalMode === "add" && (
+                    <div className="flex items-start gap-3 p-4 rounded-xl bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800">
+                      <Info className="w-5 h-5 text-blue-600 dark:text-blue-400 flex-shrink-0 mt-0.5" />
+                      <div className="flex-1">
+                        <p className="text-sm font-semibold text-blue-900 dark:text-blue-100 mb-1">
+                          Automatic Password Generation
+                        </p>
+                        <p className="text-xs text-blue-700 dark:text-blue-300">
+                          A secure password will be automatically generated and sent to the user's email address along with their login credentials.
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Hospital Admin Facility Info Box */}
+                  {isHospitalAdmin && modalMode === "add" && currentUser?.facility && (
+                    <div className="flex items-start gap-3 p-4 rounded-xl bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800">
+                      <Building2 className="w-5 h-5 text-green-600 dark:text-green-400 flex-shrink-0 mt-0.5" />
+                      <div className="flex-1">
+                        <p className="text-sm font-semibold text-green-900 dark:text-green-100 mb-1">
+                          Facility Assignment
+                        </p>
+                        <p className="text-xs text-green-700 dark:text-green-300">
+                          New user will be assigned to your facility: <strong>{currentUser.facility.facilityName}</strong>
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div>
                       <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
@@ -892,39 +932,6 @@ export default function UsersManagementPage() {
 
                     <div>
                       <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
-                        Password {modalMode === "add" && "*"}
-                      </label>
-                      <div className="relative">
-                        <input
-                          type={showPassword ? "text" : "password"}
-                          value={formData.password}
-                          onChange={(e) =>
-                            setFormData({ ...formData, password: e.target.value })
-                          }
-                          className="w-full px-4 py-2.5 pr-12 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                          required={modalMode === "add"}
-                          placeholder={
-                            modalMode === "edit"
-                              ? "Leave blank to keep current password"
-                              : ""
-                          }
-                        />
-                        <button
-                          type="button"
-                          onClick={() => setShowPassword(!showPassword)}
-                          className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700"
-                        >
-                          {showPassword ? (
-                            <EyeOff className="w-5 h-5" />
-                          ) : (
-                            <Eye className="w-5 h-5" />
-                          )}
-                        </button>
-                      </div>
-                    </div>
-
-                    <div>
-                      <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
                         Role *
                       </label>
                       <select
@@ -944,26 +951,29 @@ export default function UsersManagementPage() {
                       </select>
                     </div>
 
-                    <div>
-                      <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
-                        Facility *
-                      </label>
-                      <select
-                        value={formData.facilityId}
-                        onChange={(e) =>
-                          setFormData({ ...formData, facilityId: e.target.value })
-                        }
-                        className="w-full px-4 py-2.5 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                        required
-                      >
-                        <option value="">Select Facility</option>
-                        {facilities.map((facility) => (
-                          <option key={facility.id} value={facility.id}>
-                            {facility.facilityName}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
+                    {/* Facility Dropdown - ONLY show for Super Admin */}
+                    {isSuperAdmin && (
+                      <div>
+                        <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
+                          Facility *
+                        </label>
+                        <select
+                          value={formData.facilityId}
+                          onChange={(e) =>
+                            setFormData({ ...formData, facilityId: e.target.value })
+                          }
+                          className="w-full px-4 py-2.5 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                          required
+                        >
+                          <option value="">Select Facility</option>
+                          {facilities.map((facility) => (
+                            <option key={facility.facilityId} value={facility.facilityId}>
+                              {facility.facilityName}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
 
                     <div>
                       <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
