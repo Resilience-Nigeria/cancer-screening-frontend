@@ -40,6 +40,7 @@ import RiskProfileModal from "../components/modals/RiskProfile";
 import ScreeningModuleSelector from "../components/modals/ScreeningModal";
 import OutcomeModal from "../components/modals/Outcome";
 import api from "../../lib/api";
+import AgeCard from "../components/Cards/AgeCard";
 
 type Visit = {
   visitId: number;
@@ -58,6 +59,7 @@ type ClientDetail = {
   clientId: string;
   fullName: string;
   gender: string;
+  dateOfBirth: string;
   phoneNumber?: string | null;
   screeningCategory?: string;
   state?: string | null;
@@ -232,6 +234,7 @@ export default function ClientSummaryPage() {
         clientId: rawClient.clientId ?? rawClient.id,
         fullName: rawClient.fullName ?? rawClient.full_name ?? "",
         gender: rawClient.gender ?? "",
+        dateOfBirth: rawClient.dateOfBirth ?? "",
         phoneNumber: rawClient.phoneNumber ?? rawClient.phone_number ?? "",
         screeningCategory: rawClient.screeningCategory ?? rawClient.screening_category ?? "",
         state: rawClient.state ?? "",
@@ -407,7 +410,7 @@ export default function ClientSummaryPage() {
       </div>
 
       {/* Quick Stats Grid */}
-      <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-4 mb-8">
+      <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-5 mb-8">
         <div className="rounded-3xl border border-gray-100 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-sm p-5">
           <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
             <UserRound className="w-4 h-4" />
@@ -422,6 +425,12 @@ export default function ClientSummaryPage() {
             </Badge>
           </div>
         </div>
+
+         {/* Detailed Age Card */}
+          <AgeCard
+            dateOfBirth={client.dateOfBirth}
+            variant="detailed"
+          />
 
         <div className="rounded-3xl border border-gray-100 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-sm p-5">
           <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">

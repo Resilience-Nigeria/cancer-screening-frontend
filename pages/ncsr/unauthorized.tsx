@@ -1,11 +1,31 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
 import { ShieldAlert, ArrowLeft, Home } from 'lucide-react';
-import { useAuth } from '../../contexts/AuthContext';
+import { useAuth } from '../../context/AuthContext';
 
 export default function UnauthorizedPage() {
   const router = useRouter();
-  const { user, getRoleName } = useAuth();
+  const [mounted, setMounted] = useState(false);
+  
+  // Only try to use auth on the client side
+  let user = null;
+  let getRoleName = () => '';
+  
+  try {
+    // This will only work on client side when AuthProvider is available
+    if (mounted) {
+      const auth = useAuth();
+      user = auth.user;
+      getRoleName = auth.getRoleName;
+    }
+  } catch (error) {
+    // AuthProvider not available (during SSR), use defaults
+    console.debug('Auth not available during SSR');
+  }
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900 px-4">
@@ -25,7 +45,7 @@ export default function UnauthorizedPage() {
           You don't have permission to access this page.
         </p>
 
-        {user && (
+        {user && mounted && (
           <p className="text-sm text-gray-500 dark:text-gray-500 mb-8">
             Your role: <span className="font-semibold text-gray-700 dark:text-gray-300">{getRoleName()}</span>
           </p>

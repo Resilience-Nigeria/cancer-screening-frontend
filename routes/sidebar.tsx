@@ -8,6 +8,7 @@ import {
   Settings,
   UserCog,
   Building2,
+  ChartBar,
 } from "lucide-react";
 import { ComponentType } from "react";
 
@@ -69,6 +70,12 @@ const routes: IRoute[] = [
   },
   
   // Admin-only routes
+  {
+    path: "/ncsr/cancer-analytics",
+    icon: ChartBar,
+    name: "Analytics",
+    roles: ["SUPER_ADMIN"], // Only super admin manages facilities
+  },
   {
     path: "/ncsr/users",
     icon: UserCog,
