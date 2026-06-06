@@ -21,6 +21,7 @@ import {
   TableFooter,
   Badge,
   Pagination,
+  Button,
 } from "@roketid/windmill-react-ui";
 
 import {
@@ -49,6 +50,8 @@ import {
   Filter,
   X,
   Globe,
+  Plus,
+  StethoscopeIcon,
 } from "lucide-react";
 
 type ScreeningActivity = {
@@ -72,6 +75,7 @@ type DashboardStats = {
   colorectalScreenings: number;
   liverScreenings: number;
   positiveFindings: number;
+  totalReferred: number;
 };
 
 type MonthlyTrendData = {
@@ -236,7 +240,7 @@ function Dashboard() {
   
   // Check if user has national access (SUPER_ADMIN or NICRAT_STAFF)
   const userRole = currentUser?.user_role?.roleName || currentUser?.role;
-  const hasNationalAccess = ['SUPER_ADMIN', 'NICRAT_STAFF'].includes(userRole);
+  const hasNationalAccess = ['SUPER_ADMIN', 'NICRAT_STAFF', 'PARTNER'].includes(userRole);
 
   Chart.register(
     ArcElement,
@@ -261,6 +265,7 @@ function Dashboard() {
     colorectalScreenings: 0,
     liverScreenings: 0,
     positiveFindings: 0,
+    totalReferred: 0,
   });
   const [monthlyTrend, setMonthlyTrend] = useState<MonthlyTrendData[]>([]);
   const [activities, setActivities] = useState<ScreeningActivity[]>([]);
@@ -334,6 +339,8 @@ function Dashboard() {
           statsData.liverScreenings ?? statsData.liver_screenings ?? 0,
         positiveFindings:
           statsData.positiveFindings ?? statsData.positive_findings ?? 0,
+          totalReferred:
+  statsData.totalReferred ?? statsData.total_referred ?? 0,
       });
     } catch (err: any) {
       console.error("Error fetching stats:", err);
@@ -419,6 +426,7 @@ function Dashboard() {
             item.facility?.facility_name ??
             item.facilityName ??
             item.facility_name ??
+            item.facility ??
             "—",
           date: item.visitDate ?? item.visit_date ?? item.date ?? new Date().toISOString(),
         })
@@ -620,6 +628,11 @@ function Dashboard() {
     }
   }
 
+
+  function handleTotalReferredClick() {
+  router.push("/ncsr/referred");
+}
+
   if (loading && activities.length === 0) {
     return (
       <Layout>
@@ -673,18 +686,42 @@ function Dashboard() {
         {/* Filters Section - Only for National Users */}
         {hasNationalAccess && (
           <div className="mt-4">
-            <button
-              onClick={() => setShowFilters(!showFilters)}
-              className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-750 transition-colors shadow-sm"
-            >
-              <Filter className="w-4 h-4" />
-              <span className="font-medium">Filters</span>
-              {filtersApplied && (
-                <span className="ml-1 px-2 py-0.5 text-xs bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300 rounded-full">
-                  Active
-                </span>
-              )}
-            </button>
+           <div className="flex items-center gap-3">
+  <button
+    onClick={() => setShowFilters(!showFilters)}
+    className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-750 transition-colors shadow-sm"
+  >
+    <Filter className="w-4 h-4" />
+    <span className="font-medium">Filters</span>
+    {filtersApplied && (
+      <span className="ml-1 px-2 py-0.5 text-xs bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300 rounded-full">
+        Active
+      </span>
+    )}
+  </button>
+
+  {/* <Button
+    className="rounded-2xl h-12 bg-green-700 border-green-700 hover:bg-green-800 hover:border-green-800"
+    // onClick={openModal}
+  >
+    <span className="inline-flex items-center gap-2">
+      <Plus className="w-4 h-4" />
+      Add Client
+    </span>
+  </Button> */}
+
+  <Link
+                          href={`/ncsr/screening-wizard`}
+                        >
+                          <Button layout="outline" className="text-white rounded-2xl h-12 bg-green-700 border-green-700 hover:bg-green-800 hover:border-green-800">
+                            <span className="inline-flex items-center gap-2">
+                              <StethoscopeIcon className="w-4 h-4" />
+                              New Screening
+                            </span>
+                          </Button>
+                        </Link>
+
+</div>
 
             {showFilters && (
               <div className="mt-4 p-6 rounded-2xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 shadow-lg">
@@ -770,10 +807,12 @@ function Dashboard() {
             )}
           </div>
         )}
+
+     
       </div>
 
       {/* Rest of the dashboard remains the same - Stats cards, Module cards, Charts, etc. */}
-      <div className="grid gap-4 sm:gap-5 mb-6 sm:mb-8 grid-cols-1 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-4 sm:gap-5 mb-6 sm:mb-8 grid-cols-1 sm:grid-cols-2 xl:grid-cols-5">
         <StatCard
           title="Total Registered Clients"
           value={stats.totalClients.toLocaleString()}
@@ -821,6 +860,18 @@ function Dashboard() {
           onClick={handleReferralAlertsClick}
           clickable
         />
+
+        <StatCard
+  title="Total Clients Referred"
+  value={stats.totalReferred.toLocaleString()}
+  note="Click to view all referrals"
+  icon={
+    <ArrowUpRight className="w-5 h-5 text-blue-700 dark:text-blue-100" />
+  }
+  iconWrapperClass="bg-blue-100 dark:bg-blue-700"
+  onClick={handleTotalReferredClick}
+  clickable
+/>
       </div>
 
       {/* Module Cards Grid */}

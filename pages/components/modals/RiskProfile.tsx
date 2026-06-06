@@ -22,9 +22,11 @@ const STEPS = [
   { id: 1, title: "Basic Health" },
   { id: 2, title: "Smoking" },
   { id: 3, title: "Alcohol" },
-  { id: 4, title: "HIV Status" },
+  { id: 4, title: "Infectious Status" },
   { id: 5, title: "Family History" },
 ];
+
+const num = (v: any) => (v === null || v === undefined ? "" : String(v));
 
 export default function RiskProfileModal({
   isOpen,
@@ -36,83 +38,97 @@ export default function RiskProfileModal({
   const [currentStep, setCurrentStep] = useState(1);
   const [submitting, setSubmitting] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [comorbidityInput, setComorbidityInput] = useState("");
 
+  // Field names aligned to the actual risk-profile columns.
   const [form, setForm] = useState({
     // Basic Health
-    weight: "",
-    height: "",
+    weightKg: "",
+    heightCm: "",
     bmi: "",
-    bloodPressure: "",
-    diabetes: "",
-    hypertension: "",
+    comorbiditiesJson: [] as string[],
 
     // Smoking
     smokingStatus: "",
     cigarettesPerDay: "",
     packetsPerWeek: "",
-    smokingBrands: "",
-    smokingDurationYears: "",
+    cigaretteBrands: "",
+    smokingDuration: "",
     passiveSmokingSource: [] as string[],
     passiveSmokingFrequency: "",
     passiveSmokingLocation: [] as string[],
 
-    // Alcohol
-    alcoholFrequency: "",
+    // Alcohol (alcoholConsumption is the real column; we mirror to alcoholFrequency)
+    alcoholConsumption: "",
     alcoholUnitsPerWeek: "",
     alcoholTypes: [] as string[],
-    alcoholDurationYears: "",
+    alcoholDuration: "",
 
-    // HIV
+    // Infectious status
     hivStatus: "",
+    hbvStatus: "",
+    hcvStatus: "",
 
-    // Family History
+    // Family history (boolean in DB; UI uses yes/no)
     familyHistory: "",
-    cancerTypes: [] as string[],
   });
 
   useEffect(() => {
-    if (existingProfile) {
-      setForm({
-        weight: existingProfile.weight || "",
-        height: existingProfile.height || "",
-        bmi: existingProfile.bmi || "",
-        bloodPressure: existingProfile.bloodPressure || existingProfile.blood_pressure || "",
-        diabetes: existingProfile.diabetes || "",
-        hypertension: existingProfile.hypertension || "",
+    if (!existingProfile) return;
+    const p = existingProfile;
+    setForm({
+      weightKg: num(p.weightKg ?? p.weight_kg),
+      heightCm: num(p.heightCm ?? p.height_cm),
+      bmi: num(p.bmi),
+      comorbiditiesJson: Array.isArray(p.comorbiditiesJson)
+        ? p.comorbiditiesJson
+        : Array.isArray(p.comorbidities_json)
+        ? p.comorbidities_json
+        : [],
 
-        smokingStatus: existingProfile.smokingStatus || existingProfile.smoking_status || "",
-        cigarettesPerDay: existingProfile.cigarettesPerDay || existingProfile.cigarettes_per_day || "",
-        packetsPerWeek: existingProfile.packetsPerWeek || existingProfile.packets_per_week || "",
-        smokingBrands: existingProfile.smokingBrands || existingProfile.smoking_brands || "",
-        smokingDurationYears: existingProfile.smokingDurationYears || existingProfile.smoking_duration_years || "",
-        passiveSmokingSource: existingProfile.passiveSmokingSource || existingProfile.passive_smoking_source || [],
-        passiveSmokingFrequency: existingProfile.passiveSmokingFrequency || existingProfile.passive_smoking_frequency || "",
-        passiveSmokingLocation: existingProfile.passiveSmokingLocation || existingProfile.passive_smoking_location || [],
+      smokingStatus: p.smokingStatus ?? p.smoking_status ?? "",
+      cigarettesPerDay: num(p.cigarettesPerDay ?? p.cigarettes_per_day),
+      packetsPerWeek: num(p.packetsPerWeek ?? p.packets_per_week),
+      cigaretteBrands:
+        p.cigaretteBrands ?? p.cigarette_brands ?? p.smokingBrands ?? "",
+      smokingDuration: num(p.smokingDuration ?? p.smoking_duration),
+      passiveSmokingSource:
+        p.passiveSmokingSource ?? p.passive_smoking_source ?? [],
+      passiveSmokingFrequency:
+        p.passiveSmokingFrequency ?? p.passive_smoking_frequency ?? "",
+      passiveSmokingLocation:
+        p.passiveSmokingLocation ?? p.passive_smoking_location ?? [],
 
-        alcoholFrequency: existingProfile.alcoholFrequency || existingProfile.alcohol_frequency || "",
-        alcoholUnitsPerWeek: existingProfile.alcoholUnitsPerWeek || existingProfile.alcohol_units_per_week || "",
-        alcoholTypes: existingProfile.alcoholTypes || existingProfile.alcohol_types || [],
-        alcoholDurationYears: existingProfile.alcoholDurationYears || existingProfile.alcohol_duration_years || "",
+      // accept either column name on the way in
+      alcoholConsumption:
+        p.alcoholConsumption ?? p.alcohol_consumption ?? p.alcoholFrequency ?? "",
+      alcoholUnitsPerWeek: num(p.alcoholUnitsPerWeek ?? p.alcohol_units_per_week),
+      alcoholTypes: p.alcoholTypes ?? p.alcohol_types ?? [],
+      alcoholDuration: num(p.alcoholDuration ?? p.alcohol_duration),
 
-        hivStatus: existingProfile.hivStatus || existingProfile.hiv_status || "",
+      hivStatus: p.hivStatus ?? p.hiv_status ?? "",
+      hbvStatus: p.hbvStatus ?? p.hbv_status ?? "",
+      hcvStatus: p.hcvStatus ?? p.hcv_status ?? "",
 
-        familyHistory: existingProfile.familyHistory || existingProfile.family_history_of_cancer || "",
-        cancerTypes: existingProfile.cancerTypes || existingProfile.cancer_types || [],
-      });
-    }
+      // boolean -> yes/no for the select
+      familyHistory: p.familyHistory ?? p.family_history ?? "",
+      // familyHistory:
+      //   p.familyHistory === true || p.family_history === true
+      //     ? "yes"
+      //     : p.familyHistory === false || p.family_history === false
+      //     ? "no"
+      //     : "",
+    });
   }, [existingProfile]);
 
-  // Auto-calculate BMI
+  // Auto-calculate BMI from weightKg / heightCm
   useEffect(() => {
-    if (form.weight && form.height) {
-      const weightKg = parseFloat(form.weight);
-      const heightM = parseFloat(form.height) / 100; // Convert cm to m
-      if (weightKg > 0 && heightM > 0) {
-        const bmi = (weightKg / (heightM * heightM)).toFixed(1);
-        setForm((prev) => ({ ...prev, bmi }));
-      }
+    const w = parseFloat(form.weightKg);
+    const hM = parseFloat(form.heightCm) / 100;
+    if (w > 0 && hM > 0) {
+      setForm((prev) => ({ ...prev, bmi: (w / (hM * hM)).toFixed(1) }));
     }
-  }, [form.weight, form.height]);
+  }, [form.weightKg, form.heightCm]);
 
   function setField(name: string, value: any) {
     setForm((prev) => ({ ...prev, [name]: value }));
@@ -122,58 +138,84 @@ export default function RiskProfileModal({
   function toggleArrayValue(field: keyof typeof form, value: string) {
     setForm((prev) => {
       const current = prev[field] as string[];
-      if (current.includes(value)) {
-        return { ...prev, [field]: current.filter((v) => v !== value) };
-      } else {
-        return { ...prev, [field]: [...current, value] };
-      }
+      return current.includes(value)
+        ? { ...prev, [field]: current.filter((v) => v !== value) }
+        : { ...prev, [field]: [...current, value] };
     });
   }
 
-  function validateStep(step: number): boolean {
-    const newErrors: Record<string, string> = {};
-
-    if (step === 1) {
-      // Basic health - all optional but show warnings
-      if (!form.weight) newErrors.weight = "Weight recommended";
-      if (!form.height) newErrors.height = "Height recommended";
+  function addComorbidity() {
+    const t = comorbidityInput.trim();
+    if (!t) return;
+    if (!form.comorbiditiesJson.includes(t)) {
+      setForm((prev) => ({
+        ...prev,
+        comorbiditiesJson: [...prev.comorbiditiesJson, t],
+      }));
     }
+    setComorbidityInput("");
+  }
 
-    setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
+  function removeComorbidity(i: number) {
+    setForm((prev) => ({
+      ...prev,
+      comorbiditiesJson: prev.comorbiditiesJson.filter((_, idx) => idx !== i),
+    }));
   }
 
   function handleNext() {
-    if (validateStep(currentStep)) {
-      setCurrentStep((prev) => Math.min(prev + 1, STEPS.length));
-    }
+    setCurrentStep((prev) => Math.min(prev + 1, STEPS.length));
   }
-
   function handlePrevious() {
     setCurrentStep((prev) => Math.max(prev - 1, 1));
   }
 
   async function handleSubmit() {
     setSubmitting(true);
-
     try {
-      await api.post(`/clients/${clientId}/risk-profile`, {
-        ...form,
-        weight: form.weight ? parseFloat(form.weight) : null,
-        height: form.height ? parseFloat(form.height) : null,
+      const payload = {
+        // physical
+        weightKg: form.weightKg ? parseFloat(form.weightKg) : null,
+        heightCm: form.heightCm ? parseFloat(form.heightCm) : null,
         bmi: form.bmi ? parseFloat(form.bmi) : null,
+
+        // smoking
+        smokingStatus: form.smokingStatus || null,
         cigarettesPerDay: form.cigarettesPerDay ? parseInt(form.cigarettesPerDay) : null,
         packetsPerWeek: form.packetsPerWeek ? parseInt(form.packetsPerWeek) : null,
-        smokingDurationYears: form.smokingDurationYears ? parseInt(form.smokingDurationYears) : null,
-        alcoholUnitsPerWeek: form.alcoholUnitsPerWeek ? parseInt(form.alcoholUnitsPerWeek) : null,
-        alcoholDurationYears: form.alcoholDurationYears ? parseInt(form.alcoholDurationYears) : null,
-      });
+        cigaretteBrands: form.cigaretteBrands || null,
+        smokingDuration: form.smokingDuration ? parseInt(form.smokingDuration) : null,
+        passiveSmokingExposure: form.smokingStatus === "passive_smoker",
+        passiveSmokingSource:
+          form.passiveSmokingSource.length > 0 ? form.passiveSmokingSource : null,
+        passiveSmokingFrequency: form.passiveSmokingFrequency || null,
+        passiveSmokingLocation:
+          form.passiveSmokingLocation.length > 0 ? form.passiveSmokingLocation : null,
 
+        // alcohol — write both names so it persists regardless of which the API validates
+        alcoholConsumption: form.alcoholConsumption || null,
+        alcoholFrequency: form.alcoholConsumption || null,
+        alcoholUnitsPerWeek: form.alcoholUnitsPerWeek ? parseInt(form.alcoholUnitsPerWeek) : null,
+        alcoholTypes: form.alcoholTypes.length > 0 ? form.alcoholTypes : null,
+        alcoholDuration: form.alcoholDuration ? parseInt(form.alcoholDuration) : null,
+
+        // infectious
+        hivStatus: form.hivStatus || null,
+        hbvStatus: form.hbvStatus || null,
+        hcvStatus: form.hcvStatus || null,
+
+        // family history as boolean
+        familyHistory: form.familyHistory || null,
+
+        comorbiditiesJson: form.comorbiditiesJson,
+      };
+
+      // POST matches the working wizard call for this route.
+      await api.post(`/clients/${clientId}/risk-profile`, payload);
       toast.success("Risk profile saved successfully.");
       onComplete();
     } catch (err: any) {
-      const response = err?.response?.data;
-      toast.error(response?.message || "Unable to save risk profile.");
+      toast.error(err?.response?.data?.message || "Unable to save risk profile.");
     } finally {
       setSubmitting(false);
     }
@@ -187,14 +229,13 @@ export default function RiskProfileModal({
     }
   }
 
-  // Don't render if modal is not open
   if (!isOpen) return null;
 
   function renderStep() {
     switch (currentStep) {
       case 1:
         return (
-          <div className="space-y-4">
+          <div className="space-y-5">
             <div className="grid gap-4 md:grid-cols-2">
               <Label>
                 <span className="text-sm font-semibold">Weight (kg)</span>
@@ -202,11 +243,11 @@ export default function RiskProfileModal({
                   className="mt-2 rounded-2xl h-12 shadow-sm"
                   type="number"
                   step="0.1"
-                  value={form.weight}
-                  onChange={(e) => setField("weight", e.target.value)}
+                  min="0"
+                  value={form.weightKg}
+                  onChange={(e) => setField("weightKg", e.target.value)}
                   placeholder="Enter weight"
                 />
-                {errors.weight && <HelperText className="text-red-500">{errors.weight}</HelperText>}
               </Label>
 
               <Label>
@@ -215,15 +256,15 @@ export default function RiskProfileModal({
                   className="mt-2 rounded-2xl h-12 shadow-sm"
                   type="number"
                   step="0.1"
-                  value={form.height}
-                  onChange={(e) => setField("height", e.target.value)}
+                  min="0"
+                  value={form.heightCm}
+                  onChange={(e) => setField("heightCm", e.target.value)}
                   placeholder="Enter height"
                 />
-                {errors.height && <HelperText className="text-red-500">{errors.height}</HelperText>}
               </Label>
 
               <Label>
-                <span className="text-sm font-semibold">BMI (Auto-calculated)</span>
+                <span className="text-sm font-semibold">BMI (auto-calculated)</span>
                 <Input
                   className="mt-2 rounded-2xl h-12 shadow-sm bg-gray-50 dark:bg-gray-700"
                   value={form.bmi}
@@ -231,44 +272,50 @@ export default function RiskProfileModal({
                   placeholder="Auto"
                 />
               </Label>
+            </div>
 
-              <Label>
-                <span className="text-sm font-semibold">Blood Pressure</span>
+            <div>
+              <span className="text-sm font-semibold">Comorbidities</span>
+              <div className="mt-2 flex gap-2">
                 <Input
-                  className="mt-2 rounded-2xl h-12 shadow-sm"
-                  value={form.bloodPressure}
-                  onChange={(e) => setField("bloodPressure", e.target.value)}
-                  placeholder="e.g., 120/80"
+                  className="rounded-2xl h-12 shadow-sm"
+                  value={comorbidityInput}
+                  onChange={(e) => setComorbidityInput(e.target.value)}
+                  onKeyPress={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      addComorbidity();
+                    }
+                  }}
+                  placeholder="e.g., Diabetes, Hypertension"
                 />
-              </Label>
-
-              <Label>
-                <span className="text-sm font-semibold">Diabetes</span>
-                <Select
-                  className="mt-2 rounded-2xl h-12 shadow-sm"
-                  value={form.diabetes}
-                  onChange={(e) => setField("diabetes", e.target.value)}
+                <Button
+                  type="button"
+                  onClick={addComorbidity}
+                  className="rounded-2xl h-12 bg-green-700 border-green-700 hover:bg-green-800 whitespace-nowrap"
                 >
-                  <option value="">Select</option>
-                  <option value="yes">Yes</option>
-                  <option value="no">No</option>
-                  <option value="unknown">Unknown</option>
-                </Select>
-              </Label>
-
-              <Label>
-                <span className="text-sm font-semibold">Hypertension</span>
-                <Select
-                  className="mt-2 rounded-2xl h-12 shadow-sm"
-                  value={form.hypertension}
-                  onChange={(e) => setField("hypertension", e.target.value)}
-                >
-                  <option value="">Select</option>
-                  <option value="yes">Yes</option>
-                  <option value="no">No</option>
-                  <option value="unknown">Unknown</option>
-                </Select>
-              </Label>
+                  Add
+                </Button>
+              </div>
+              {form.comorbiditiesJson.length > 0 && (
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {form.comorbiditiesJson.map((item, i) => (
+                    <span
+                      key={i}
+                      className="inline-flex items-center gap-2 rounded-full bg-green-100 dark:bg-green-900/30 px-3 py-1.5 text-sm text-green-800 dark:text-green-200"
+                    >
+                      {item}
+                      <button
+                        type="button"
+                        onClick={() => removeComorbidity(i)}
+                        className="text-green-600 hover:text-green-800"
+                      >
+                        ×
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         );
@@ -298,40 +345,40 @@ export default function RiskProfileModal({
                   <Input
                     className="mt-2 rounded-2xl h-12 shadow-sm"
                     type="number"
+                    min="0"
                     value={form.cigarettesPerDay}
                     onChange={(e) => setField("cigarettesPerDay", e.target.value)}
                     placeholder="Number"
                   />
                 </Label>
-
                 <Label>
                   <span className="text-sm font-semibold">Packets per Week</span>
                   <Input
                     className="mt-2 rounded-2xl h-12 shadow-sm"
                     type="number"
+                    min="0"
                     value={form.packetsPerWeek}
                     onChange={(e) => setField("packetsPerWeek", e.target.value)}
                     placeholder="Number"
                   />
                 </Label>
-
                 <Label>
                   <span className="text-sm font-semibold">Brands</span>
                   <Input
                     className="mt-2 rounded-2xl h-12 shadow-sm"
-                    value={form.smokingBrands}
-                    onChange={(e) => setField("smokingBrands", e.target.value)}
+                    value={form.cigaretteBrands}
+                    onChange={(e) => setField("cigaretteBrands", e.target.value)}
                     placeholder="Enter brands"
                   />
                 </Label>
-
                 <Label>
                   <span className="text-sm font-semibold">Duration (years)</span>
                   <Input
                     className="mt-2 rounded-2xl h-12 shadow-sm"
                     type="number"
-                    value={form.smokingDurationYears}
-                    onChange={(e) => setField("smokingDurationYears", e.target.value)}
+                    min="0"
+                    value={form.smokingDuration}
+                    onChange={(e) => setField("smokingDuration", e.target.value)}
                     placeholder="Years"
                   />
                 </Label>
@@ -341,7 +388,9 @@ export default function RiskProfileModal({
             {form.smokingStatus === "passive_smoker" && (
               <div className="space-y-4">
                 <div>
-                  <span className="text-sm font-semibold block mb-3">Exposure Source (select all)</span>
+                  <span className="text-sm font-semibold block mb-3">
+                    Exposure Source (select all)
+                  </span>
                   <div className="grid gap-2 md:grid-cols-2">
                     {["family", "spouse", "friends", "colleagues"].map((source) => (
                       <Label key={source} check>
@@ -371,7 +420,9 @@ export default function RiskProfileModal({
                 </Label>
 
                 <div>
-                  <span className="text-sm font-semibold block mb-3">Location (select all)</span>
+                  <span className="text-sm font-semibold block mb-3">
+                    Location (select all)
+                  </span>
                   <div className="grid gap-2 md:grid-cols-2">
                     {["home", "workplace", "social_settings"].map((loc) => (
                       <Label key={loc} check>
@@ -397,8 +448,8 @@ export default function RiskProfileModal({
               <span className="text-sm font-semibold">Alcohol Frequency</span>
               <Select
                 className="mt-2 rounded-2xl h-12 shadow-sm"
-                value={form.alcoholFrequency}
-                onChange={(e) => setField("alcoholFrequency", e.target.value)}
+                value={form.alcoholConsumption}
+                onChange={(e) => setField("alcoholConsumption", e.target.value)}
               >
                 <option value="">Select</option>
                 <option value="never">Never</option>
@@ -409,13 +460,14 @@ export default function RiskProfileModal({
               </Select>
             </Label>
 
-            {form.alcoholFrequency && form.alcoholFrequency !== "never" && (
+            {form.alcoholConsumption && form.alcoholConsumption !== "never" && (
               <>
                 <Label>
                   <span className="text-sm font-semibold">Units per Week</span>
                   <Input
                     className="mt-2 rounded-2xl h-12 shadow-sm"
                     type="number"
+                    min="0"
                     value={form.alcoholUnitsPerWeek}
                     onChange={(e) => setField("alcoholUnitsPerWeek", e.target.value)}
                     placeholder="Number of units"
@@ -443,8 +495,9 @@ export default function RiskProfileModal({
                   <Input
                     className="mt-2 rounded-2xl h-12 shadow-sm"
                     type="number"
-                    value={form.alcoholDurationYears}
-                    onChange={(e) => setField("alcoholDurationYears", e.target.value)}
+                    min="0"
+                    value={form.alcoholDuration}
+                    onChange={(e) => setField("alcoholDuration", e.target.value)}
                     placeholder="Years"
                   />
                 </Label>
@@ -458,23 +511,53 @@ export default function RiskProfileModal({
           <div className="space-y-4">
             <div className="rounded-2xl bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 p-4">
               <p className="text-sm text-blue-800 dark:text-blue-200">
-                HIV status is optional. This information helps with risk assessment.
+                Infectious status is optional but helps with risk assessment.
               </p>
             </div>
 
-            <Label>
-              <span className="text-sm font-semibold">HIV Status</span>
-              <Select
-                className="mt-2 rounded-2xl h-12 shadow-sm"
-                value={form.hivStatus}
-                onChange={(e) => setField("hivStatus", e.target.value)}
-              >
-                <option value="">Prefer not to say</option>
-                <option value="positive">Positive</option>
-                <option value="negative">Negative</option>
-                <option value="unknown">Unknown</option>
-              </Select>
-            </Label>
+            <div className="grid gap-4 md:grid-cols-3">
+              <Label>
+                <span className="text-sm font-semibold">HIV Status</span>
+                <Select
+                  className="mt-2 rounded-2xl h-12 shadow-sm"
+                  value={form.hivStatus}
+                  onChange={(e) => setField("hivStatus", e.target.value)}
+                >
+                  <option value="">Not specified</option>
+                  <option value="positive">Positive</option>
+                  <option value="negative">Negative</option>
+                  <option value="unknown">Unknown</option>
+                </Select>
+              </Label>
+
+              <Label>
+                <span className="text-sm font-semibold">Hepatitis B</span>
+                <Select
+                  className="mt-2 rounded-2xl h-12 shadow-sm"
+                  value={form.hbvStatus}
+                  onChange={(e) => setField("hbvStatus", e.target.value)}
+                >
+                  <option value="">Not specified</option>
+                  <option value="positive">Positive</option>
+                  <option value="negative">Negative</option>
+                  <option value="unknown">Unknown</option>
+                </Select>
+              </Label>
+
+              <Label>
+                <span className="text-sm font-semibold">Hepatitis C</span>
+                <Select
+                  className="mt-2 rounded-2xl h-12 shadow-sm"
+                  value={form.hcvStatus}
+                  onChange={(e) => setField("hcvStatus", e.target.value)}
+                >
+                  <option value="">Not specified</option>
+                  <option value="positive">Positive</option>
+                  <option value="negative">Negative</option>
+                  <option value="unknown">Unknown</option>
+                </Select>
+              </Label>
+            </div>
           </div>
         );
 
@@ -494,24 +577,6 @@ export default function RiskProfileModal({
                 <option value="unknown">Unknown</option>
               </Select>
             </Label>
-
-            {form.familyHistory === "yes" && (
-              <div>
-                <span className="text-sm font-semibold block mb-3">Cancer Types (select all)</span>
-                <div className="grid gap-2 md:grid-cols-2">
-                  {["cervical", "breast", "prostate", "colorectal", "liver", "lung", "other"].map((type) => (
-                    <Label key={type} check>
-                      <Input
-                        type="checkbox"
-                        checked={form.cancerTypes.includes(type)}
-                        onChange={() => toggleArrayValue("cancerTypes", type)}
-                      />
-                      <span className="ml-2 capitalize">{type}</span>
-                    </Label>
-                  ))}
-                </div>
-              </div>
-            )}
           </div>
         );
 
@@ -520,19 +585,14 @@ export default function RiskProfileModal({
     }
   }
 
-  // Custom modal implementation
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto">
-      {/* Backdrop */}
-      <div 
-        className="fixed inset-0 bg-black bg-opacity-50 transition-opacity" 
+      <div
+        className="fixed inset-0 bg-black bg-opacity-50 transition-opacity"
         onClick={handleClose}
       />
-      
-      {/* Modal Panel */}
       <div className="flex min-h-full items-center justify-center p-4">
         <div className="relative bg-white dark:bg-gray-800 rounded-2xl shadow-xl max-w-2xl w-full max-h-[90vh] flex flex-col">
-          {/* Header */}
           <div className="flex items-center justify-between p-6 border-b dark:border-gray-700">
             <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
               Risk Profile Assessment - Step {currentStep} of {STEPS.length}
@@ -546,25 +606,19 @@ export default function RiskProfileModal({
             </button>
           </div>
 
-          {/* Body */}
           <div className="flex-1 overflow-y-auto p-6">
-            {/* Progress Indicator */}
             <div className="mb-6">
               <div className="flex justify-between mb-2">
                 {STEPS.map((step, idx) => (
                   <div key={step.id} className={`flex-1 ${idx < STEPS.length - 1 ? "mr-2" : ""}`}>
                     <div
                       className={`h-2 rounded-full ${
-                        step.id <= currentStep
-                          ? "bg-green-600"
-                          : "bg-gray-200 dark:bg-gray-700"
+                        step.id <= currentStep ? "bg-green-600" : "bg-gray-200 dark:bg-gray-700"
                       }`}
                     />
                     <p
                       className={`mt-2 text-xs text-center hidden sm:block ${
-                        step.id === currentStep
-                          ? "text-green-600 font-semibold"
-                          : "text-gray-500"
+                        step.id === currentStep ? "text-green-600 font-semibold" : "text-gray-500"
                       }`}
                     >
                       {step.title}
@@ -574,11 +628,9 @@ export default function RiskProfileModal({
               </div>
             </div>
 
-            {/* Step Content */}
             {renderStep()}
           </div>
 
-          {/* Footer */}
           <div className="flex gap-3 justify-between p-6 border-t dark:border-gray-700">
             <Button
               layout="outline"

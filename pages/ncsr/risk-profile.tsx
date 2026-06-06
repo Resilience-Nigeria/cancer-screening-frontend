@@ -32,7 +32,7 @@ type ClientSummary = {
 
 type RiskProfile = {
   riskProfileId?: number;
-  familyHistory: boolean;
+  familyHistory: string;
   
   // Detailed Smoking fields
   smokingStatus?: string;
@@ -158,7 +158,7 @@ export default function RiskProfilePage() {
       if (rawRisk && (rawRisk.riskProfileId || rawRisk.risk_profile_id)) {
         const profile: RiskProfile = {
           riskProfileId: rawRisk.riskProfileId ?? rawRisk.risk_profile_id,
-          familyHistory: rawRisk.familyHistory ?? rawRisk.family_history ?? false,
+          familyHistory: rawRisk.familyHistory ?? rawRisk.family_history ?? "",
           
           // Smoking
           smokingStatus: rawRisk.smokingStatus ?? rawRisk.smoking_status ?? "",
@@ -197,7 +197,7 @@ export default function RiskProfilePage() {
 
         // Pre-fill form for editing
         setForm({
-          familyHistory: profile.familyHistory.toString(),
+          familyHistory: profile.familyHistory ?? "",
           
           smokingStatus: profile.smokingStatus ?? "",
           cigarettesPerDay: (profile.cigarettesPerDay ?? "").toString(),
@@ -271,7 +271,7 @@ export default function RiskProfilePage() {
 
     try {
       const payload = {
-        familyHistory: form.familyHistory === "true" || form.familyHistory === "1" || form.familyHistory === true,
+        familyHistory: form.familyHistory === "yes",
         
         // Smoking
         smokingStatus: form.smokingStatus || null,
@@ -408,7 +408,7 @@ export default function RiskProfilePage() {
               <div className="grid gap-4 md:grid-cols-2">
                 <div>
                   <p className="text-sm text-gray-500 dark:text-gray-400">Family History</p>
-                  <p className="mt-1 font-semibold">{riskProfile.familyHistory ? "Yes" : "No"}</p>
+                  <p className="mt-1 font-semibold">{riskProfile.familyHistory}</p>
                 </div>
                 
                 <div>
@@ -485,8 +485,9 @@ export default function RiskProfilePage() {
                   onChange={(e) => setField("familyHistory", e.target.value)}
                 >
                   <option value="">Select</option>
-                  <option value="true">Yes</option>
-                  <option value="false">No</option>
+                  <option value="yes">Yes</option>
+                  <option value="no">No</option>
+                  <option value="unknown">Unknown</option>
                 </Select>
               </Label>
             </div>

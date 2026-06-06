@@ -1,20 +1,22 @@
 import React, { useEffect, useState } from "react";
 import { useRouter } from "next/router";
-import Link from "next/link";
 import {
   Button,
-  Badge,
   Pagination,
   Input,
+  Badge,
 } from "@roketid/windmill-react-ui";
 import {
   Search,
-  User,
   Calendar,
   FileText,
   Eye,
   Loader2,
   Filter,
+  Building2,
+  User,
+  Stethoscope,
+  X,
 } from "lucide-react";
 import toast from "react-hot-toast";
 
@@ -22,29 +24,44 @@ import Layout from "../containers/Layout";
 import PageTitle from "../components/Typography/PageTitle";
 import api from "../../lib/api";
 
-type Screening = {
-  screeningId: number;
+type ScreeningResult = {
+  screeningType: string;
+  screeningResult?: string;
+  screeningDate?: string;
+  notes?: string;
+};
+
+type Visit = {
   visitId: number;
   clientId: number;
   clientName: string;
   clientScreeningId: string;
   screeningDate: string;
-  screeningType?: string;
-  result?: string;
-  notes?: string;
+  facility?: string;
+  screeningCount: number;
+  screenings: ScreeningResult[];
 };
+
+function formatDate(value?: string) {
+  if (!value) return "—";
+  const d = new Date(value);
+  return isNaN(d.getTime()) ? "—" : d.toLocaleDateString();
+}
 
 export default function ScreeningsPage() {
   const router = useRouter();
   const { type } = router.query;
 
-  const [screenings, setScreenings] = useState<Screening[]>([]);
+  const [visits, setVisits] = useState<Visit[]>([]);
   const [loading, setLoading] = useState(false);
   const [page, setPage] = useState(1);
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
   const [totalResults, setTotalResults] = useState(0);
   const [filterType, setFilterType] = useState<string>("all");
+
+  const [selectedVisit, setSelectedVisit] = useState<Visit | null>(null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
 
   const resultsPerPage = 10;
 
@@ -66,7 +83,6 @@ export default function ScreeningsPage() {
     { value: "liver", label: "Liver" },
   ];
 
-  // Determine if we're showing all screenings or a specific type
   const isAllScreenings = !type || type === "all";
   const currentType = (type as string) || "all";
   const screeningTitle = screeningTypeMap[currentType] || "All Screenings";
@@ -75,40 +91,75 @@ export default function ScreeningsPage() {
     setLoading(true);
     try {
       let endpoint = "/dashboard/screenings";
-      
-      // If a specific type is selected (not "all"), use the type-specific endpoint
       if (!isAllScreenings) {
         endpoint = `/dashboard/screenings/${type}`;
       }
 
-      const params: any = { 
-        page, 
-        search, 
-        limit: resultsPerPage 
-      };
-
-      // Add type filter for "all screenings" view if a filter is selected
+      const params: any = { page, search, limit: resultsPerPage };
       if (isAllScreenings && filterType !== "all") {
         params.type = filterType;
       }
 
       const { data } = await api.get(endpoint, { params });
+      const raw = data?.data || [];
 
-      const rawScreenings = data?.data || [];
-      const mappedScreenings: Screening[] = rawScreenings.map((item: any) => ({
-        screeningId: item.screeningId ?? item.screening_id ?? item.id,
-        visitId: item.visitId ?? item.visit_id,
-        clientId: item.clientId ?? item.client_id,
-        clientName: item.client?.fullName ?? item.client?.full_name ?? "Unknown",
-        clientScreeningId: item.client?.screeningId ?? item.client?.screening_id ?? "—",
-        screeningDate: item.screeningDate ?? item.screening_date ?? item.created_at,
-        screeningType: item.screeningType ?? item.screening_type ?? type,
-        result: item.result ?? item.viaResult ?? item.cbeResult,
-        notes: item.notes ?? item.remarks,
-      }));
+      // Normalize both shapes into a Visit with a screenings[] array:
+      //  - "all" endpoint returns visits with item.screenings[]
+      //  - type-specific endpoint returns a flat screening per row
+      const mapped: Visit[] = raw.map((item: any) => {
+        const screenings: ScreeningResult[] = Array.isArray(item.screenings)
+          ? item.screenings.map((s: any) => ({
+              screeningType: s.screeningType ?? s.screening_type,
+              screeningResult:
+                s.screeningResult ?? s.screening_result ?? s.result,
+              screeningDate: s.screeningDate ?? s.screening_date,
+              notes: s.notes,
+            }))
+          : [
+              {
+                screeningType:
+                  item.screeningType ??
+                  item.screening_type ??
+                  (type as string),
+                screeningResult:
+                  item.screeningResult ??
+                  item.screening_result ??
+                  item.result,
+                screeningDate:
+                  item.screeningDate ??
+                  item.screening_date ??
+                  item.created_at,
+                notes: item.notes,
+              },
+            ];
 
-      setScreenings(mappedScreenings);
-      setTotalResults(data?.total || mappedScreenings.length);
+        return {
+          visitId:
+            item.visitId ?? item.visit_id ?? item.screeningId ?? item.id,
+          clientId: item.clientId ?? item.client_id,
+          clientName:
+            item.client?.fullName ??
+            item.client?.full_name ??
+            item.clientName ??
+            "Unknown",
+          clientScreeningId:
+            item.client?.screeningId ??
+            item.client?.screening_id ??
+            item.clientCode ??
+            "—",
+          screeningDate:
+            item.screeningDate ??
+            item.screening_date ??
+            item.visitDate ??
+            item.created_at,
+          facility: item.facility ?? item.facilityName,
+          screeningCount: item.screeningCount ?? screenings.length,
+          screenings,
+        };
+      });
+
+      setVisits(mapped);
+      setTotalResults(data?.total || mapped.length);
     } catch (err: any) {
       toast.error("Unable to load screenings");
     } finally {
@@ -118,7 +169,26 @@ export default function ScreeningsPage() {
 
   useEffect(() => {
     fetchScreenings();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page, search, type, filterType]);
+
+  // Close on Escape + lock body scroll while the modal is open
+  useEffect(() => {
+    if (!isModalOpen) return;
+
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") closeDetails();
+    }
+    document.addEventListener("keydown", onKey);
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [isModalOpen]);
 
   function handleSearchSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -126,29 +196,82 @@ export default function ScreeningsPage() {
     setSearch(searchInput.trim());
   }
 
+  function openDetails(visit: Visit) {
+    setSelectedVisit(visit);
+    setIsModalOpen(true);
+  }
+
+  function closeDetails() {
+    setIsModalOpen(false);
+    setSelectedVisit(null);
+  }
+
   function getResultBadge(result?: string) {
     if (!result) return "neutral";
     const lower = result.toLowerCase();
-    if (lower.includes("positive") || lower.includes("abnormal")) return "danger";
-    if (lower.includes("negative") || lower.includes("normal")) return "success";
+    if (lower.includes("positive") || lower.includes("abnormal"))
+      return "danger";
+    if (lower.includes("negative") || lower.includes("normal"))
+      return "success";
     return "warning";
   }
 
-  function getScreeningTypeBadge(type?: string) {
+  function getScreeningTypeBadge(t?: string) {
     const badges: Record<string, { color: string; label: string }> = {
-      cervical: { color: "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400", label: "Cervical" },
-      breast: { color: "bg-pink-100 text-pink-700 dark:bg-pink-900/30 dark:text-pink-400", label: "Breast" },
-      prostate: { color: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400", label: "Prostate" },
-      colorectal: { color: "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400", label: "Colorectal" },
-      liver: { color: "bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-400", label: "Liver" },
+      cervical: {
+        color:
+          "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400",
+        label: "Cervical",
+      },
+      breast: {
+        color:
+          "bg-pink-100 text-pink-700 dark:bg-pink-900/30 dark:text-pink-400",
+        label: "Breast",
+      },
+      prostate: {
+        color:
+          "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400",
+        label: "Prostate",
+      },
+      colorectal: {
+        color:
+          "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400",
+        label: "Colorectal",
+      },
+      liver: {
+        color:
+          "bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-400",
+        label: "Liver",
+      },
     };
+    return (
+      badges[t?.toLowerCase() || ""] || {
+        color:
+          "bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-400",
+        label: t || "Unknown",
+      }
+    );
+  }
 
-    const badge = badges[type?.toLowerCase() || ""] || { 
-      color: "bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-400", 
-      label: type || "Unknown" 
-    };
-
-    return badge;
+  function TypeChips({ screenings }: { screenings: ScreeningResult[] }) {
+    if (!screenings.length) {
+      return <span className="text-sm text-gray-500">—</span>;
+    }
+    return (
+      <div className="flex flex-wrap gap-1.5">
+        {screenings.map((s, i) => {
+          const badge = getScreeningTypeBadge(s.screeningType);
+          return (
+            <span
+              key={`${s.screeningType}-${i}`}
+              className={`inline-flex px-2.5 py-0.5 rounded-full text-xs font-semibold ${badge.color}`}
+            >
+              {badge.label}
+            </span>
+          );
+        })}
+      </div>
+    );
   }
 
   return (
@@ -164,14 +287,15 @@ export default function ScreeningsPage() {
               </div>
 
               <h2 className="mt-4 text-2xl sm:text-3xl font-bold leading-tight">
-                {isAllScreenings ? "All Screening Records" : `All ${screeningTitle} Records`}
+                {isAllScreenings
+                  ? "All Screening Visits"
+                  : `All ${screeningTitle} Records`}
               </h2>
 
               <p className="mt-3 text-sm sm:text-base text-green-100 leading-6">
-                {isAllScreenings 
-                  ? "View and search through all screening records across your facility."
-                  : `View and search through all ${screeningTitle.toLowerCase()} records across your facility.`
-                }
+                {isAllScreenings
+                  ? "Each visit may include several tests. Open a visit to see every screening and its result."
+                  : `View and search through all ${screeningTitle.toLowerCase()} records across your facility.`}
               </p>
             </div>
           </div>
@@ -200,7 +324,6 @@ export default function ScreeningsPage() {
             </Button>
           </div>
 
-          {/* Filter by type - only show when viewing all screenings */}
           {isAllScreenings && (
             <div className="flex items-center gap-3">
               <Filter className="w-4 h-4 text-gray-500 dark:text-gray-400" />
@@ -235,70 +358,66 @@ export default function ScreeningsPage() {
         {loading ? (
           <div className="p-12 text-center">
             <Loader2 className="w-8 h-8 animate-spin text-green-600 mx-auto" />
-            <p className="mt-4 text-gray-600 dark:text-gray-400">Loading screenings...</p>
+            <p className="mt-4 text-gray-600 dark:text-gray-400">
+              Loading screenings...
+            </p>
           </div>
-        ) : screenings.length === 0 ? (
+        ) : visits.length === 0 ? (
           <div className="p-12 text-center">
             <FileText className="w-12 h-12 mx-auto text-gray-400" />
             <h4 className="mt-4 text-lg font-semibold text-gray-800 dark:text-gray-100">
               No screenings found
             </h4>
             <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">
-              {search ? "Try a different search term." : "No screening records available."}
+              {search
+                ? "Try a different search term."
+                : "No screening records available."}
             </p>
           </div>
         ) : (
           <>
             {/* Mobile View */}
             <div className="lg:hidden divide-y divide-gray-100 dark:divide-gray-700">
-              {screenings.map((screening) => (
-                <div key={screening.screeningId} className="p-5">
-                  <div className="flex items-start justify-between gap-3 mb-4">
-                    <div>
-                      <h3 className="font-semibold text-gray-800 dark:text-gray-100">
-                        {screening.clientName}
-                      </h3>
-                      <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                        {screening.clientScreeningId}
-                      </p>
-                    </div>
-                    {screening.result && (
-                      <Badge type={getResultBadge(screening.result) as any}>
-                        {screening.result}
-                      </Badge>
-                    )}
+              {visits.map((visit) => (
+                <div key={visit.visitId} className="p-5">
+                  <div className="mb-3">
+                    <h3 className="font-semibold text-gray-800 dark:text-gray-100">
+                      {visit.clientName}
+                    </h3>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                      {visit.clientScreeningId}
+                    </p>
                   </div>
 
-                  {/* Show screening type badge for "all screenings" view */}
-                  {isAllScreenings && screening.screeningType && (
+                  {isAllScreenings && (
                     <div className="mb-3">
-                      <span className={`inline-flex px-3 py-1 rounded-full text-xs font-semibold ${getScreeningTypeBadge(screening.screeningType).color}`}>
-                        {getScreeningTypeBadge(screening.screeningType).label}
-                      </span>
+                      <TypeChips screenings={visit.screenings} />
                     </div>
                   )}
 
                   <div className="space-y-2 text-sm mb-4">
                     <div className="flex items-center gap-2 text-gray-600 dark:text-gray-300">
                       <Calendar className="w-4 h-4" />
-                      <span>{new Date(screening.screeningDate).toLocaleDateString()}</span>
+                      <span>{formatDate(visit.screeningDate)}</span>
                     </div>
-                    {screening.notes && (
-                      <div className="flex items-start gap-2 text-gray-600 dark:text-gray-300">
-                        <FileText className="w-4 h-4 mt-0.5" />
-                        <span className="line-clamp-2">{screening.notes}</span>
-                      </div>
-                    )}
+                    <div className="flex items-center gap-2 text-gray-600 dark:text-gray-300">
+                      <Stethoscope className="w-4 h-4" />
+                      <span>
+                        {visit.screeningCount}{" "}
+                        {visit.screeningCount === 1 ? "test" : "tests"}
+                      </span>
+                    </div>
                   </div>
 
-                  <Link href={`/ncsr/client-details?clientId=${screening.clientId}`}>
-                    <Button className="w-full rounded-xl bg-green-700 border-green-700 hover:bg-green-800 hover:border-green-800">
-                      <span className="inline-flex items-center gap-2">
-                        <Eye className="w-4 h-4" />
-                        View Client
-                      </span>
-                    </Button>
-                  </Link>
+                  <Button
+                    className="w-full rounded-xl bg-green-700 border-green-700 hover:bg-green-800 hover:border-green-800"
+                    onClick={() => openDetails(visit)}
+                  >
+                    <span className="inline-flex items-center gap-2">
+                      <Eye className="w-4 h-4" />
+                      View Details
+                    </span>
+                  </Button>
                 </div>
               ))}
             </div>
@@ -309,72 +428,55 @@ export default function ScreeningsPage() {
                 <thead>
                   <tr className="text-left text-xs font-semibold tracking-wide uppercase border-b bg-gray-50 dark:bg-gray-800/60 text-gray-500 dark:text-gray-400">
                     <th className="px-6 py-4">Client</th>
-                    {isAllScreenings && <th className="px-6 py-4">Type</th>}
-                    <th className="px-6 py-4">Screening Date</th>
-                    <th className="px-6 py-4">Result</th>
-                    <th className="px-6 py-4">Notes</th>
+                    {isAllScreenings && <th className="px-6 py-4">Tests</th>}
+                    <th className="px-6 py-4">Visit Date</th>
+                    <th className="px-6 py-4">No. of Tests</th>
                     <th className="px-6 py-4">Action</th>
                   </tr>
                 </thead>
 
                 <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
-                  {screenings.map((screening) => (
+                  {visits.map((visit) => (
                     <tr
-                      key={screening.screeningId}
+                      key={visit.visitId}
                       className="hover:bg-gray-50/70 dark:hover:bg-gray-700/20 transition"
                     >
                       <td className="px-6 py-4">
                         <div>
                           <p className="font-semibold text-gray-800 dark:text-gray-100">
-                            {screening.clientName}
+                            {visit.clientName}
                           </p>
                           <p className="text-xs text-gray-500 dark:text-gray-400">
-                            {screening.screeningId}
+                            {visit.clientScreeningId}
                           </p>
                         </div>
                       </td>
 
                       {isAllScreenings && (
                         <td className="px-6 py-4">
-                          {screening.screeningType ? (
-                            <span className={`inline-flex px-3 py-1 rounded-full text-xs font-semibold ${getScreeningTypeBadge(screening.screeningType).color}`}>
-                              {getScreeningTypeBadge(screening.screeningType).label}
-                            </span>
-                          ) : (
-                            <span className="text-sm text-gray-500">—</span>
-                          )}
+                          <TypeChips screenings={visit.screenings} />
                         </td>
                       )}
 
                       <td className="px-6 py-4 text-sm">
-                        {new Date(screening.screeningDate).toLocaleDateString()}
+                        {formatDate(visit.screeningDate)}
+                      </td>
+
+                      <td className="px-6 py-4 text-sm">
+                        {visit.screeningCount}
                       </td>
 
                       <td className="px-6 py-4">
-                        {screening.result ? (
-                          <Badge type={getResultBadge(screening.result) as any}>
-                            {screening.result}
-                          </Badge>
-                        ) : (
-                          <span className="text-sm text-gray-500">—</span>
-                        )}
-                      </td>
-
-                      <td className="px-6 py-4 text-sm max-w-xs">
-                        <span className="line-clamp-2">
-                          {screening.notes || "—"}
-                        </span>
-                      </td>
-
-                      <td className="px-6 py-4">
-                        <Link href={`/ncsr/client-details?clientId=${screening.clientId}`}>
-                          <Button layout="outline" className="rounded-xl">
-                            <span className="inline-flex items-center gap-2">
-                              <Eye className="w-4 h-4" />
-                              View
-                            </span>
-                          </Button>
-                        </Link>
+                        <Button
+                          layout="outline"
+                          className="rounded-xl"
+                          onClick={() => openDetails(visit)}
+                        >
+                          <span className="inline-flex items-center gap-2">
+                            <Eye className="w-4 h-4" />
+                            View Details
+                          </span>
+                        </Button>
                       </td>
                     </tr>
                   ))}
@@ -395,6 +497,118 @@ export default function ScreeningsPage() {
           </>
         )}
       </div>
+
+      {/* Visit details modal (self-contained — avoids windmill Modal's findDOMNode crash) */}
+      {isModalOpen && selectedVisit && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          role="dialog"
+          aria-modal="true"
+        >
+          {/* Backdrop */}
+          <div
+            className="absolute inset-0 bg-black/50"
+            onClick={closeDetails}
+          />
+
+          {/* Panel */}
+          <div className="relative z-10 w-full max-w-lg max-h-[85vh] overflow-y-auto rounded-2xl bg-white dark:bg-gray-800 shadow-2xl">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 dark:border-gray-700">
+              <h3 className="text-lg font-semibold text-gray-800 dark:text-white">
+                Visit Details
+              </h3>
+              <button
+                onClick={closeDetails}
+                aria-label="Close"
+                className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+              >
+                <X className="w-5 h-5 text-gray-500" />
+              </button>
+            </div>
+
+            <div className="px-5 py-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-5">
+                <div className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+                  <User className="w-4 h-4 text-gray-400" />
+                  <span className="font-medium">
+                    {selectedVisit.clientName}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+                  <FileText className="w-4 h-4 text-gray-400" />
+                  <span>{selectedVisit.clientScreeningId}</span>
+                </div>
+                <div className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+                  <Calendar className="w-4 h-4 text-gray-400" />
+                  <span>{formatDate(selectedVisit.screeningDate)}</span>
+                </div>
+                {selectedVisit.facility && (
+                  <div className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+                    <Building2 className="w-4 h-4 text-gray-400" />
+                    <span>{selectedVisit.facility}</span>
+                  </div>
+                )}
+              </div>
+
+              <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">
+                Screenings in this visit ({selectedVisit.screenings.length})
+              </h4>
+
+              {selectedVisit.screenings.length === 0 ? (
+                <p className="text-sm text-gray-500 dark:text-gray-400">
+                  No screening records attached to this visit.
+                </p>
+              ) : (
+                <div className="space-y-3">
+                  {selectedVisit.screenings.map((s, i) => {
+                    const typeBadge = getScreeningTypeBadge(s.screeningType);
+                    return (
+                      <div
+                        key={`${s.screeningType}-${i}`}
+                        className="rounded-xl border border-gray-100 dark:border-gray-700 p-4"
+                      >
+                        <div className="flex items-center justify-between gap-3 mb-2">
+                          <span
+                            className={`inline-flex px-2.5 py-0.5 rounded-full text-xs font-semibold ${typeBadge.color}`}
+                          >
+                            {typeBadge.label}
+                          </span>
+                          <Badge
+                            type={getResultBadge(s.screeningResult) as any}
+                          >
+                            {s.screeningResult || "No result"}
+                          </Badge>
+                        </div>
+
+                        <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
+                          <Calendar className="w-3.5 h-3.5" />
+                          <span>{formatDate(s.screeningDate)}</span>
+                        </div>
+
+                        {s.notes && (
+                          <p className="mt-2 text-sm text-gray-600 dark:text-gray-300">
+                            {s.notes}
+                          </p>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            <div className="px-5 py-4 border-t border-gray-100 dark:border-gray-700 flex justify-end">
+              <Button
+                layout="outline"
+                onClick={closeDetails}
+                className="rounded-xl"
+              >
+                Close
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </Layout>
   );
 }

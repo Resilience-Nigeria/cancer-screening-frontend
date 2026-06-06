@@ -62,6 +62,7 @@ export default function SidebarContent({ linkClicked }: SidebarContentProps) {
       'NICRAT_STAFF': 'NICRAT Staff',
       'HOSPITAL_ADMIN': 'Hospital Administrator',
       'DATA_CLERK': 'Data Clerk',
+      'PARTNER': 'Partner - CHAI'
     };
     
     return roleNames[userRoleName] || userRoleName.replace(/_/g, ' ');
@@ -76,6 +77,7 @@ export default function SidebarContent({ linkClicked }: SidebarContentProps) {
       'NICRAT_STAFF': <Database className="w-3.5 h-3.5" />,
       'HOSPITAL_ADMIN': <Building2 className="w-3.5 h-3.5" />,
       'DATA_CLERK': <Users className="w-3.5 h-3.5" />,
+      'PARTNER': <Users className="w-3.5 h-3.5" />,
     };
     
     return icons[userRoleName];
@@ -90,6 +92,7 @@ export default function SidebarContent({ linkClicked }: SidebarContentProps) {
       'NICRAT_STAFF': 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
       'HOSPITAL_ADMIN': 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
       'DATA_CLERK': 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400',
+      'PARTNER': 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400',
     };
     
     return colors[userRoleName] || 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300';
@@ -97,7 +100,7 @@ export default function SidebarContent({ linkClicked }: SidebarContentProps) {
 
   // Check if user has national access
   function hasNationalAccess(): boolean {
-    return userRoleName === 'SUPER_ADMIN' || userRoleName === 'NICRAT_STAFF';
+    return userRoleName === 'SUPER_ADMIN' || userRoleName === 'NICRAT_STAFF' || userRoleName === 'PARTNER';
   }
 
   async function handleLogout() {

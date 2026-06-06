@@ -1,4 +1,4 @@
-import React, { useState, useEffect, Fragment } from "react";
+import React, { useState, useEffect } from "react";
 import {
   Button,
   Label,
@@ -28,6 +28,10 @@ const STEPS = [
   { id: 6, title: "Adherence & Outcome" },
 ];
 
+const today = () => new Date().toISOString().split("T")[0];
+// <input type="date"> needs YYYY-MM-DD; strip any ISO time component.
+const dateOnly = (v?: string | null) => (v ? String(v).split("T")[0] : "");
+
 export default function OutcomeModal({
   isOpen,
   onClose,
@@ -41,144 +45,142 @@ export default function OutcomeModal({
   const [facilities, setFacilities] = useState<any[]>([]);
   const [loadingFacilities, setLoadingFacilities] = useState(false);
 
-  // ✅ FIX: Auto-set screening date to today
   const [form, setForm] = useState({
-    // Step 1: Pre-Screening Counseling
     preScreeningCounselingDate: "",
     preScreeningCounselor: "",
     preScreeningConsent: "",
 
-    // Step 2: Screening Outcome
     screeningResult: "",
-    screeningDate: new Date().toISOString().split('T')[0], // ✅ Auto-set to today
+    screeningDate: today(),
 
-    // Step 3: Post-Screening Counseling
     postScreeningCounselingDate: "",
     postScreeningCounselor: "",
 
-    // Step 4a: Follow-up (if negative)
     nextFollowUpDate: "",
     followUpEstablished: "",
 
-    // Step 4b: Diagnosis & Staging (if positive)
     diagnosis: "",
     cancerType: "",
     cancerStage: "",
     stagingComments: "",
     diagnosisDate: "",
 
-    // Step 5a: Treatment Commencement
     treatmentCommenced: "",
     treatmentCommencementDate: "",
     treatmentDelayReason: "",
 
-    // Step 5b: Treatment Details
     treatmentType: "",
     treatmentFacility: "",
 
-    // Step 6a: Adherence to Treatment
     adherenceRating: "",
     missedAppointments: "",
     missedAppointmentReasons: [] as string[],
     adherenceInterventions: [] as string[],
 
-    // Step 6b: Treatment Completion
     treatmentStatus: "",
     treatmentCompletionDate: "",
     discontinuationReason: "",
     treatmentDuration: "",
 
-    // Step 6c: Treatment Outcome
     clinicalOutcome: "",
     outcomeAssessmentDate: "",
 
-    // General
     remarks: "",
   });
 
   useEffect(() => {
-    if (existingOutcome) {
-      setForm({
-        preScreeningCounselingDate: existingOutcome.preScreeningCounselingDate || existingOutcome.pre_screening_counseling_date || "",
-        preScreeningCounselor: existingOutcome.preScreeningCounselor || existingOutcome.pre_screening_counselor || "",
-        preScreeningConsent: existingOutcome.preScreeningConsent || existingOutcome.pre_screening_consent || "",
+    if (!existingOutcome) return;
+    const o = existingOutcome;
+    setForm({
+      preScreeningCounselingDate: dateOnly(
+        o.preScreeningCounselingDate ?? o.pre_screening_counseling_date
+      ),
+      preScreeningCounselor:
+        o.preScreeningCounselor ?? o.pre_screening_counselor ?? "",
+      preScreeningConsent:
+        o.preScreeningConsent ?? o.pre_screening_consent ?? "",
 
-        screeningResult: existingOutcome.screeningResult || existingOutcome.screening_result || "",
-        screeningDate: existingOutcome.screeningDate || existingOutcome.screening_date || new Date().toISOString().split('T')[0], // ✅ Default to today if no existing date
+      screeningResult: o.screeningResult ?? o.screening_result ?? "",
+      screeningDate:
+        dateOnly(o.screeningDate ?? o.screening_date) || today(),
 
-        postScreeningCounselingDate: existingOutcome.postScreeningCounselingDate || existingOutcome.post_screening_counseling_date || "",
-        postScreeningCounselor: existingOutcome.postScreeningCounselor || existingOutcome.post_screening_counselor || "",
+      postScreeningCounselingDate: dateOnly(
+        o.postScreeningCounselingDate ?? o.post_screening_counseling_date
+      ),
+      postScreeningCounselor:
+        o.postScreeningCounselor ?? o.post_screening_counselor ?? "",
 
-        nextFollowUpDate: existingOutcome.nextFollowUpDate || existingOutcome.next_follow_up_date || "",
-        followUpEstablished: existingOutcome.followUpEstablished || existingOutcome.follow_up_established || "",
+      nextFollowUpDate: dateOnly(o.nextFollowUpDate ?? o.next_follow_up_date),
+      followUpEstablished:
+        o.followUpEstablished ?? o.follow_up_established ?? "",
 
-        diagnosis: existingOutcome.diagnosis || "",
-        cancerType: existingOutcome.cancerType || existingOutcome.cancer_type || "",
-        cancerStage: existingOutcome.cancerStage || existingOutcome.cancer_stage || "",
-        stagingComments: existingOutcome.stagingComments || existingOutcome.staging_comments || "",
-        diagnosisDate: existingOutcome.diagnosisDate || existingOutcome.diagnosis_date || "",
+      diagnosis: o.diagnosis ?? "",
+      cancerType: o.cancerType ?? o.cancer_type ?? "",
+      cancerStage: o.cancerStage ?? o.cancer_stage ?? "",
+      stagingComments: o.stagingComments ?? o.staging_comments ?? "",
+      diagnosisDate: dateOnly(o.diagnosisDate ?? o.diagnosis_date),
 
-        treatmentCommenced: existingOutcome.treatmentCommenced || existingOutcome.treatment_commenced || "",
-        treatmentCommencementDate: existingOutcome.treatmentCommencementDate || existingOutcome.treatment_commencement_date || "",
-        treatmentDelayReason: existingOutcome.treatmentDelayReason || existingOutcome.treatment_delay_reason || "",
+      treatmentCommenced: o.treatmentCommenced ?? o.treatment_commenced ?? "",
+      treatmentCommencementDate: dateOnly(
+        o.treatmentCommencementDate ?? o.treatment_commencement_date
+      ),
+      treatmentDelayReason:
+        o.treatmentDelayReason ?? o.treatment_delay_reason ?? "",
 
-        treatmentType: existingOutcome.treatmentType || existingOutcome.treatment_type || "",
-        treatmentFacility: existingOutcome.treatmentFacility || existingOutcome.treatment_facility || "",
+      treatmentType: o.treatmentType ?? o.treatment_type ?? "",
+      treatmentFacility: o.treatmentFacility ?? o.treatment_facility ?? "",
 
-        adherenceRating: existingOutcome.adherenceRating || existingOutcome.adherence_rating || "",
-        missedAppointments: existingOutcome.missedAppointments || existingOutcome.missed_appointments || "",
-        missedAppointmentReasons: existingOutcome.missedAppointmentReasons || existingOutcome.missed_appointment_reasons || [],
-        adherenceInterventions: existingOutcome.adherenceInterventions || existingOutcome.adherence_interventions || [],
+      adherenceRating: o.adherenceRating ?? o.adherence_rating ?? "",
+      missedAppointments: num(o.missedAppointments ?? o.missed_appointments),
+      missedAppointmentReasons:
+        o.missedAppointmentReasons ?? o.missed_appointment_reasons ?? [],
+      adherenceInterventions:
+        o.adherenceInterventions ?? o.adherence_interventions ?? [],
 
-        treatmentStatus: existingOutcome.treatmentStatus || existingOutcome.treatment_status || "",
-        treatmentCompletionDate: existingOutcome.treatmentCompletionDate || existingOutcome.treatment_completion_date || "",
-        discontinuationReason: existingOutcome.discontinuationReason || existingOutcome.discontinuation_reason || "",
-        treatmentDuration: existingOutcome.treatmentDuration || existingOutcome.treatment_duration || "",
+      treatmentStatus: o.treatmentStatus ?? o.treatment_status ?? "",
+      treatmentCompletionDate: dateOnly(
+        o.treatmentCompletionDate ?? o.treatment_completion_date
+      ),
+      discontinuationReason:
+        o.discontinuationReason ?? o.discontinuation_reason ?? "",
+      treatmentDuration: num(o.treatmentDuration ?? o.treatment_duration),
 
-        clinicalOutcome: existingOutcome.clinicalOutcome || existingOutcome.clinical_outcome || "",
-        outcomeAssessmentDate: existingOutcome.outcomeAssessmentDate || existingOutcome.outcome_assessment_date || "",
+      clinicalOutcome: o.clinicalOutcome ?? o.clinical_outcome ?? "",
+      outcomeAssessmentDate: dateOnly(
+        o.outcomeAssessmentDate ?? o.outcome_assessment_date
+      ),
 
-        remarks: existingOutcome.remarks || "",
-      });
-    }
+      remarks: o.remarks ?? "",
+    });
   }, [existingOutcome]);
 
-  // ✅ Fetch facilities from API endpoint (filter to treatment centers only)
   useEffect(() => {
     async function fetchFacilities() {
       setLoadingFacilities(true);
       try {
-        const response = await api.get('/facilities');
-        // Handle different possible response structures
-        const facilitiesData = response.data?.facilities || response.data?.data || response.data || [];
-        
-        // ✅ Filter to show only treatment centers
-        const treatmentFacilities = facilitiesData.filter((facility: any) => 
-          facility.isTreatmentCenter === true
+        const response = await api.get("/facilities");
+        const facilitiesData =
+          response.data?.facilities || response.data?.data || response.data || [];
+        const treatmentFacilities = facilitiesData.filter(
+          (facility: any) => facility.isTreatmentCenter === true
         );
-        
         setFacilities(treatmentFacilities);
       } catch (err) {
-        console.error('Error loading facilities:', err);
-        toast.error('Unable to load treatment facilities');
+        toast.error("Unable to load treatment facilities");
         setFacilities([]);
       } finally {
         setLoadingFacilities(false);
       }
     }
-
     fetchFacilities();
   }, []);
 
-  // ✅ Auto-calculate follow-up date (6 months from screening date)
+  // Auto-calculate follow-up date (6 months from screening) for negatives.
   useEffect(() => {
     if (form.screeningDate && form.screeningResult === "negative" && !form.nextFollowUpDate) {
-      const screeningDate = new Date(form.screeningDate);
-      screeningDate.setMonth(screeningDate.getMonth() + 6);
-      setForm((prev) => ({
-        ...prev,
-        nextFollowUpDate: screeningDate.toISOString().split("T")[0],
-      }));
+      const d = new Date(form.screeningDate);
+      d.setMonth(d.getMonth() + 6);
+      setForm((prev) => ({ ...prev, nextFollowUpDate: d.toISOString().split("T")[0] }));
     }
   }, [form.screeningDate, form.screeningResult]);
 
@@ -190,34 +192,21 @@ export default function OutcomeModal({
   function toggleArrayValue(field: keyof typeof form, value: string) {
     setForm((prev) => {
       const current = prev[field] as string[];
-      if (current.includes(value)) {
-        return { ...prev, [field]: current.filter((v) => v !== value) };
-      } else {
-        return { ...prev, [field]: [...current, value] };
-      }
+      return current.includes(value)
+        ? { ...prev, [field]: current.filter((v) => v !== value) }
+        : { ...prev, [field]: [...current, value] };
     });
   }
 
-  function validateStep(step: number): boolean {
-    const newErrors: Record<string, string> = {};
-    // No strict validation - all fields optional
-    setErrors(newErrors);
-    return true;
-  }
-
   function handleNext() {
-    if (validateStep(currentStep)) {
-      setCurrentStep((prev) => Math.min(prev + 1, STEPS.length));
-    }
+    setCurrentStep((prev) => Math.min(prev + 1, STEPS.length));
   }
-
   function handlePrevious() {
     setCurrentStep((prev) => Math.max(prev - 1, 1));
   }
 
   async function handleSubmit() {
     setSubmitting(true);
-
     try {
       const payload = {
         ...form,
@@ -236,8 +225,7 @@ export default function OutcomeModal({
       toast.success("Outcome saved successfully.");
       onComplete();
     } catch (err: any) {
-      const response = err?.response?.data;
-      toast.error(response?.message || "Unable to save outcome.");
+      toast.error(err?.response?.data?.message || "Unable to save outcome.");
     } finally {
       setSubmitting(false);
     }
@@ -251,8 +239,11 @@ export default function OutcomeModal({
     }
   }
 
-  // Don't render if modal is not open
   if (!isOpen) return null;
+
+  const facilityNames = facilities.map((f) => f.facilityName || f.name);
+  const facilityNotInList =
+    form.treatmentFacility && !facilityNames.includes(form.treatmentFacility);
 
   function renderStep() {
     switch (currentStep) {
@@ -334,7 +325,7 @@ export default function OutcomeModal({
                   value={form.screeningDate}
                   onChange={(e) => setField("screeningDate", e.target.value)}
                 />
-                <HelperText>Defaults to today's date</HelperText>
+                <HelperText>Defaults to today&apos;s date</HelperText>
               </Label>
             </div>
           </div>
@@ -482,7 +473,6 @@ export default function OutcomeModal({
                     onChange={(e) => setField("stagingComments", e.target.value)}
                     placeholder="Enter detailed clinical notes about staging..."
                   />
-                  <HelperText>Up to 2000 characters for comprehensive clinical documentation</HelperText>
                 </Label>
               </div>
             </div>
@@ -593,29 +583,26 @@ export default function OutcomeModal({
                     disabled={loadingFacilities}
                   >
                     <option value="">
-                      {loadingFacilities 
-                        ? "Loading treatment facilities..." 
-                        : facilities.length === 0 
+                      {loadingFacilities
+                        ? "Loading treatment facilities..."
+                        : facilities.length === 0
                         ? "No treatment facilities available"
                         : "Select treatment facility"}
                     </option>
+                    {/* Keep a saved facility visible even if it's not in the loaded list */}
+                    {facilityNotInList && (
+                      <option value={form.treatmentFacility}>{form.treatmentFacility}</option>
+                    )}
                     {facilities.map((facility) => (
-                      <option 
-                        key={facility.id || facility.facilityId} 
+                      <option
+                        key={facility.id || facility.facilityId}
                         value={facility.facilityName || facility.name}
                       >
-                        {facility.facilityName || facility.name} - {facility.facilityCode || ''}
+                        {facility.facilityName || facility.name}
+                        {facility.facilityCode ? ` - ${facility.facilityCode}` : ""}
                       </option>
                     ))}
                   </Select>
-                  {facilities.length === 0 && !loadingFacilities && (
-                    <HelperText className="text-orange-600">
-                      No treatment facilities found. Only facilities marked as treatment centers are shown.
-                    </HelperText>
-                  )}
-                  {loadingFacilities && (
-                    <HelperText>Loading available treatment facilities...</HelperText>
-                  )}
                 </Label>
               </div>
             </div>
@@ -831,19 +818,14 @@ export default function OutcomeModal({
     }
   }
 
-  // Custom modal implementation
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto">
-      {/* Backdrop */}
-      <div 
-        className="fixed inset-0 bg-black bg-opacity-50 transition-opacity" 
+      <div
+        className="fixed inset-0 bg-black bg-opacity-50 transition-opacity"
         onClick={handleClose}
       />
-      
-      {/* Modal Panel */}
       <div className="flex min-h-full items-center justify-center p-4">
         <div className="relative bg-white dark:bg-gray-800 rounded-2xl shadow-xl max-w-4xl w-full max-h-[90vh] flex flex-col">
-          {/* Header */}
           <div className="flex items-center justify-between p-6 border-b dark:border-gray-700">
             <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
               Case Outcome - Step {currentStep} of {STEPS.length}
@@ -857,9 +839,7 @@ export default function OutcomeModal({
             </button>
           </div>
 
-          {/* Body */}
           <div className="flex-1 overflow-y-auto p-6">
-            {/* Progress Indicator */}
             <div className="mb-6">
               <div className="flex justify-between mb-2">
                 {STEPS.map((step, idx) => (
@@ -881,11 +861,9 @@ export default function OutcomeModal({
               </div>
             </div>
 
-            {/* Step Content */}
             {renderStep()}
           </div>
 
-          {/* Footer */}
           <div className="flex gap-3 justify-between p-6 border-t dark:border-gray-700">
             <Button
               layout="outline"
@@ -928,4 +906,9 @@ export default function OutcomeModal({
       </div>
     </div>
   );
+}
+
+// number-or-empty helper (kept at bottom to mirror existing file style)
+function num(v: any) {
+  return v === null || v === undefined ? "" : String(v);
 }

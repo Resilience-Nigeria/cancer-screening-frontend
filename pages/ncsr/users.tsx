@@ -31,6 +31,13 @@ interface Facility {
   facilityId: string;
 }
 
+interface Organization {
+  id: number;
+  organizationName: string;
+  organizationId?: string;
+  // Add other fields from your API response if needed
+}
+
 interface User {
   id: number;
   firstName: string;
@@ -67,12 +74,14 @@ interface FormData {
   alternatePhoneNumber: string;
   role: string;
   facilityId: string;
+  organizationId?: string;
   status: "active" | "inactive";
 }
 
 export default function UsersManagementPage() {
   const [users, setUsers] = useState<User[]>([]);
   const [facilities, setFacilities] = useState<Facility[]>([]);
+  const [organizations, setOrganizations] = useState<Organization[]>([]);
   const [roles, setRoles] = useState<Role[]>([]);
   const [stats, setStats] = useState<Stats>({
     total: 0,
@@ -100,6 +109,7 @@ export default function UsersManagementPage() {
     alternatePhoneNumber: "",
     role: "",
     facilityId: "",
+    organizationId: "",
     status: "active",
   });
 
@@ -109,12 +119,12 @@ export default function UsersManagementPage() {
   const isSuperAdmin = currentUserRole === 'SUPER_ADMIN';
 
   useEffect(() => {
-    // Get current user
     const userData = getUser();
     setCurrentUser(userData);
     
     fetchUsers();
     fetchFacilities();
+    fetchOrganizations();
     fetchRoles();
   }, []);
 
@@ -147,6 +157,17 @@ export default function UsersManagementPage() {
     }
   }
 
+  async function fetchOrganizations() {
+    try {
+      const { data } = await api.get("/users/organizations"); // Adjust endpoint if needed
+      if (data.status) {
+        setOrganizations(data.organizations || data.data || []);
+      }
+    } catch (err) {
+      console.error("Error fetching organizations:", err);
+    }
+  }
+
   async function fetchRoles() {
     try {
       const { data } = await api.get("/users/roles");
@@ -157,6 +178,12 @@ export default function UsersManagementPage() {
       console.error("Error fetching roles:", err);
     }
   }
+
+  const selectedRole = roles.find(
+  (r) => String(r.roleId) === String(formData.role)
+);
+
+const isPartnerRole = selectedRole?.roleName === "PARTNER";
 
   const filteredUsers = useMemo(() => {
     return users.filter((user) => {
@@ -183,7 +210,6 @@ export default function UsersManagementPage() {
     setSelectedUser(user || null);
 
     if (mode === "add") {
-      // For Hospital Admin, auto-set their facility
       const initialFacilityId = isHospitalAdmin && currentUser?.facilityId 
         ? currentUser.facilityId.toString() 
         : "";
@@ -196,6 +222,7 @@ export default function UsersManagementPage() {
         alternatePhoneNumber: "",
         role: "",
         facilityId: initialFacilityId,
+        organizationId: "",
         status: "active",
       });
     } else if (user) {
@@ -207,6 +234,7 @@ export default function UsersManagementPage() {
         alternatePhoneNumber: user.alternatePhoneNumber || "",
         role: user.role,
         facilityId: user.facilityId.toString(),
+        organizationId: "",
         status: user.status,
       });
     }
@@ -225,15 +253,26 @@ export default function UsersManagementPage() {
     setSubmitting(true);
 
     try {
+      const payload = { ...formData };
+
+      // Remove organizationId if not PARTNER
+      const selectedRole = roles.find(
+  (r) => String(r.roleId) === String(formData.role)
+);
+
+if (selectedRole?.roleName !== "PARTNER") {
+  delete (payload as any).organizationId;
+}
+
       if (modalMode === "add") {
-        const { data } = await api.post("/users", formData);
+        const { data } = await api.post("/users", payload);
         if (data.status) {
           await fetchUsers();
           closeModal();
           alert(`✅ User created successfully!\n\nLogin credentials have been sent to ${formData.email}`);
         }
       } else if (modalMode === "edit" && selectedUser) {
-        const { data } = await api.put(`/users/${selectedUser.id}`, formData);
+        const { data } = await api.put(`/users/${selectedUser.id}`, payload);
         if (data.status) {
           await fetchUsers();
           closeModal();
@@ -248,11 +287,7 @@ export default function UsersManagementPage() {
   }
 
   async function handleDelete(user: User) {
-    if (
-      !confirm(
-        `Are you sure you want to delete ${user.firstName} ${user.lastName}?`
-      )
-    ) {
+    if (!confirm(`Are you sure you want to delete ${user.firstName} ${user.lastName}?`)) {
       return;
     }
 
@@ -272,6 +307,7 @@ export default function UsersManagementPage() {
       'NICRAT_STAFF': 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
       'HOSPITAL_ADMIN': 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
       'DATA_CLERK': 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400',
+      'PARTNER': 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400',
       
       'super_admin': 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400',
       'facility_admin': 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
@@ -328,179 +364,167 @@ export default function UsersManagementPage() {
 
   return (
     <Layout>
-    <div className="p-4 sm:p-6 lg:p-8">
-      {/* Header */}
-      <div className="mb-8">
-        <div className="flex items-center gap-3 mb-2">
-          <div className="flex items-center justify-center w-12 h-12 rounded-2xl bg-green-600 shadow-lg">
-            <Users className="w-6 h-6 text-white" />
-          </div>
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
-              Users Management
-            </h1>
-            <p className="text-sm text-gray-600 dark:text-gray-400 mt-0.5">
-              Manage system users, roles, and facility assignments
-            </p>
-          </div>
-        </div>
-      </div>
-
-      {/* Stats Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-        <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 border border-gray-200 dark:border-gray-700 shadow-sm hover:shadow-md transition-shadow">
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center justify-center w-10 h-10 rounded-xl bg-blue-100 dark:bg-blue-900/30">
-              <Users className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+      <div className="p-4 sm:p-6 lg:p-8">
+        {/* Header */}
+        <div className="mb-8">
+          <div className="flex items-center gap-3 mb-2">
+            <div className="flex items-center justify-center w-12 h-12 rounded-2xl bg-green-600 shadow-lg">
+              <Users className="w-6 h-6 text-white" />
             </div>
-            <span className="text-2xl font-bold text-gray-900 dark:text-white">
-              {stats.total}
-            </span>
-          </div>
-          <p className="text-sm font-medium text-gray-600 dark:text-gray-400">
-            Total Users
-          </p>
-        </div>
-
-        <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 border border-gray-200 dark:border-gray-700 shadow-sm hover:shadow-md transition-shadow">
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center justify-center w-10 h-10 rounded-xl bg-green-100 dark:bg-green-900/30">
-              <UserCog className="w-5 h-5 text-green-600 dark:text-green-400" />
-            </div>
-            <span className="text-2xl font-bold text-gray-900 dark:text-white">
-              {stats.active}
-            </span>
-          </div>
-          <p className="text-sm font-medium text-gray-600 dark:text-gray-400">
-            Active Users
-          </p>
-        </div>
-
-        <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 border border-gray-200 dark:border-gray-700 shadow-sm hover:shadow-md transition-shadow">
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center justify-center w-10 h-10 rounded-xl bg-orange-100 dark:bg-orange-900/30">
-              <Shield className="w-5 h-5 text-orange-600 dark:text-orange-400" />
-            </div>
-            <span className="text-2xl font-bold text-gray-900 dark:text-white">
-              {stats.byRole?.admin || 0}
-            </span>
-          </div>
-          <p className="text-sm font-medium text-gray-600 dark:text-gray-400">
-            Administrators
-          </p>
-        </div>
-
-        <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 border border-gray-200 dark:border-gray-700 shadow-sm hover:shadow-md transition-shadow">
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center justify-center w-10 h-10 rounded-xl bg-purple-100 dark:bg-purple-900/30">
-              <Building2 className="w-5 h-5 text-purple-600 dark:text-purple-400" />
-            </div>
-            <span className="text-2xl font-bold text-gray-900 dark:text-white">
-              {facilities.length}
-            </span>
-          </div>
-          <p className="text-sm font-medium text-gray-600 dark:text-gray-400">
-            Facilities
-          </p>
-        </div>
-      </div>
-
-      {/* Search and Filters */}
-      <div className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-200 dark:border-gray-700 p-6 mb-6 shadow-sm">
-        <div className="flex flex-col lg:flex-row gap-4">
-          <div className="flex-1">
-            <div className="relative">
-              <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-              <input
-                type="text"
-                placeholder="Search by name, email, or phone..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-12 pr-4 py-3 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white placeholder-gray-500 focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all"
-              />
+            <div>
+              <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
+                Users Management
+              </h1>
+              <p className="text-sm text-gray-600 dark:text-gray-400 mt-0.5">
+                Manage system users, roles, and facility assignments
+              </p>
             </div>
           </div>
-
-          <button
-            onClick={() => setShowFilters(!showFilters)}
-            className="flex items-center justify-center gap-2 px-6 py-3 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors font-medium"
-          >
-            <Filter className="w-5 h-5" />
-            Filters
-            <ChevronDown
-              className={`w-4 h-4 transition-transform ${
-                showFilters ? "rotate-180" : ""
-              }`}
-            />
-          </button>
-
-          <button
-            onClick={() => openModal("add")}
-            className="flex items-center justify-center gap-2 px-6 py-3 rounded-xl bg-green-600 text-white hover:bg-green-700 shadow-lg transition-all font-semibold"
-          >
-            <Plus className="w-5 h-5" />
-            Add User
-          </button>
         </div>
 
-        {showFilters && (
-          <div className="mt-6 pt-6 border-t border-gray-200 dark:border-gray-700 grid grid-cols-1 md:grid-cols-3 gap-4">
-            {/* Only show facility filter for Super Admin */}
-            {isSuperAdmin && (
+        {/* Stats Cards - unchanged */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+          {/* ... (same as original) */}
+          <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 border border-gray-200 dark:border-gray-700 shadow-sm hover:shadow-md transition-shadow">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center justify-center w-10 h-10 rounded-xl bg-blue-100 dark:bg-blue-900/30">
+                <Users className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+              </div>
+              <span className="text-2xl font-bold text-gray-900 dark:text-white">
+                {stats.total}
+              </span>
+            </div>
+            <p className="text-sm font-medium text-gray-600 dark:text-gray-400">Total Users</p>
+          </div>
+
+          <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 border border-gray-200 dark:border-gray-700 shadow-sm hover:shadow-md transition-shadow">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center justify-center w-10 h-10 rounded-xl bg-green-100 dark:bg-green-900/30">
+                <UserCog className="w-5 h-5 text-green-600 dark:text-green-400" />
+              </div>
+              <span className="text-2xl font-bold text-gray-900 dark:text-white">
+                {stats.active}
+              </span>
+            </div>
+            <p className="text-sm font-medium text-gray-600 dark:text-gray-400">Active Users</p>
+          </div>
+
+          <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 border border-gray-200 dark:border-gray-700 shadow-sm hover:shadow-md transition-shadow">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center justify-center w-10 h-10 rounded-xl bg-orange-100 dark:bg-orange-900/30">
+                <Shield className="w-5 h-5 text-orange-600 dark:text-orange-400" />
+              </div>
+              <span className="text-2xl font-bold text-gray-900 dark:text-white">
+                {stats.byRole?.admin || 0}
+              </span>
+            </div>
+            <p className="text-sm font-medium text-gray-600 dark:text-gray-400">Administrators</p>
+          </div>
+
+          <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 border border-gray-200 dark:border-gray-700 shadow-sm hover:shadow-md transition-shadow">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center justify-center w-10 h-10 rounded-xl bg-purple-100 dark:bg-purple-900/30">
+                <Building2 className="w-5 h-5 text-purple-600 dark:text-purple-400" />
+              </div>
+              <span className="text-2xl font-bold text-gray-900 dark:text-white">
+                {facilities.length}
+              </span>
+            </div>
+            <p className="text-sm font-medium text-gray-600 dark:text-gray-400">Facilities</p>
+          </div>
+        </div>
+
+        {/* Search and Filters - unchanged */}
+        <div className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-200 dark:border-gray-700 p-6 mb-6 shadow-sm">
+          <div className="flex flex-col lg:flex-row gap-4">
+            <div className="flex-1">
+              <div className="relative">
+                <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                <input
+                  type="text"
+                  placeholder="Search by name, email, or phone..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full pl-12 pr-4 py-3 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white placeholder-gray-500 focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all"
+                />
+              </div>
+            </div>
+
+            <button
+              onClick={() => setShowFilters(!showFilters)}
+              className="flex items-center justify-center gap-2 px-6 py-3 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors font-medium"
+            >
+              <Filter className="w-5 h-5" />
+              Filters
+              <ChevronDown className={`w-4 h-4 transition-transform ${showFilters ? "rotate-180" : ""}`} />
+            </button>
+
+            <button
+              onClick={() => openModal("add")}
+              className="flex items-center justify-center gap-2 px-6 py-3 rounded-xl bg-green-600 text-white hover:bg-green-700 shadow-lg transition-all font-semibold"
+            >
+              <Plus className="w-5 h-5" />
+              Add User
+            </button>
+          </div>
+
+          {showFilters && (
+            <div className="mt-6 pt-6 border-t border-gray-200 dark:border-gray-700 grid grid-cols-1 md:grid-cols-3 gap-4">
+              {isSuperAdmin && (
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
+                    Facility
+                  </label>
+                  <select
+                    value={filterFacility}
+                    onChange={(e) => setFilterFacility(e.target.value)}
+                    className="w-full px-4 py-2.5 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                  >
+                    <option value="all">All Facilities</option>
+                    {facilities.map((facility) => (
+                      <option key={facility.facilityId} value={facility.facilityId}>
+                        {facility.facilityName}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
               <div>
                 <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
-                  Facility
+                  Role
                 </label>
                 <select
-                  value={filterFacility}
-                  onChange={(e) => setFilterFacility(e.target.value)}
+                  value={filterRole}
+                  onChange={(e) => setFilterRole(e.target.value)}
                   className="w-full px-4 py-2.5 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-green-500 focus:border-transparent"
                 >
-                  <option value="all">All Facilities</option>
-                  {facilities.map((facility) => (
-                    <option key={facility.facilityId} value={facility.facilityId}>
-                      {facility.facilityName}
-                    </option>
+                  <option value="all">All Roles</option>
+                  {roles.map((role) => (
+                    <option key={role.roleId} value={role.roleName}>
+  {formatRoleName(role.roleName)}
+</option>
                   ))}
                 </select>
               </div>
-            )}
 
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
-                Role
-              </label>
-              <select
-                value={filterRole}
-                onChange={(e) => setFilterRole(e.target.value)}
-                className="w-full px-4 py-2.5 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-green-500 focus:border-transparent"
-              >
-                <option value="all">All Roles</option>
-                {roles.map((role) => (
-                  <option key={role.roleId} value={role.roleId}>
-                    {formatRoleName(role.roleName)}
-                  </option>
-                ))}
-              </select>
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
+                  Status
+                </label>
+                <select
+                  value={filterStatus}
+                  onChange={(e) => setFilterStatus(e.target.value)}
+                  className="w-full px-4 py-2.5 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                >
+                  <option value="all">All Status</option>
+                  <option value="active">Active</option>
+                  <option value="inactive">Inactive</option>
+                </select>
+              </div>
             </div>
-
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
-                Status
-              </label>
-              <select
-                value={filterStatus}
-                onChange={(e) => setFilterStatus(e.target.value)}
-                className="w-full px-4 py-2.5 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-green-500 focus:border-transparent"
-              >
-                <option value="all">All Status</option>
-                <option value="active">Active</option>
-                <option value="inactive">Inactive</option>
-              </select>
-            </div>
-          </div>
-        )}
-      </div>
+          )}
+        </div>
 
       {/* Table View (Desktop) - Hidden on Mobile */}
       <div className="hidden lg:block bg-white dark:bg-gray-800 rounded-2xl border border-gray-200 dark:border-gray-700 shadow-sm overflow-hidden">
@@ -734,29 +758,25 @@ export default function UsersManagementPage() {
         )}
       </div>
 
-      {/* Modal */}
       {showModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-hidden animate-in zoom-in-95 duration-200">
-            <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700">
-              <h2 className="text-xl font-bold text-gray-900 dark:text-white">
-                {modalMode === "add"
-                  ? "Add New User"
-                  : modalMode === "edit"
-                  ? "Edit User"
-                  : "User Details"}
-              </h2>
-              <button
-                onClick={closeModal}
-                className="flex items-center justify-center w-10 h-10 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-              >
-                <X className="w-5 h-5 text-gray-500" />
-              </button>
-            </div>
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
+            <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-hidden animate-in zoom-in-95 duration-200">
+              <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700">
+                <h2 className="text-xl font-bold text-gray-900 dark:text-white">
+                  {modalMode === "add" ? "Add New User" : modalMode === "edit" ? "Edit User" : "User Details"}
+                </h2>
+                <button
+                  onClick={closeModal}
+                  className="flex items-center justify-center w-10 h-10 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                >
+                  <X className="w-5 h-5 text-gray-500" />
+                </button>
+              </div>
 
-            <div className="p-6 overflow-y-auto max-h-[calc(90vh-140px)]">
-              {modalMode === "view" && selectedUser ? (
-                <div className="space-y-6">
+              <div className="p-6 overflow-y-auto max-h-[calc(90vh-140px)]">
+                {modalMode === "view" && selectedUser ? (
+                  // View mode unchanged - same as original
+                 <div className="space-y-6">
                   <div>
                     <h3 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">
                       {selectedUser.firstName} {selectedUser.lastName}
@@ -820,221 +840,161 @@ export default function UsersManagementPage() {
                     </div>
                   </div>
                 </div>
-              ) : (
-                <form onSubmit={handleSubmit} className="space-y-6">
-                  {/* Auto-Password Info Box */}
-                  {modalMode === "add" && (
-                    <div className="flex items-start gap-3 p-4 rounded-xl bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800">
-                      <Info className="w-5 h-5 text-blue-600 dark:text-blue-400 flex-shrink-0 mt-0.5" />
-                      <div className="flex-1">
-                        <p className="text-sm font-semibold text-blue-900 dark:text-blue-100 mb-1">
-                          Automatic Password Generation
-                        </p>
-                        <p className="text-xs text-blue-700 dark:text-blue-300">
-                          A secure password will be automatically generated and sent to the user's email address along with their login credentials.
-                        </p>
+                ) : (
+                  <form onSubmit={handleSubmit} className="space-y-6">
+                    {/* Info boxes unchanged */}
+                    {modalMode === "add" && (
+                      <div className="flex items-start gap-3 p-4 rounded-xl bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800">
+                        <Info className="w-5 h-5 text-blue-600 dark:text-blue-400 flex-shrink-0 mt-0.5" />
+                        <div className="flex-1">
+                          <p className="text-sm font-semibold text-blue-900 dark:text-blue-100 mb-1">
+                            Automatic Password Generation
+                          </p>
+                          <p className="text-xs text-blue-700 dark:text-blue-300">
+                            A secure password will be automatically generated and sent to the user's email address along with their login credentials.
+                          </p>
+                        </div>
                       </div>
-                    </div>
-                  )}
+                    )}
 
-                  {/* Hospital Admin Facility Info Box */}
-                  {isHospitalAdmin && modalMode === "add" && currentUser?.facility && (
-                    <div className="flex items-start gap-3 p-4 rounded-xl bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800">
-                      <Building2 className="w-5 h-5 text-green-600 dark:text-green-400 flex-shrink-0 mt-0.5" />
-                      <div className="flex-1">
-                        <p className="text-sm font-semibold text-green-900 dark:text-green-100 mb-1">
-                          Facility Assignment
-                        </p>
-                        <p className="text-xs text-green-700 dark:text-green-300">
-                          New user will be assigned to your facility: <strong>{currentUser.facility.facilityName}</strong>
-                        </p>
+                    {isHospitalAdmin && modalMode === "add" && currentUser?.facility && (
+                      <div className="flex items-start gap-3 p-4 rounded-xl bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800">
+                        <Building2 className="w-5 h-5 text-green-600 dark:text-green-400 flex-shrink-0 mt-0.5" />
+                        <div className="flex-1">
+                          <p className="text-sm font-semibold text-green-900 dark:text-green-100 mb-1">
+                            Facility Assignment
+                          </p>
+                          <p className="text-xs text-green-700 dark:text-green-300">
+                            New user will be assigned to your facility: <strong>{currentUser.facility.facilityName}</strong>
+                          </p>
+                        </div>
                       </div>
-                    </div>
-                  )}
+                    )}
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div>
-                      <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
-                        First Name *
-                      </label>
-                      <input
-                        type="text"
-                        value={formData.firstName}
-                        onChange={(e) =>
-                          setFormData({ ...formData, firstName: e.target.value })
-                        }
-                        className="w-full px-4 py-2.5 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                        required
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
-                        Last Name *
-                      </label>
-                      <input
-                        type="text"
-                        value={formData.lastName}
-                        onChange={(e) =>
-                          setFormData({ ...formData, lastName: e.target.value })
-                        }
-                        className="w-full px-4 py-2.5 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                        required
-                      />
-                    </div>
-
-                    <div className="md:col-span-2">
-                      <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
-                        Email *
-                      </label>
-                      <input
-                        type="email"
-                        value={formData.email}
-                        onChange={(e) =>
-                          setFormData({ ...formData, email: e.target.value })
-                        }
-                        className="w-full px-4 py-2.5 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                        required
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
-                        Phone Number *
-                      </label>
-                      <input
-                        type="tel"
-                        value={formData.phoneNumber}
-                        onChange={(e) =>
-                          setFormData({ ...formData, phoneNumber: e.target.value })
-                        }
-                        className="w-full px-4 py-2.5 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                        required
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
-                        Alternate Phone
-                      </label>
-                      <input
-                        type="tel"
-                        value={formData.alternatePhoneNumber}
-                        onChange={(e) =>
-                          setFormData({
-                            ...formData,
-                            alternatePhoneNumber: e.target.value,
-                          })
-                        }
-                        className="w-full px-4 py-2.5 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
-                        Role *
-                      </label>
-                      <select
-                        value={formData.role}
-                        onChange={(e) =>
-                          setFormData({ ...formData, role: e.target.value })
-                        }
-                        className="w-full px-4 py-2.5 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                        required
-                      >
-                        <option value="">Select Role</option>
-                        {roles.map((role) => (
-                          <option key={role.roleId} value={role.roleId}>
-                            {formatRoleName(role.roleName)}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-
-                    {/* Facility Dropdown - ONLY show for Super Admin */}
-                    {isSuperAdmin && (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      {/* Basic fields unchanged */}
                       <div>
-                        <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
-                          Facility *
-                        </label>
+                        <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">First Name *</label>
+                        <input type="text" value={formData.firstName} onChange={(e) => setFormData({ ...formData, firstName: e.target.value })} required
+                          className="w-full px-4 py-2.5 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-green-500 focus:border-transparent" />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Last Name *</label>
+                        <input type="text" value={formData.lastName} onChange={(e) => setFormData({ ...formData, lastName: e.target.value })} required
+                          className="w-full px-4 py-2.5 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-green-500 focus:border-transparent" />
+                      </div>
+
+                      <div className="md:col-span-2">
+                        <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Email *</label>
+                        <input type="email" value={formData.email} onChange={(e) => setFormData({ ...formData, email: e.target.value })} required
+                          className="w-full px-4 py-2.5 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-green-500 focus:border-transparent" />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Phone Number *</label>
+                        <input type="tel" value={formData.phoneNumber} onChange={(e) => setFormData({ ...formData, phoneNumber: e.target.value })} required
+                          className="w-full px-4 py-2.5 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-green-500 focus:border-transparent" />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Alternate Phone</label>
+                        <input type="tel" value={formData.alternatePhoneNumber} onChange={(e) => setFormData({ ...formData, alternatePhoneNumber: e.target.value })}
+                          className="w-full px-4 py-2.5 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-green-500 focus:border-transparent" />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Role *</label>
                         <select
-                          value={formData.facilityId}
-                          onChange={(e) =>
-                            setFormData({ ...formData, facilityId: e.target.value })
-                          }
-                          className="w-full px-4 py-2.5 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                          value={formData.role}
+                          onChange={(e) => setFormData({ ...formData, role: e.target.value })}
                           required
+                          className="w-full px-4 py-2.5 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-green-500 focus:border-transparent"
                         >
-                          <option value="">Select Facility</option>
-                          {facilities.map((facility) => (
-                            <option key={facility.facilityId} value={facility.facilityId}>
-                              {facility.facilityName}
+                          <option value="">Select Role</option>
+                          {roles.map((role) => (
+                            <option key={role.roleId} value={role.roleId}>
+                              {formatRoleName(role.roleName)}
                             </option>
                           ))}
                         </select>
                       </div>
-                    )}
 
-                    <div>
-                      <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
-                        Status
-                      </label>
-                      <select
-                        value={formData.status}
-                        onChange={(e) =>
-                          setFormData({
-                            ...formData,
-                            status: e.target.value as "active" | "inactive",
-                          })
-                        }
-                        className="w-full px-4 py-2.5 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                      >
-                        <option value="active">Active</option>
-                        <option value="inactive">Inactive</option>
-                      </select>
+                      {/* Conditional Dropdown */}
+                      {isSuperAdmin && (
+  isPartnerRole ? (
+                          
+                          <div>
+                            <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
+                              Organization *
+                            </label>
+                            <select
+                              value={formData.organizationId || ""}
+                              onChange={(e) => setFormData({ ...formData, organizationId: e.target.value })}
+                              required
+                              className="w-full px-4 py-2.5 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                            >
+                              <option value="">Select Organization</option>
+                              {organizations.map((org) => (
+                                <option key={org.id} value={org.id || org.organizationId}>
+                                  {org.organizationName}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        ) : (
+                          <div>
+                            <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
+                              Facility *
+                            </label>
+                            <select
+                              value={formData.facilityId}
+                              onChange={(e) => setFormData({ ...formData, facilityId: e.target.value })}
+                              required
+                              className="w-full px-4 py-2.5 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                            >
+                              <option value="">Select Facility</option>
+                              {facilities.map((facility) => (
+                                <option key={facility.facilityId} value={facility.facilityId}>
+                                  {facility.facilityName}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        )
+                      )}
+
+                      <div>
+                        <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Status</label>
+                        <select
+                          value={formData.status}
+                          onChange={(e) => setFormData({ ...formData, status: e.target.value as "active" | "inactive" })}
+                          className="w-full px-4 py-2.5 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                        >
+                          <option value="active">Active</option>
+                          <option value="inactive">Inactive</option>
+                        </select>
+                      </div>
                     </div>
-                  </div>
 
-                  <div className="flex items-center justify-end gap-3 pt-6 border-t border-gray-200 dark:border-gray-700">
-                    <button
-                      type="button"
-                      onClick={closeModal}
-                      disabled={submitting}
-                      className="px-6 py-2.5 rounded-xl border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors font-medium disabled:opacity-50"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      type="submit"
-                      disabled={submitting}
-                      className="flex items-center gap-2 px-6 py-2.5 rounded-xl bg-green-600 text-white hover:bg-green-700 transition-colors font-semibold disabled:opacity-50"
-                    >
-                      {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
-                      {submitting
-                        ? "Saving..."
-                        : modalMode === "add"
-                        ? "Add User"
-                        : "Save Changes"}
-                    </button>
-                  </div>
-                </form>
-              )}
-            </div>
-
-            {modalMode === "view" && (
-              <div className="flex items-center justify-end gap-3 p-6 border-t border-gray-200 dark:border-gray-700">
-                <button
-                  onClick={closeModal}
-                  className="px-6 py-2.5 rounded-xl border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors font-medium"
-                >
-                  Close
-                </button>
+                    <div className="flex items-center justify-end gap-3 pt-6 border-t border-gray-200 dark:border-gray-700">
+                      <button type="button" onClick={closeModal} disabled={submitting}
+                        className="px-6 py-2.5 rounded-xl border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors font-medium disabled:opacity-50">
+                        Cancel
+                      </button>
+                      <button type="submit" disabled={submitting}
+                        className="flex items-center gap-2 px-6 py-2.5 rounded-xl bg-green-600 text-white hover:bg-green-700 transition-colors font-semibold disabled:opacity-50">
+                        {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
+                        {submitting ? "Saving..." : modalMode === "add" ? "Add User" : "Save Changes"}
+                      </button>
+                    </div>
+                  </form>
+                )}
               </div>
-            )}
+            </div>
           </div>
-        </div>
-      )}
-    </div>
+        )}
+      </div>
     </Layout>
   );
 }

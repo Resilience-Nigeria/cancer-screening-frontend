@@ -20,6 +20,7 @@ import {
   Plus,
   X,
   Edit,
+  Stethoscope,
 } from "lucide-react";
 import toast from "react-hot-toast";
 
@@ -39,6 +40,7 @@ type Client = {
   fullName: string;
   gender: string;
   phoneNumber?: string | null;
+  nin?: string | null;
   screeningCategory?: string;
   stateOfOrigin?: string | null;
   lgaOfOrigin?: string | null;
@@ -61,6 +63,7 @@ type ClientForm = {
   gender: string;
   dateOfBirth: string;
   phoneNumber: string;
+  nin: string;
   screeningCategory: string;
   stateOfOrigin: string;
   lgaOfOrigin: string;
@@ -89,6 +92,7 @@ const initialFormData: ClientForm = {
   gender: "",
   dateOfBirth: "",
   phoneNumber: "",
+  nin: "",
   screeningCategory: "",
   stateOfOrigin: "",
   lgaOfOrigin: "",
@@ -131,6 +135,7 @@ export default function ClientsIndexPage() {
         fullName: client.fullName ?? client.full_name ?? "",
         gender: client.gender ?? "",
         phoneNumber: client.phoneNumber ?? client.phone_number ?? "",
+        nin: client.nin ?? "",
         screeningCategory:
           client.screeningCategory ?? client.screening_category ?? "",
         stateOfOrigin: client.stateOfOrigin ?? client.state_of_origin ?? "",
@@ -190,6 +195,7 @@ function openEditModal(client: Client) {
     gender: client.gender || "",
     dateOfBirth: formatDateForInput(client.dateOfBirth),
     phoneNumber: client.phoneNumber || "",
+    nin: client.nin || "",
     screeningCategory: client.screeningCategory || "",
     stateOfOrigin: client.stateOfOrigin || "",
     lgaOfOrigin: client.lgaOfOrigin || "",
@@ -432,6 +438,26 @@ function openEditModal(client: Client) {
                         type="tel"
                         disabled={isSubmitting}
                         required
+                      />
+                    </Label>
+                  </div>
+
+
+                   {/* NIN*/}
+                  <div>
+                    <Label>
+                      <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                        NIN
+                      </span>
+                      <Input
+                        name="nin"
+                        value={formData.nin}
+                        onChange={handleInputChange}
+                        className="mt-1 rounded-xl"
+                        placeholder="Enter NIN"
+                        required
+                        disabled={isSubmitting}
+                        type="number"
                       />
                     </Label>
                   </div>
@@ -907,6 +933,18 @@ function openEditModal(client: Client) {
                             </span>
                           </Button>
                         </Link>
+
+                          <Link
+                          href={`/ncsr/screening-wizard?clientId=${client.clientId}`}
+                        >
+                          <Button layout="outline" className="rounded-xl">
+                            <span className="inline-flex items-center gap-2">
+                              <Stethoscope className="w-4 h-4" />
+                              Screen
+                            </span>
+                          </Button>
+                        </Link>
+
                         <Button
                           layout="outline"
                           onClick={() => openEditModal(client)}

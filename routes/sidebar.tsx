@@ -9,6 +9,7 @@ import {
   UserCog,
   Building2,
   ChartBar,
+  LinkIcon,
 } from "lucide-react";
 import { ComponentType } from "react";
 
@@ -19,7 +20,7 @@ interface IRoute {
   routes?: IRoute[];
   checkActive?: (pathname: string, route: IRoute) => boolean;
   exact?: boolean;
-  roles?: Array<'SUPER_ADMIN' | 'NICRAT_STAFF' | 'HOSPITAL_ADMIN' | 'DATA_CLERK'>;
+  roles?: Array<'SUPER_ADMIN' | 'NICRAT_STAFF' | 'HOSPITAL_ADMIN' | 'DATA_CLERK' | 'PARTNER'>;
 }
 
 export function routeIsActive(pathname: string, route: IRoute): boolean {
@@ -68,13 +69,20 @@ const routes: IRoute[] = [
     name: "Outcomes",
     // Visible to all authenticated users
   },
+
+  {
+    path: "/ncsr/referred",
+    icon: LinkIcon,
+    name: "Linked patients",
+    // Visible to all authenticated users
+  },
   
   // Admin-only routes
   {
     path: "/ncsr/cancer-analytics",
     icon: ChartBar,
     name: "Analytics",
-    roles: ["SUPER_ADMIN"], // Only super admin manages facilities
+    roles: ["SUPER_ADMIN", "PARTNER"], // Only super admin manages facilities
   },
   {
     path: "/ncsr/users",

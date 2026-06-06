@@ -1,7 +1,7 @@
 export interface RiskProfile {
   id: number;
   clientId: number;
-  familyHistory: boolean;
+  familyHistory: "yes" | "no" | "unknown" | null;
   smokingStatus: "never" | "current" | "former" | null;
   alcoholConsumption: "none" | "occasional" | "regular" | null;
   weightKg: number | null;
