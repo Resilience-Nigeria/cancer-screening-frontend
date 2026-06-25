@@ -17,6 +17,8 @@ type LiverScreeningModalProps = {
   onComplete: () => void;
 };
 
+const today = () => new Date().toISOString().split("T")[0];
+
 export default function LiverScreeningModal({
   isOpen,
   onClose,
@@ -27,18 +29,24 @@ export default function LiverScreeningModal({
     hbvStatus: "",
     hcvStatus: "",
     method: "uss",
+    screeningDate: today(),
+    screeningResult: "negative",
     afpValue: "",
     lesionDetected: false,
-    referral: "",
+    treatmentReferral: "not_referred",
   });
 
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
 
+  const isAfp = form.method === "afp";
+  const isUss = form.method === "uss";
+
   useEffect(() => {
     if (isOpen && visitId) {
       fetchExisting();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, visitId]);
 
   async function fetchExisting() {
@@ -51,9 +59,14 @@ export default function LiverScreeningModal({
           hbvStatus: raw.hbvStatus ?? raw.hbv_status ?? "",
           hcvStatus: raw.hcvStatus ?? raw.hcv_status ?? "",
           method: raw.method ?? "uss",
+          screeningDate:
+            (raw.screeningDate ?? raw.screening_date ?? today()).toString().split("T")[0],
+          screeningResult:
+            raw.screeningResult ?? raw.screening_result ?? raw.result ?? "negative",
           afpValue: raw.afpValue ?? raw.afp_value ?? "",
           lesionDetected: !!(raw.lesionDetected ?? raw.lesion_detected),
-          referral: raw.referral ?? "",
+          treatmentReferral:
+            raw.treatmentReferral ?? raw.treatment_referral ?? raw.referral ?? "not_referred",
         });
       }
     } catch (err) {
@@ -71,6 +84,8 @@ export default function LiverScreeningModal({
     if (!form.hbvStatus) newErrors.hbvStatus = "HBV status is required.";
     if (!form.hcvStatus) newErrors.hcvStatus = "HCV status is required.";
     if (!form.method) newErrors.method = "Method is required.";
+    if (!form.screeningDate) newErrors.screeningDate = "Screening date is required.";
+    if (!form.screeningResult) newErrors.screeningResult = "Result is required.";
     return newErrors;
   }
 
@@ -89,7 +104,10 @@ export default function LiverScreeningModal({
     try {
       await api.post(`/visits/${visitId}/liver-screening`, {
         ...form,
-        afpValue: form.afpValue ? parseFloat(form.afpValue) : null,
+        result: form.screeningResult,
+        screeningResult: form.screeningResult,
+        afpValue: isAfp && form.afpValue ? parseFloat(form.afpValue) : null,
+        lesionDetected: isUss ? form.lesionDetected : false,
       });
 
       onComplete();
@@ -120,13 +138,11 @@ export default function LiverScreeningModal({
 
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto">
-      {/* Backdrop */}
-      <div 
-        className="fixed inset-0 bg-black bg-opacity-50 transition-opacity" 
+      <div
+        className="fixed inset-0 bg-black bg-opacity-50 transition-opacity"
         onClick={handleClose}
       />
-      
-      {/* Modal Panel */}
+
       <div className="flex min-h-full items-center justify-center p-4">
         <div className="relative bg-white dark:bg-gray-800 rounded-2xl shadow-xl max-w-2xl w-full">
           <form onSubmit={handleSubmit}>
@@ -204,15 +220,42 @@ export default function LiverScreeningModal({
                     </Label>
 
                     <Label>
-                      <span className="text-sm font-semibold">AFP Value (ng/mL)</span>
+                      <span className="text-sm font-semibold">Screening Date</span>
                       <Input
                         className="mt-2 rounded-2xl h-12 shadow-sm w-full"
-                        type="number"
-                        step="0.1"
-                        value={form.afpValue}
-                        onChange={(e) => setField("afpValue", e.target.value)}
-                        placeholder="Enter AFP value"
+                        type="date"
+                        value={form.screeningDate}
+                        onChange={(e) => setField("screeningDate", e.target.value)}
                       />
+                      {errors.screeningDate && <HelperText className="text-red-500">{errors.screeningDate}</HelperText>}
+                    </Label>
+
+                    {isAfp && (
+                      <Label>
+                        <span className="text-sm font-semibold">AFP Value (ng/mL)</span>
+                        <Input
+                          className="mt-2 rounded-2xl h-12 shadow-sm w-full"
+                          type="number"
+                          step="0.1"
+                          value={form.afpValue}
+                          onChange={(e) => setField("afpValue", e.target.value)}
+                          placeholder="Enter AFP value"
+                        />
+                      </Label>
+                    )}
+
+                    <Label className={isAfp ? "" : "md:col-span-2"}>
+                      <span className="text-sm font-semibold">Result</span>
+                      <Select
+                        className="mt-2 rounded-2xl h-12 shadow-sm w-full"
+                        value={form.screeningResult}
+                        onChange={(e) => setField("screeningResult", e.target.value)}
+                      >
+                        <option value="negative">Negative</option>
+                        <option value="positive">Positive</option>
+                        <option value="suspicious">Suspicious</option>
+                      </Select>
+                      {errors.screeningResult && <HelperText className="text-red-500">{errors.screeningResult}</HelperText>}
                     </Label>
                   </div>
                 </div>
@@ -223,24 +266,25 @@ export default function LiverScreeningModal({
                     Findings & Follow-up
                   </h3>
                   <div className="space-y-4">
-                    <Label check className="flex items-center">
-                      <Input
-                        type="checkbox"
-                        checked={form.lesionDetected}
-                        onChange={(e) => setField("lesionDetected", e.target.checked)}
-                        className="mr-2"
-                      />
-                      <span>Lesion detected</span>
-                    </Label>
+                    {isUss && (
+                      <Label check className="flex items-center">
+                        <Input
+                          type="checkbox"
+                          checked={form.lesionDetected}
+                          onChange={(e) => setField("lesionDetected", e.target.checked)}
+                          className="mr-2"
+                        />
+                        <span>Lesion detected</span>
+                      </Label>
+                    )}
 
                     <Label>
-                      <span className="text-sm font-semibold">Referral</span>
+                      <span className="text-sm font-semibold">Treatment Referral</span>
                       <Select
                         className="mt-2 rounded-2xl h-12 shadow-sm w-full"
-                        value={form.referral}
-                        onChange={(e) => setField("referral", e.target.value)}
+                        value={form.treatmentReferral}
+                        onChange={(e) => setField("treatmentReferral", e.target.value)}
                       >
-                        <option value="">Select</option>
                         <option value="referred">Referred</option>
                         <option value="not_referred">Not Referred</option>
                       </Select>

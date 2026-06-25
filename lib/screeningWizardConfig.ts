@@ -40,9 +40,10 @@ const yesNo = [
 ];
 
 const resultOptions = [
-  { value: "negative", label: "Negative" },
-  { value: "positive", label: "Positive" },
+  // { value: "negative", label: "Negative" },
+  // { value: "positive", label: "Positive" },
   { value: "suspicious", label: "Suspicious" },
+  { value: "non_suspicious", label: "Non Suspicious" },
 ];
 
 // ---------------------------------------------------------------------------
@@ -56,7 +57,7 @@ export const CANCER_TYPES: {
   blurb: string;
 }[] = [
   { value: "cervical", label: "Cervical", gender: "female", blurb: "VIA, Pap smear or HPV" },
-  { value: "breast", label: "Breast", gender: "female", blurb: "CBE, mammography or ultrasound" },
+  { value: "breast", label: "Breast", gender: "any", blurb: "CBE, mammography or ultrasound" },
   { value: "prostate", label: "Prostate", gender: "male", blurb: "PSA, DRE and IPSS" },
   { value: "colorectal", label: "Colorectal", gender: "any", blurb: "FIT, FOBT or colonoscopy" },
   { value: "liver", label: "Liver", gender: "any", blurb: "USS / AFP with viral status" },
@@ -179,6 +180,8 @@ const commonRiskGroup: FieldGroup = {
   ],
 };
 
+
+
 const infectiousGroup = (required: boolean): FieldGroup => ({
   title: "Infectious Disease Status",
   fields: [
@@ -232,10 +235,43 @@ export const RISK_FOCUS: Record<CancerType, string> = {
   liver: "Liver risk is driven by hepatitis B/C status and alcohol — viral status is required.",
 };
 
+// export function getRiskGroups(cancer: CancerType): FieldGroup[] {
+//   // Liver requires viral status; others keep it optional.
+//   return [commonRiskGroup, infectiousGroup(cancer === "liver")];
+// }
+
+
 export function getRiskGroups(cancer: CancerType): FieldGroup[] {
-  // Liver requires viral status; others keep it optional.
-  return [commonRiskGroup, infectiousGroup(cancer === "liver")];
+  const basicGroup: FieldGroup =
+    cancer === "breast"
+      ? {
+          ...commonRiskGroup,
+          fields: [
+            ...commonRiskGroup.fields,
+            {
+              name: "ageAtFirstMenstruation",
+              label: "Age at First Menstruation",
+              type: "number",
+              min: "0",
+              max: "30",
+              placeholder: "Age",
+            },
+            {
+              name: "ageAtMenopause",
+              label: "Age at Menopause (if applicable)",
+              type: "number",
+              min: "0",
+              max: "100",
+              placeholder: "Age",
+            },
+          ],
+        }
+      : commonRiskGroup;
+
+  return [basicGroup, infectiousGroup(cancer === "liver")];
 }
+
+
 
 // ---------------------------------------------------------------------------
 // Step 5 — Screening modules (dynamic, posted to /visits/{id}/{type}-screening)
@@ -355,139 +391,351 @@ export const SCREENING_GROUPS: Record<CancerType, FieldGroup[]> = {
     },
   ],
 
-  breast: [
-    resultDateGroup({
-      name: "method",
-      label: "Method",
-      type: "select",
-      required: true,
-      colSpan: 1,
-      options: [
-        { value: "cbe", label: "Clinical Breast Exam (CBE)" },
-        { value: "mammography", label: "Mammography" },
-        { value: "ultrasound", label: "Ultrasound" },
-      ],
-    }),
+//   breast: [
+//     resultDateGroup({
+//       name: "method",
+//       label: "Method",
+//       type: "select",
+//       required: true,
+//       colSpan: 1,
+//       options: [
+//         { value: "cbe", label: "Clinical Breast Exam (CBE)" },
+//         { value: "mammography", label: "Mammography" },
+//         { value: "ultrasound", label: "Ultrasound" },
+//       ],
+//     }),
 
-    {
-  title: "Imaging Findings",
-  description: "BI-RADS category and breast density (from mammography / ultrasound).",
+//     {
+//   title: "Imaging Findings",
+//   description: "BI-RADS category and breast density (from mammography / ultrasound).",
+//   fields: [
+//     {
+//       name: "biradsScore",
+//       label: "BI-RADS Score",
+//       type: "select",
+//       colSpan: 1,
+//       options: [
+//         { value: "", label: "Select" },
+//         { value: "0", label: "BI-RADS 0 — Incomplete" },
+//         { value: "1", label: "BI-RADS 1 — Negative" },
+//         { value: "2", label: "BI-RADS 2 — Benign" },
+//         { value: "3", label: "BI-RADS 3 — Probably Benign" },
+//         { value: "4", label: "BI-RADS 4 — Suspicious" },
+//         { value: "5", label: "BI-RADS 5 — Highly Suggestive of Malignancy" },
+//         { value: "6", label: "BI-RADS 6 — Known Malignancy" },
+//       ],
+//       showIf: (v) => v.method === "mammography" || v.method === "ultrasound"
+//     },
+//     {
+//       name: "breastDensity",
+//       label: "Breast Density (ACR)",
+//       type: "select",
+//       colSpan: 1,
+//       options: [
+//         { value: "", label: "Select" },
+//         { value: "a", label: "A — Almost entirely fatty" },
+//         { value: "b", label: "B — Scattered fibroglandular" },
+//         { value: "c", label: "C — Heterogeneously dense" },
+//         { value: "d", label: "D — Extremely dense" },
+//       ],
+//       showIf: (v) => v.method === "mammography" || v.method === "ultrasound"
+//     },
+//   ],
+// },
+
+//     {
+//       title: "Breast Health History & Symptoms",
+//       fields: [
+//         { name: "breastfeedingHistory", label: "Breastfeeding History", type: "select", options: yesNo, colSpan: 1 },
+//         {
+//           name: "breastfeedingDuration",
+//           label: "Breastfeeding Duration (months)",
+//           type: "number",
+//           min: 0,
+//           colSpan: 1,
+//           showIf: (v) => v.breastfeedingHistory === "yes",
+//         },
+//         {
+//           name: "breastLumps",
+//           label: "Breast Lumps",
+//           type: "select",
+//           colSpan: 1,
+//           options: [
+//             { value: "", label: "Select" },
+//             { value: "current", label: "Current" },
+//             { value: "previous", label: "Previous" },
+//             { value: "none", label: "None" },
+//           ],
+//         },
+//         { name: "breastNippleDischarge", label: "Breast/Nipple Discharge", type: "select", options: yesNo, colSpan: 1 },
+//         {
+//           name: "dischargeType",
+//           label: "Discharge Type",
+//           type: "select",
+//           colSpan: 2,
+//           showIf: (v) => v.breastNippleDischarge === "yes",
+//           options: [
+//             { value: "", label: "Select type" },
+//             { value: "bloody", label: "Bloody" },
+//             { value: "clear", label: "Clear" },
+//             { value: "milky", label: "Milky" },
+//             { value: "purulent", label: "Purulent" },
+//             { value: "others", label: "Others" },
+//           ],
+//         },
+//         { name: "skinChanges", label: "Skin Appearance Changes", type: "select", options: yesNo, colSpan: 1 },
+//         { name: "breastPain", label: "Breast Pain", type: "select", options: yesNo, colSpan: 1 },
+//         { name: "previousBreastSurgery", label: "Previous Breast Surgery", type: "select", options: yesNo, colSpan: 1 },
+//         { name: "previousBiopsy", label: "Previous Biopsy", type: "select", options: yesNo, colSpan: 1 },
+//         { name: "ageAtFirstMenstruation", label: "Age at First Menstruation", type: "number", min: 0, max: 30, colSpan: 1 },
+//         { name: "ageAtMenopause", label: "Age at Menopause (if applicable)", type: "number", min: 0, max: 100, colSpan: 1 },
+//       ],
+//     },
+//     {
+//       title: "Procedures & Follow-up",
+//       fields: [
+//         { name: "biopsyDone", label: "Biopsy done", type: "checkbox", colSpan: 1 },
+//         // { name: "referralCompleted", label: "Referral completed", type: "checkbox", colSpan: 1 },
+//         {
+//           name: "biopsyResult",
+//           label: "Biopsy Result",
+//           type: "select",
+//           colSpan: 2,
+//           showIf: (v) => !!v.biopsyDone,
+//           options: [
+//             { value: "", label: "Select" },
+//             { value: "positive", label: "Positive" },
+//             { value: "negative", label: "Negative" },
+//           ],
+//         },
+
+//           {
+//           name: "treatmentReferral",
+//           label: "Treatment Referral",
+//           type: "select",
+//           colSpan: 1,
+//           options: [
+//             { value: "", label: "Select" },
+//             { value: "referred", label: "Referred" },
+//             { value: "not_referred", label: "Not Referred" },
+//           ],
+//         },
+
+//       ],
+//     },
+//   ],
+
+
+breast: [
+  {
+    title: "Screening Details",
+    fields: [
+      // Multi-select via checkboxes — rendered specially by the wizard
+      // Primary method still sent as `method`; all selections as `screeningMethods`
+      {
+        name: "screeningDate",
+        label: "Screening Date",
+        type: "date",
+        required: true,
+        colSpan: 1,
+      },
+      {
+        name: "screeningResult",
+        label: "Screening Result",
+        type: "select",
+        options: resultOptions,
+        required: true,
+        colSpan: 1,
+      },
+    ],
+  },
+
+  {
+    title: "Screening Methods",
+    description: "Select all methods used during this encounter.",
+    fields: [
+      { name: "methodCbe", label: "Clinical Breast Exam (CBE)", type: "checkbox", colSpan: 1 },
+      { name: "methodMammography", label: "Mammography", type: "checkbox", colSpan: 1 },
+      { name: "methodUltrasound", label: "Ultrasound (USS)", type: "checkbox", colSpan: 1 },
+    ],
+  },
+
+  {
+    title: "Imaging Findings",
+    description: "BI-RADS category and breast density (from mammography / ultrasound).",
+    fields: [
+      {
+        name: "biradsScore",
+        label: "BI-RADS Score",
+        type: "select",
+        colSpan: 1,
+        showIf: (v) => !!v.methodMammography || !!v.methodUltrasound,
+        options: [
+          { value: "", label: "Select" },
+          { value: "0", label: "BI-RADS 0 — Incomplete" },
+          { value: "1", label: "BI-RADS 1 — Negative" },
+          { value: "2", label: "BI-RADS 2 — Benign" },
+          { value: "3", label: "BI-RADS 3 — Probably Benign" },
+          { value: "4", label: "BI-RADS 4 — Suspicious" },
+          { value: "5", label: "BI-RADS 5 — Highly Suggestive of Malignancy" },
+          { value: "6", label: "BI-RADS 6 — Known Malignancy" },
+        ],
+      },
+      {
+        name: "breastDensity",
+        label: "Breast Density (ACR)",
+        type: "select",
+        colSpan: 1,
+        showIf: (v) => !!v.methodMammography || !!v.methodUltrasound,
+        options: [
+          { value: "", label: "Select" },
+          { value: "a", label: "A — Almost entirely fatty" },
+          { value: "b", label: "B — Scattered fibroglandular" },
+          { value: "c", label: "C — Heterogeneously dense" },
+          { value: "d", label: "D — Extremely dense" },
+        ],
+      },
+    ],
+  },
+
+  {
+    title: "Breast Health History & Symptoms",
+    fields: [
+      { name: "breastfeedingHistory", label: "Breastfeeding History", type: "select", options: yesNo, colSpan: 1 },
+      {
+        name: "breastfeedingDuration",
+        label: "Breastfeeding Duration (months)",
+        type: "number",
+        min: 0,
+        colSpan: 1,
+        showIf: (v) => v.breastfeedingHistory === "yes",
+      },
+      {
+        name: "breastLumps",
+        label: "Breast Lumps",
+        type: "select",
+        colSpan: 1,
+        options: [
+          { value: "", label: "Select" },
+          { value: "current", label: "Current" },
+          { value: "previous", label: "Previous" },
+          { value: "none", label: "None" },
+        ],
+      },
+      { name: "breastNippleDischarge", label: "Breast/Nipple Discharge", type: "select", options: yesNo, colSpan: 1 },
+      {
+        name: "dischargeType",
+        label: "Discharge Type",
+        type: "select",
+        colSpan: 2,
+        showIf: (v) => v.breastNippleDischarge === "yes",
+        options: [
+          { value: "", label: "Select type" },
+          { value: "bloody", label: "Bloody" },
+          { value: "clear", label: "Clear" },
+          { value: "milky", label: "Milky" },
+          { value: "purulent", label: "Purulent" },
+          { value: "others", label: "Others" },
+        ],
+      },
+      { name: "skinChanges", label: "Skin Appearance Changes", type: "select", options: yesNo, colSpan: 1 },
+      { name: "breastPain", label: "Breast Pain", type: "select", options: yesNo, colSpan: 1 },
+      { name: "previousBreastSurgery", label: "Previous Breast Surgery", type: "select", options: yesNo, colSpan: 1 },
+      { name: "previousBiopsy", label: "Previous Biopsy", type: "select", options: yesNo, colSpan: 1 },
+    ],
+  },
+
+  {
+  title: "Procedures & Follow-up",
   fields: [
+    // Biopsy done this visit — only if no previous biopsy
     {
-      name: "biradsScore",
-      label: "BI-RADS Score",
-      type: "select",
+      name: "biopsyDone",
+      label: "Biopsy done (this visit)",
+      type: "checkbox",
       colSpan: 1,
-      options: [
-        { value: "", label: "Select" },
-        { value: "0", label: "BI-RADS 0 — Incomplete" },
-        { value: "1", label: "BI-RADS 1 — Negative" },
-        { value: "2", label: "BI-RADS 2 — Benign" },
-        { value: "3", label: "BI-RADS 3 — Probably Benign" },
-        { value: "4", label: "BI-RADS 4 — Suspicious" },
-        { value: "5", label: "BI-RADS 5 — Highly Suggestive of Malignancy" },
-        { value: "6", label: "BI-RADS 6 — Known Malignancy" },
-      ],
-      showIf: (v) => v.method === "mammography" || v.method === "ultrasound"
+      showIf: (v) => v.previousBiopsy !== "yes",
     },
     {
-      name: "breastDensity",
-      label: "Breast Density (ACR)",
+      name: "biopsyResult",
+      label: "Biopsy Result",
       type: "select",
       colSpan: 1,
+      showIf: (v) => !!v.biopsyDone && v.previousBiopsy !== "yes",
+      options: [
+        { value: "", label: "Select result" },
+        { value: "positive", label: "Positive" },
+        { value: "negative", label: "Negative" },
+      ],
+    },
+
+    // Previous biopsy = yes → collect that existing result
+    {
+      name: "previousBiopsyResult",
+      label: "Previous Biopsy Result",
+      type: "select",
+      colSpan: 1,
+      showIf: (v) => v.previousBiopsy === "yes",
+      options: [
+        { value: "", label: "Select result" },
+        { value: "positive", label: "Positive" },
+        { value: "negative", label: "Negative" },
+        { value: "inconclusive", label: "Inconclusive" },
+        { value: "unknown", label: "Unknown" },
+      ],
+    },
+
+    // Previous biopsy = no → checkbox to book
+    {
+      name: "biopsyBookNow",
+      label: "Book biopsy now",
+      type: "checkbox",
+      colSpan: 2,
+      showIf: (v) => v.previousBiopsy === "no" && !v.biopsyDone,
+    },
+
+    // Booking form — only when book now is checked
+    {
+      name: "biopsyBookingDate",
+      label: "Biopsy Appointment Date",
+      type: "date",
+      colSpan: 1,
+      showIf: (v) => v.previousBiopsy === "no" && !!v.biopsyBookNow,
+    },
+    {
+      name: "biopsyBookingFacility",
+      label: "Facility",
+      type: "select",
+      colSpan: 1,
+      // Options injected at render time from the facilities list — see note below
+      options: [],
+      showIf: (v) => v.previousBiopsy === "no" && !!v.biopsyBookNow,
+    },
+    {
+      name: "biopsyBookingNotes",
+      label: "Booking Notes",
+      type: "textarea",
+      colSpan: 2,
+      placeholder: "Any instructions or referral details",
+      showIf: (v) => v.previousBiopsy === "no" && !!v.biopsyBookNow,
+    },
+
+    // Treatment referral — only when result is suspicious
+    {
+      name: "treatmentReferral",
+      label: "Treatment Referral",
+      type: "select",
+      colSpan: 1,
+      showIf: (v) => v.screeningResult === "suspicious",
       options: [
         { value: "", label: "Select" },
-        { value: "a", label: "A — Almost entirely fatty" },
-        { value: "b", label: "B — Scattered fibroglandular" },
-        { value: "c", label: "C — Heterogeneously dense" },
-        { value: "d", label: "D — Extremely dense" },
+        { value: "referred", label: "Referred" },
+        { value: "not_referred", label: "Not Referred" },
       ],
-      showIf: (v) => v.method === "mammography" || v.method === "ultrasound"
     },
   ],
 },
-
-    {
-      title: "Breast Health History & Symptoms",
-      fields: [
-        { name: "breastfeedingHistory", label: "Breastfeeding History", type: "select", options: yesNo, colSpan: 1 },
-        {
-          name: "breastfeedingDuration",
-          label: "Breastfeeding Duration (months)",
-          type: "number",
-          min: 0,
-          colSpan: 1,
-          showIf: (v) => v.breastfeedingHistory === "yes",
-        },
-        {
-          name: "breastLumps",
-          label: "Breast Lumps",
-          type: "select",
-          colSpan: 1,
-          options: [
-            { value: "", label: "Select" },
-            { value: "current", label: "Current" },
-            { value: "previous", label: "Previous" },
-            { value: "none", label: "None" },
-          ],
-        },
-        { name: "breastNippleDischarge", label: "Breast/Nipple Discharge", type: "select", options: yesNo, colSpan: 1 },
-        {
-          name: "dischargeType",
-          label: "Discharge Type",
-          type: "select",
-          colSpan: 2,
-          showIf: (v) => v.breastNippleDischarge === "yes",
-          options: [
-            { value: "", label: "Select type" },
-            { value: "bloody", label: "Bloody" },
-            { value: "clear", label: "Clear" },
-            { value: "milky", label: "Milky" },
-            { value: "purulent", label: "Purulent" },
-            { value: "others", label: "Others" },
-          ],
-        },
-        { name: "skinChanges", label: "Skin Appearance Changes", type: "select", options: yesNo, colSpan: 1 },
-        { name: "breastPain", label: "Breast Pain", type: "select", options: yesNo, colSpan: 1 },
-        { name: "previousBreastSurgery", label: "Previous Breast Surgery", type: "select", options: yesNo, colSpan: 1 },
-        { name: "previousBiopsy", label: "Previous Biopsy", type: "select", options: yesNo, colSpan: 1 },
-        { name: "ageAtFirstMenstruation", label: "Age at First Menstruation", type: "number", min: 0, max: 30, colSpan: 1 },
-        { name: "ageAtMenopause", label: "Age at Menopause (if applicable)", type: "number", min: 0, max: 100, colSpan: 1 },
-      ],
-    },
-    {
-      title: "Procedures & Follow-up",
-      fields: [
-        { name: "biopsyDone", label: "Biopsy done", type: "checkbox", colSpan: 1 },
-        // { name: "referralCompleted", label: "Referral completed", type: "checkbox", colSpan: 1 },
-        {
-          name: "biopsyResult",
-          label: "Biopsy Result",
-          type: "select",
-          colSpan: 2,
-          showIf: (v) => !!v.biopsyDone,
-          options: [
-            { value: "", label: "Select" },
-            { value: "positive", label: "Positive" },
-            { value: "negative", label: "Negative" },
-          ],
-        },
-
-          {
-          name: "treatmentReferral",
-          label: "Treatment Referral",
-          type: "select",
-          colSpan: 1,
-          options: [
-            { value: "", label: "Select" },
-            { value: "referred", label: "Referred" },
-            { value: "not_referred", label: "Not Referred" },
-          ],
-        },
-
-      ],
-    },
-  ],
+],
 
   prostate: [
     {

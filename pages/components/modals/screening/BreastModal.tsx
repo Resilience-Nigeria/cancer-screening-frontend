@@ -17,6 +17,8 @@ type BreastScreeningModalProps = {
   onComplete: () => void;
 };
 
+const today = () => new Date().toISOString().split("T")[0];
+
 export default function BreastScreeningModal({
   isOpen,
   onClose,
@@ -25,9 +27,13 @@ export default function BreastScreeningModal({
 }: BreastScreeningModalProps) {
   const [form, setForm] = useState({
     method: "cbe",
-    screeningDate: new Date().toISOString().split("T")[0],
-    result: "negative",
-    
+    screeningDate: today(),
+    screeningResult: "negative",
+
+    // Imaging findings (mammography / ultrasound)
+    biradsScore: "",
+    breastDensity: "",
+
     breastfeedingHistory: "",
     breastfeedingDuration: "",
     breastLumps: "",
@@ -37,21 +43,24 @@ export default function BreastScreeningModal({
     breastPain: "",
     previousBreastSurgery: "",
     previousBiopsy: "",
-    ageAtFirstMenstruation: "",
-    ageAtMenopause: "",
     
+
     biopsyDone: false,
     biopsyResult: "",
-    referralCompleted: false,
+    treatmentReferral: "not_referred",
   });
 
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
 
+  // Imaging findings only apply to mammography / ultrasound.
+  const isImaging = form.method === "mammography" || form.method === "ultrasound";
+
   useEffect(() => {
     if (isOpen && visitId) {
       fetchExisting();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, visitId]);
 
   async function fetchExisting() {
@@ -62,9 +71,14 @@ export default function BreastScreeningModal({
       if (raw) {
         setForm({
           method: raw.method ?? "cbe",
-          screeningDate: raw.screeningDate ?? raw.screening_date ?? new Date().toISOString().split("T")[0],
-          result: raw.result ?? "negative",
-          
+          screeningDate:
+            (raw.screeningDate ?? raw.screening_date ?? today()).toString().split("T")[0],
+          screeningResult:
+            raw.screeningResult ?? raw.screening_result ?? raw.result ?? "negative",
+
+          biradsScore: raw.biradsScore ?? raw.birads_score ?? "",
+          breastDensity: raw.breastDensity ?? raw.breast_density ?? "",
+
           breastfeedingHistory: raw.breastfeedingHistory ?? raw.breastfeeding_history ?? "",
           breastfeedingDuration: raw.breastfeedingDuration ?? raw.breastfeeding_duration ?? "",
           breastLumps: raw.breastLumps ?? raw.breast_lumps ?? "",
@@ -74,12 +88,12 @@ export default function BreastScreeningModal({
           breastPain: raw.breastPain ?? raw.breast_pain ?? "",
           previousBreastSurgery: raw.previousBreastSurgery ?? raw.previous_breast_surgery ?? "",
           previousBiopsy: raw.previousBiopsy ?? raw.previous_biopsy ?? "",
-          ageAtFirstMenstruation: raw.ageAtFirstMenstruation ?? raw.age_at_first_menstruation ?? "",
-          ageAtMenopause: raw.ageAtMenopause ?? raw.age_at_menopause ?? "",
-          
+        
+
           biopsyDone: !!(raw.biopsyDone ?? raw.biopsy_done),
           biopsyResult: raw.biopsyResult ?? raw.biopsy_result ?? "",
-          referralCompleted: !!(raw.referralCompleted ?? raw.referral_completed),
+          treatmentReferral:
+            raw.treatmentReferral ?? raw.treatment_referral ?? "not_referred",
         });
       }
     } catch (err) {
@@ -96,7 +110,7 @@ export default function BreastScreeningModal({
     const newErrors: Record<string, string> = {};
     if (!form.method) newErrors.method = "Method is required.";
     if (!form.screeningDate) newErrors.screeningDate = "Screening date is required.";
-    if (!form.result) newErrors.result = "Result is required.";
+    if (!form.screeningResult) newErrors.screeningResult = "Result is required.";
     if (form.biopsyDone && !form.biopsyResult) {
       newErrors.biopsyResult = "Biopsy result is required when biopsy is done.";
     }
@@ -121,11 +135,17 @@ export default function BreastScreeningModal({
     try {
       await api.post(`/visits/${visitId}/breast-screening`, {
         ...form,
+        // Backend folds either key into the screeningResult column.
+        result: form.screeningResult,
+        screeningResult: form.screeningResult,
         biopsyResult: form.biopsyDone ? form.biopsyResult : null,
         dischargeType: form.breastNippleDischarge === "yes" ? form.dischargeType : null,
-        breastfeedingDuration: form.breastfeedingDuration ? parseInt(form.breastfeedingDuration) : null,
-        ageAtFirstMenstruation: form.ageAtFirstMenstruation ? parseInt(form.ageAtFirstMenstruation) : null,
-        ageAtMenopause: form.ageAtMenopause ? parseInt(form.ageAtMenopause) : null,
+        biradsScore: isImaging ? form.biradsScore || null : null,
+        breastDensity: isImaging ? form.breastDensity || null : null,
+        breastfeedingDuration: form.breastfeedingDuration
+          ? parseInt(form.breastfeedingDuration)
+          : null,
+       
       });
 
       onComplete();
@@ -156,11 +176,11 @@ export default function BreastScreeningModal({
 
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto">
-      <div 
-        className="fixed inset-0 bg-black bg-opacity-50 transition-opacity" 
+      <div
+        className="fixed inset-0 bg-black bg-opacity-50 transition-opacity"
         onClick={handleClose}
       />
-      
+
       <div className="flex min-h-full items-center justify-center p-4">
         <div className="relative bg-white dark:bg-gray-800 rounded-2xl shadow-xl max-w-4xl w-full">
           <form onSubmit={handleSubmit}>
@@ -217,17 +237,63 @@ export default function BreastScreeningModal({
                       <span className="text-sm font-semibold">Result</span>
                       <Select
                         className="mt-2 rounded-2xl h-12 shadow-sm w-full"
-                        value={form.result}
-                        onChange={(e) => setField("result", e.target.value)}
+                        value={form.screeningResult}
+                        onChange={(e) => setField("screeningResult", e.target.value)}
                       >
                         <option value="negative">Negative</option>
                         <option value="positive">Positive</option>
                         <option value="suspicious">Suspicious</option>
                       </Select>
-                      {errors.result && <HelperText className="text-red-500">{errors.result}</HelperText>}
+                      {errors.screeningResult && <HelperText className="text-red-500">{errors.screeningResult}</HelperText>}
                     </Label>
                   </div>
                 </div>
+
+                {/* Imaging Findings — only for mammography / ultrasound */}
+                {isImaging && (
+                  <div>
+                    <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-100 mb-1">
+                      Imaging Findings
+                    </h3>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">
+                      BI-RADS category and breast density (from mammography / ultrasound).
+                    </p>
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <Label>
+                        <span className="text-sm font-semibold">BI-RADS Score</span>
+                        <Select
+                          className="mt-2 rounded-2xl h-12 shadow-sm w-full"
+                          value={form.biradsScore}
+                          onChange={(e) => setField("biradsScore", e.target.value)}
+                        >
+                          <option value="">Select</option>
+                          <option value="0">BI-RADS 0 — Incomplete</option>
+                          <option value="1">BI-RADS 1 — Negative</option>
+                          <option value="2">BI-RADS 2 — Benign</option>
+                          <option value="3">BI-RADS 3 — Probably Benign</option>
+                          <option value="4">BI-RADS 4 — Suspicious</option>
+                          <option value="5">BI-RADS 5 — Highly Suggestive of Malignancy</option>
+                          <option value="6">BI-RADS 6 — Known Malignancy</option>
+                        </Select>
+                      </Label>
+
+                      <Label>
+                        <span className="text-sm font-semibold">Breast Density (ACR)</span>
+                        <Select
+                          className="mt-2 rounded-2xl h-12 shadow-sm w-full"
+                          value={form.breastDensity}
+                          onChange={(e) => setField("breastDensity", e.target.value)}
+                        >
+                          <option value="">Select</option>
+                          <option value="a">A — Almost entirely fatty</option>
+                          <option value="b">B — Scattered fibroglandular</option>
+                          <option value="c">C — Heterogeneously dense</option>
+                          <option value="d">D — Extremely dense</option>
+                        </Select>
+                      </Label>
+                    </div>
+                  </div>
+                )}
 
                 {/* Breast-Specific Symptoms */}
                 <div>
@@ -302,6 +368,7 @@ export default function BreastScreeningModal({
                           <option value="clear">Clear</option>
                           <option value="milky">Milky</option>
                           <option value="purulent">Purulent</option>
+                          <option value="others">Others</option>
                         </Select>
                         {errors.dischargeType && <HelperText className="text-red-500">{errors.dischargeType}</HelperText>}
                       </Label>
@@ -359,61 +426,25 @@ export default function BreastScreeningModal({
                       </Select>
                     </Label>
 
-                    <Label>
-                      <span className="text-sm font-semibold">Age at First Menstruation</span>
-                      <Input
-                        className="mt-2 rounded-2xl h-12 shadow-sm w-full"
-                        type="number"
-                        min="0"
-                        max="30"
-                        value={form.ageAtFirstMenstruation}
-                        onChange={(e) => setField("ageAtFirstMenstruation", e.target.value)}
-                        placeholder="Age"
-                      />
-                    </Label>
-
-                    <Label>
-                      <span className="text-sm font-semibold">Age at Menopause (if applicable)</span>
-                      <Input
-                        className="mt-2 rounded-2xl h-12 shadow-sm w-full"
-                        type="number"
-                        min="0"
-                        max="100"
-                        value={form.ageAtMenopause}
-                        onChange={(e) => setField("ageAtMenopause", e.target.value)}
-                        placeholder="Age"
-                      />
-                    </Label>
+                   
                   </div>
                 </div>
 
-                {/* Additional Procedures */}
+                {/* Procedures & Follow-up */}
                 <div>
                   <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-100 mb-3">
-                    Additional Procedures & Follow-up
+                    Procedures & Follow-up
                   </h3>
                   <div className="space-y-3">
-                    <div className="grid gap-3 md:grid-cols-2">
-                      <Label check className="flex items-center">
-                        <Input
-                          type="checkbox"
-                          checked={form.biopsyDone}
-                          onChange={(e) => setField("biopsyDone", e.target.checked)}
-                          className="mr-2"
-                        />
-                        <span>Biopsy done</span>
-                      </Label>
-
-                      <Label check className="flex items-center">
-                        <Input
-                          type="checkbox"
-                          checked={form.referralCompleted}
-                          onChange={(e) => setField("referralCompleted", e.target.checked)}
-                          className="mr-2"
-                        />
-                        <span>Referral completed</span>
-                      </Label>
-                    </div>
+                    <Label check className="flex items-center">
+                      <Input
+                        type="checkbox"
+                        checked={form.biopsyDone}
+                        onChange={(e) => setField("biopsyDone", e.target.checked)}
+                        className="mr-2"
+                      />
+                      <span>Biopsy done</span>
+                    </Label>
 
                     {form.biopsyDone && (
                       <Label>
@@ -430,6 +461,18 @@ export default function BreastScreeningModal({
                         {errors.biopsyResult && <HelperText className="text-red-500">{errors.biopsyResult}</HelperText>}
                       </Label>
                     )}
+
+                    <Label>
+                      <span className="text-sm font-semibold">Treatment Referral</span>
+                      <Select
+                        className="mt-2 rounded-2xl h-12 shadow-sm w-full"
+                        value={form.treatmentReferral}
+                        onChange={(e) => setField("treatmentReferral", e.target.value)}
+                      >
+                        <option value="referred">Referred</option>
+                        <option value="not_referred">Not Referred</option>
+                      </Select>
+                    </Label>
                   </div>
                 </div>
               </div>

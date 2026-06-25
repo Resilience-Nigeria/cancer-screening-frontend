@@ -17,6 +17,8 @@ type CervicalScreeningModalProps = {
   onComplete: () => void;
 };
 
+const today = () => new Date().toISOString().split("T")[0];
+
 export default function CervicalScreeningModal({
   isOpen,
   onClose,
@@ -25,15 +27,14 @@ export default function CervicalScreeningModal({
 }: CervicalScreeningModalProps) {
   const [form, setForm] = useState({
     method: "via",
-    screeningDate: new Date().toISOString().split("T")[0],
-    result: "negative",
+    screeningDate: today(),
+    screeningResult: "negative",
     hpvResult: "",
     hpvGenotype: "",
     colposcopyDone: false,
     biopsyDone: false,
     biopsyResult: "",
-    treatmentProvided: false,
-    referralCompleted: false,
+    treatmentReferral: "not_referred",
 
     moreThanOnePartner: "",
     ageAtFirstIntercourse: "",
@@ -44,10 +45,13 @@ export default function CervicalScreeningModal({
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
 
+  const isHpv = form.method === "hpv";
+
   useEffect(() => {
     if (isOpen && visitId) {
       fetchExisting();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, visitId]);
 
   async function fetchExisting() {
@@ -58,15 +62,16 @@ export default function CervicalScreeningModal({
       if (raw) {
         setForm({
           method: raw.method ?? "via",
-          screeningDate: raw.screeningDate ?? raw.screening_date ?? new Date().toISOString().split("T")[0],
-          result: raw.result ?? "negative",
+          screeningDate:
+            (raw.screeningDate ?? raw.screening_date ?? today()).toString().split("T")[0],
+          screeningResult:
+            raw.screeningResult ?? raw.screening_result ?? raw.result ?? "negative",
           hpvResult: raw.hpvResult ?? raw.hpv_result ?? "",
           hpvGenotype: raw.hpvGenotype ?? raw.hpv_genotype ?? "",
           colposcopyDone: !!(raw.colposcopyDone ?? raw.colposcopy_done),
           biopsyDone: !!(raw.biopsyDone ?? raw.biopsy_done),
           biopsyResult: raw.biopsyResult ?? raw.biopsy_result ?? "",
-          treatmentProvided: !!(raw.treatmentProvided ?? raw.treatment_provided),
-          referralCompleted: !!(raw.referralCompleted ?? raw.referral_completed),
+          treatmentReferral: raw.treatmentReferral ?? raw.treatment_referral ?? "not_referred",
 
           moreThanOnePartner: raw.moreThanOnePartner ?? raw.more_than_one_partner ?? "",
           ageAtFirstIntercourse: raw.ageAtFirstIntercourse ?? raw.age_at_first_intercourse ?? "",
@@ -88,7 +93,7 @@ export default function CervicalScreeningModal({
     const newErrors: Record<string, string> = {};
     if (!form.method) newErrors.method = "Method is required.";
     if (!form.screeningDate) newErrors.screeningDate = "Screening date is required.";
-    if (!form.result) newErrors.result = "Result is required.";
+    if (!form.screeningResult) newErrors.screeningResult = "Result is required.";
     if (form.biopsyDone && !form.biopsyResult) {
       newErrors.biopsyResult = "Biopsy result is required when biopsy is done.";
     }
@@ -110,9 +115,17 @@ export default function CervicalScreeningModal({
     try {
       await api.post(`/visits/${visitId}/cervical-screening`, {
         ...form,
+        result: form.screeningResult,
+        screeningResult: form.screeningResult,
+        hpvResult: isHpv ? form.hpvResult || null : null,
+        hpvGenotype: isHpv ? form.hpvGenotype || null : null,
         biopsyResult: form.biopsyDone ? form.biopsyResult : null,
-        ageAtFirstIntercourse: form.ageAtFirstIntercourse ? parseInt(form.ageAtFirstIntercourse) : null,
-        numberOfChildbirths: form.numberOfChildbirths ? parseInt(form.numberOfChildbirths) : null,
+        ageAtFirstIntercourse: form.ageAtFirstIntercourse
+          ? parseInt(form.ageAtFirstIntercourse)
+          : null,
+        numberOfChildbirths: form.numberOfChildbirths
+          ? parseInt(form.numberOfChildbirths)
+          : null,
       });
 
       onComplete();
@@ -143,13 +156,11 @@ export default function CervicalScreeningModal({
 
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto">
-      {/* Backdrop */}
-      <div 
-        className="fixed inset-0 bg-black bg-opacity-50 transition-opacity" 
+      <div
+        className="fixed inset-0 bg-black bg-opacity-50 transition-opacity"
         onClick={handleClose}
       />
-      
-      {/* Modal Panel */}
+
       <div className="flex min-h-full items-center justify-center p-4">
         <div className="relative bg-white dark:bg-gray-800 rounded-2xl shadow-xl max-w-4xl w-full">
           <form onSubmit={handleSubmit}>
@@ -202,39 +213,46 @@ export default function CervicalScreeningModal({
                       {errors.screeningDate && <HelperText className="text-red-500">{errors.screeningDate}</HelperText>}
                     </Label>
 
-                    <Label>
+                    <Label className="md:col-span-2">
                       <span className="text-sm font-semibold">Result</span>
                       <Select
                         className="mt-2 rounded-2xl h-12 shadow-sm w-full"
-                        value={form.result}
-                        onChange={(e) => setField("result", e.target.value)}
+                        value={form.screeningResult}
+                        onChange={(e) => setField("screeningResult", e.target.value)}
                       >
                         <option value="negative">Negative</option>
                         <option value="positive">Positive</option>
                         <option value="suspicious">Suspicious</option>
                       </Select>
-                      {errors.result && <HelperText className="text-red-500">{errors.result}</HelperText>}
+                      {errors.screeningResult && <HelperText className="text-red-500">{errors.screeningResult}</HelperText>}
                     </Label>
 
-                    <Label>
-                      <span className="text-sm font-semibold">HPV Result</span>
-                      <Input
-                        className="mt-2 rounded-2xl h-12 shadow-sm w-full"
-                        value={form.hpvResult}
-                        onChange={(e) => setField("hpvResult", e.target.value)}
-                        placeholder="Enter HPV result"
-                      />
-                    </Label>
+                    {isHpv && (
+                      <>
+                        <Label>
+                          <span className="text-sm font-semibold">HPV Result</span>
+                          <Select
+                            className="mt-2 rounded-2xl h-12 shadow-sm w-full"
+                            value={form.hpvResult}
+                            onChange={(e) => setField("hpvResult", e.target.value)}
+                          >
+                            <option value="">Select</option>
+                            <option value="positive">Positive</option>
+                            <option value="negative">Negative</option>
+                          </Select>
+                        </Label>
 
-                    <Label className="md:col-span-2">
-                      <span className="text-sm font-semibold">HPV Genotype</span>
-                      <Input
-                        className="mt-2 rounded-2xl h-12 shadow-sm w-full"
-                        value={form.hpvGenotype}
-                        onChange={(e) => setField("hpvGenotype", e.target.value)}
-                        placeholder="Enter genotype if applicable"
-                      />
-                    </Label>
+                        <Label>
+                          <span className="text-sm font-semibold">HPV Genotype</span>
+                          <Input
+                            className="mt-2 rounded-2xl h-12 shadow-sm w-full"
+                            value={form.hpvGenotype}
+                            onChange={(e) => setField("hpvGenotype", e.target.value)}
+                            placeholder="e.g. 16, 18"
+                          />
+                        </Label>
+                      </>
+                    )}
                   </div>
                 </div>
 
@@ -300,10 +318,10 @@ export default function CervicalScreeningModal({
                   </div>
                 </div>
 
-                {/* Additional Procedures */}
+                {/* Procedures & Follow-up */}
                 <div>
                   <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-100 mb-3">
-                    Additional Procedures & Follow-up
+                    Procedures & Follow-up
                   </h3>
                   <div className="space-y-3">
                     <div className="grid gap-3 md:grid-cols-2">
@@ -326,26 +344,6 @@ export default function CervicalScreeningModal({
                         />
                         <span>Biopsy done</span>
                       </Label>
-
-                      <Label check className="flex items-center">
-                        <Input
-                          type="checkbox"
-                          checked={form.treatmentProvided}
-                          onChange={(e) => setField("treatmentProvided", e.target.checked)}
-                          className="mr-2"
-                        />
-                        <span>Treatment provided</span>
-                      </Label>
-
-                      <Label check className="flex items-center">
-                        <Input
-                          type="checkbox"
-                          checked={form.referralCompleted}
-                          onChange={(e) => setField("referralCompleted", e.target.checked)}
-                          className="mr-2"
-                        />
-                        <span>Referral completed</span>
-                      </Label>
                     </div>
 
                     {form.biopsyDone && (
@@ -363,6 +361,18 @@ export default function CervicalScreeningModal({
                         {errors.biopsyResult && <HelperText className="text-red-500">{errors.biopsyResult}</HelperText>}
                       </Label>
                     )}
+
+                    <Label>
+                      <span className="text-sm font-semibold">Treatment Referral</span>
+                      <Select
+                        className="mt-2 rounded-2xl h-12 shadow-sm w-full"
+                        value={form.treatmentReferral}
+                        onChange={(e) => setField("treatmentReferral", e.target.value)}
+                      >
+                        <option value="referred">Referred</option>
+                        <option value="not_referred">Not Referred</option>
+                      </Select>
+                    </Label>
                   </div>
                 </div>
               </div>

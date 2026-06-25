@@ -17,6 +17,8 @@ type ColorectalScreeningModalProps = {
   onComplete: () => void;
 };
 
+const today = () => new Date().toISOString().split("T")[0];
+
 export default function ColorectalScreeningModal({
   isOpen,
   onClose,
@@ -25,11 +27,11 @@ export default function ColorectalScreeningModal({
 }: ColorectalScreeningModalProps) {
   const [form, setForm] = useState({
     method: "fit",
-    screeningDate: new Date().toISOString().split("T")[0],
-    result: "negative",
+    screeningDate: today(),
+    screeningResult: "negative",
     polypDetected: false,
     histology: "",
-    treatmentReferral: "",
+    treatmentReferral: "not_referred",
   });
 
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -39,6 +41,7 @@ export default function ColorectalScreeningModal({
     if (isOpen && visitId) {
       fetchExisting();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, visitId]);
 
   async function fetchExisting() {
@@ -49,11 +52,13 @@ export default function ColorectalScreeningModal({
       if (raw) {
         setForm({
           method: raw.method ?? "fit",
-          screeningDate: raw.screeningDate ?? raw.screening_date ?? new Date().toISOString().split("T")[0],
-          result: raw.result ?? "negative",
+          screeningDate:
+            (raw.screeningDate ?? raw.screening_date ?? today()).toString().split("T")[0],
+          screeningResult:
+            raw.screeningResult ?? raw.screening_result ?? raw.result ?? "negative",
           polypDetected: !!(raw.polypDetected ?? raw.polyp_detected),
-          histology: raw.histology ?? "",
-          treatmentReferral: raw.treatmentReferral ?? raw.treatment_referral ?? "",
+          histology: raw.histology ?? raw.histologyResult ?? raw.histology_result ?? "",
+          treatmentReferral: raw.treatmentReferral ?? raw.treatment_referral ?? "not_referred",
         });
       }
     } catch (err) {
@@ -70,7 +75,7 @@ export default function ColorectalScreeningModal({
     const newErrors: Record<string, string> = {};
     if (!form.method) newErrors.method = "Method is required.";
     if (!form.screeningDate) newErrors.screeningDate = "Screening date is required.";
-    if (!form.result) newErrors.result = "Result is required.";
+    if (!form.screeningResult) newErrors.screeningResult = "Result is required.";
     return newErrors;
   }
 
@@ -87,7 +92,13 @@ export default function ColorectalScreeningModal({
     setSubmitting(true);
 
     try {
-      await api.post(`/visits/${visitId}/colorectal-screening`, form);
+      await api.post(`/visits/${visitId}/colorectal-screening`, {
+        ...form,
+        result: form.screeningResult,
+        screeningResult: form.screeningResult,
+        // Backend maps `histology` -> `histologyResult`; only relevant with a polyp.
+        histology: form.polypDetected ? form.histology || null : null,
+      });
       onComplete();
     } catch (err: any) {
       const response = err?.response?.data;
@@ -116,13 +127,11 @@ export default function ColorectalScreeningModal({
 
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto">
-      {/* Backdrop */}
-      <div 
-        className="fixed inset-0 bg-black bg-opacity-50 transition-opacity" 
+      <div
+        className="fixed inset-0 bg-black bg-opacity-50 transition-opacity"
         onClick={handleClose}
       />
-      
-      {/* Modal Panel */}
+
       <div className="flex min-h-full items-center justify-center p-4">
         <div className="relative bg-white dark:bg-gray-800 rounded-2xl shadow-xl max-w-2xl w-full">
           <form onSubmit={handleSubmit}>
@@ -179,14 +188,14 @@ export default function ColorectalScreeningModal({
                       <span className="text-sm font-semibold">Result</span>
                       <Select
                         className="mt-2 rounded-2xl h-12 shadow-sm w-full"
-                        value={form.result}
-                        onChange={(e) => setField("result", e.target.value)}
+                        value={form.screeningResult}
+                        onChange={(e) => setField("screeningResult", e.target.value)}
                       >
                         <option value="negative">Negative</option>
                         <option value="positive">Positive</option>
                         <option value="suspicious">Suspicious</option>
                       </Select>
-                      {errors.result && <HelperText className="text-red-500">{errors.result}</HelperText>}
+                      {errors.screeningResult && <HelperText className="text-red-500">{errors.screeningResult}</HelperText>}
                     </Label>
                   </div>
                 </div>
@@ -208,18 +217,20 @@ export default function ColorectalScreeningModal({
                     </Label>
 
                     <div className="grid gap-4 md:grid-cols-2">
-                      <Label>
-                        <span className="text-sm font-semibold">Histology</span>
-                        <Select
-                          className="mt-2 rounded-2xl h-12 shadow-sm w-full"
-                          value={form.histology}
-                          onChange={(e) => setField("histology", e.target.value)}
-                        >
-                          <option value="">Select</option>
-                          <option value="positive">Positive</option>
-                          <option value="negative">Negative</option>
-                        </Select>
-                      </Label>
+                      {form.polypDetected && (
+                        <Label>
+                          <span className="text-sm font-semibold">Histology</span>
+                          <Select
+                            className="mt-2 rounded-2xl h-12 shadow-sm w-full"
+                            value={form.histology}
+                            onChange={(e) => setField("histology", e.target.value)}
+                          >
+                            <option value="">Select</option>
+                            <option value="positive">Positive</option>
+                            <option value="negative">Negative</option>
+                          </Select>
+                        </Label>
+                      )}
 
                       <Label>
                         <span className="text-sm font-semibold">Treatment Referral</span>
@@ -228,7 +239,6 @@ export default function ColorectalScreeningModal({
                           value={form.treatmentReferral}
                           onChange={(e) => setField("treatmentReferral", e.target.value)}
                         >
-                          <option value="">Select</option>
                           <option value="referred">Referred</option>
                           <option value="not_referred">Not Referred</option>
                         </Select>

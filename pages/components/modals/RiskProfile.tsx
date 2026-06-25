@@ -16,6 +16,7 @@ type RiskProfileModalProps = {
   clientId: string;
   existingProfile?: any;
   onComplete: () => void;
+  cancerType?: string;
 };
 
 const STEPS = [
@@ -34,6 +35,7 @@ export default function RiskProfileModal({
   clientId,
   existingProfile,
   onComplete,
+  cancerType, 
 }: RiskProfileModalProps) {
   const [currentStep, setCurrentStep] = useState(1);
   const [submitting, setSubmitting] = useState(false);
@@ -71,6 +73,9 @@ export default function RiskProfileModal({
 
     // Family history (boolean in DB; UI uses yes/no)
     familyHistory: "",
+
+    ageAtFirstMenstruation: "",
+  ageAtMenopause: "",
   });
 
   useEffect(() => {
@@ -118,6 +123,8 @@ export default function RiskProfileModal({
       //     : p.familyHistory === false || p.family_history === false
       //     ? "no"
       //     : "",
+      ageAtFirstMenstruation: String(p.ageAtFirstMenstruation ?? p.age_at_first_menstruation ?? ""),
+ageAtMenopause: String(p.ageAtMenopause ?? p.age_at_menopause ?? ""),
     });
   }, [existingProfile]);
 
@@ -208,6 +215,8 @@ export default function RiskProfileModal({
         familyHistory: form.familyHistory || null,
 
         comorbiditiesJson: form.comorbiditiesJson,
+        ageAtFirstMenstruation: form.ageAtFirstMenstruation ? parseInt(form.ageAtFirstMenstruation) : null,
+ageAtMenopause: form.ageAtMenopause ? parseInt(form.ageAtMenopause) : null,
       };
 
       // POST matches the working wizard call for this route.
@@ -272,6 +281,36 @@ export default function RiskProfileModal({
                   placeholder="Auto"
                 />
               </Label>
+
+
+              {cancerType === "breast" && (
+  <div className="md:col-span-2 grid gap-4 md:grid-cols-2">
+    <Label>
+      <span className="text-sm font-semibold">Age at First Menstruation</span>
+      <Input
+        className="mt-2 rounded-2xl h-12 shadow-sm"
+        type="number"
+        min="0"
+        max="30"
+        value={form.ageAtFirstMenstruation}
+        onChange={(e) => setField("ageAtFirstMenstruation", e.target.value)}
+        placeholder="Age"
+      />
+    </Label>
+    <Label>
+      <span className="text-sm font-semibold">Age at Menopause (if applicable)</span>
+      <Input
+        className="mt-2 rounded-2xl h-12 shadow-sm"
+        type="number"
+        min="0"
+        max="100"
+        value={form.ageAtMenopause}
+        onChange={(e) => setField("ageAtMenopause", e.target.value)}
+        placeholder="Age"
+      />
+    </Label>
+  </div>
+)}
             </div>
 
             <div>

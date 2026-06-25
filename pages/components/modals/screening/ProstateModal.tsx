@@ -17,6 +17,8 @@ type ProstateScreeningModalProps = {
   onComplete: () => void;
 };
 
+const today = () => new Date().toISOString().split("T")[0];
+
 export default function ProstateScreeningModal({
   isOpen,
   onClose,
@@ -24,11 +26,13 @@ export default function ProstateScreeningModal({
   onComplete,
 }: ProstateScreeningModalProps) {
   const [form, setForm] = useState({
+    screeningDate: today(),
+    screeningResult: "negative",
     psaLevel: "",
     dreResult: "",
     ipssScore: "",
-    
-    // Specific urinary symptoms (from requirements)
+
+    // Specific urinary symptoms
     poorUrinaryStream: "",
     urgeIncontinence: "",
     delayStartingUrination: "",
@@ -38,11 +42,11 @@ export default function ProstateScreeningModal({
     nocturia: "",
     incompleteEmptying: "",
     bloodInUrine: "",
-    
+
     // Additional
     biopsyDone: false,
     gleasonScore: "",
-    referral: "",
+    treatmentReferral: "not_referred",
   });
 
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -52,6 +56,7 @@ export default function ProstateScreeningModal({
     if (isOpen && visitId) {
       fetchExisting();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, visitId]);
 
   async function fetchExisting() {
@@ -61,10 +66,14 @@ export default function ProstateScreeningModal({
 
       if (raw) {
         setForm({
+          screeningDate:
+            (raw.screeningDate ?? raw.screening_date ?? today()).toString().split("T")[0],
+          screeningResult:
+            raw.screeningResult ?? raw.screening_result ?? raw.result ?? "negative",
           psaLevel: raw.psaLevel ?? raw.psa_level ?? "",
           dreResult: raw.dreResult ?? raw.dre_result ?? "",
           ipssScore: raw.ipssScore ?? raw.ipss_score ?? "",
-          
+
           poorUrinaryStream: raw.poorUrinaryStream ?? raw.poor_urinary_stream ?? "",
           urgeIncontinence: raw.urgeIncontinence ?? raw.urge_incontinence ?? "",
           delayStartingUrination: raw.delayStartingUrination ?? raw.delay_starting_urination ?? "",
@@ -74,10 +83,11 @@ export default function ProstateScreeningModal({
           nocturia: raw.nocturia ?? "",
           incompleteEmptying: raw.incompleteEmptying ?? raw.incomplete_emptying ?? "",
           bloodInUrine: raw.bloodInUrine ?? raw.blood_in_urine ?? "",
-          
+
           biopsyDone: !!(raw.biopsyDone ?? raw.biopsy_done),
           gleasonScore: raw.gleasonScore ?? raw.gleason_score ?? "",
-          referral: raw.referral ?? "",
+          treatmentReferral:
+            raw.treatmentReferral ?? raw.treatment_referral ?? raw.referral ?? "not_referred",
         });
       }
     } catch (err) {
@@ -92,6 +102,8 @@ export default function ProstateScreeningModal({
 
   function validate() {
     const newErrors: Record<string, string> = {};
+    if (!form.screeningDate) newErrors.screeningDate = "Screening date is required.";
+    if (!form.screeningResult) newErrors.screeningResult = "Result is required.";
     if (form.biopsyDone && !form.gleasonScore) {
       newErrors.gleasonScore = "Gleason score is required when biopsy is done.";
     }
@@ -113,6 +125,8 @@ export default function ProstateScreeningModal({
     try {
       await api.post(`/visits/${visitId}/prostate-screening`, {
         ...form,
+        result: form.screeningResult,
+        screeningResult: form.screeningResult,
         psaLevel: form.psaLevel ? parseFloat(form.psaLevel) : null,
         ipssScore: form.ipssScore ? parseInt(form.ipssScore) : null,
         gleasonScore: form.biopsyDone ? form.gleasonScore : null,
@@ -146,13 +160,11 @@ export default function ProstateScreeningModal({
 
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto">
-      {/* Backdrop */}
-      <div 
-        className="fixed inset-0 bg-black bg-opacity-50 transition-opacity" 
+      <div
+        className="fixed inset-0 bg-black bg-opacity-50 transition-opacity"
         onClick={handleClose}
       />
-      
-      {/* Modal Panel */}
+
       <div className="flex min-h-full items-center justify-center p-4">
         <div className="relative bg-white dark:bg-gray-800 rounded-2xl shadow-xl max-w-4xl w-full">
           <form onSubmit={handleSubmit}>
@@ -181,6 +193,31 @@ export default function ProstateScreeningModal({
                   </h3>
                   <div className="grid gap-4 md:grid-cols-2">
                     <Label>
+                      <span className="text-sm font-semibold">Screening Date</span>
+                      <Input
+                        className="mt-2 rounded-2xl h-12 shadow-sm w-full"
+                        type="date"
+                        value={form.screeningDate}
+                        onChange={(e) => setField("screeningDate", e.target.value)}
+                      />
+                      {errors.screeningDate && <HelperText className="text-red-500">{errors.screeningDate}</HelperText>}
+                    </Label>
+
+                    <Label>
+                      <span className="text-sm font-semibold">Result</span>
+                      <Select
+                        className="mt-2 rounded-2xl h-12 shadow-sm w-full"
+                        value={form.screeningResult}
+                        onChange={(e) => setField("screeningResult", e.target.value)}
+                      >
+                        <option value="negative">Negative</option>
+                        <option value="positive">Positive</option>
+                        <option value="suspicious">Suspicious</option>
+                      </Select>
+                      {errors.screeningResult && <HelperText className="text-red-500">{errors.screeningResult}</HelperText>}
+                    </Label>
+
+                    <Label>
                       <span className="text-sm font-semibold">PSA Level (ng/mL)</span>
                       <Input
                         className="mt-2 rounded-2xl h-12 shadow-sm w-full"
@@ -200,8 +237,8 @@ export default function ProstateScreeningModal({
                         onChange={(e) => setField("dreResult", e.target.value)}
                       >
                         <option value="">Select</option>
-<option value="negative">Normal (Negative)</option>
-<option value="positive">Abnormal (Positive)</option>
+                        <option value="negative">Normal (Negative)</option>
+                        <option value="positive">Abnormal (Positive)</option>
                       </Select>
                     </Label>
 
@@ -219,13 +256,12 @@ export default function ProstateScreeningModal({
                     </Label>
 
                     <Label>
-                      <span className="text-sm font-semibold">Referral</span>
+                      <span className="text-sm font-semibold">Treatment Referral</span>
                       <Select
                         className="mt-2 rounded-2xl h-12 shadow-sm w-full"
-                        value={form.referral}
-                        onChange={(e) => setField("referral", e.target.value)}
+                        value={form.treatmentReferral}
+                        onChange={(e) => setField("treatmentReferral", e.target.value)}
                       >
-                        <option value="">Select</option>
                         <option value="referred">Referred</option>
                         <option value="not_referred">Not Referred</option>
                       </Select>

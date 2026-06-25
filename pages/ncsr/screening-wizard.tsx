@@ -50,13 +50,15 @@ const ENDPOINTS = {
   riskProfile: (clientId: string) => `/clients/${clientId}/risk-profile`,
   outcome: (clientId: string) => `/clients/${clientId}/outcome`,
   facilities: () => `/facilities`,
+  findClient: () => `/clients/search/details`,
 };
 
 type Step = { key: string; label: string; icon: any };
 
 const BASE_STEPS: Step[] = [
-  { key: "biodata", label: "Biodata", icon: UserPlus },
   { key: "precounsel", label: "Pre-Counselling", icon: ClipboardCheck },
+  { key: "clientlookup", label: "Client Search", icon: Search },
+  { key: "biodata", label: "Biodata", icon: UserPlus },
   { key: "cancer", label: "Cancer Types", icon: Activity },
   { key: "risk", label: "Risk Profile", icon: ShieldCheck },
   { key: "screening", label: "Screening", icon: Stethoscope },
@@ -73,6 +75,8 @@ type Facility = {
   isTreatmentCenter?: boolean;
 };
 
+
+
 const today = () => new Date().toISOString().split("T")[0];
 const dateOnly = (v?: string | null) => (v ? String(v).split("T")[0] : "");
 
@@ -83,6 +87,9 @@ const DEFAULT_METHOD: Partial<Record<CancerType, string>> = {
   colorectal: "fit",
   liver: "uss",
 };
+
+
+
 
 function defaultScreeningFor(ct: CancerType): Record<string, any> {
   const base: Record<string, any> = {
@@ -140,6 +147,10 @@ function buildScreeningPayload(
   });
   return p;
 }
+
+
+
+
 
 // ---------------------------------------------------------------------------
 // Generic field renderer driven by config
@@ -746,8 +757,12 @@ export default function ScreeningWizardPage() {
   async function handleNext() {
     const key = steps[stepIndex].key;
 
-    if (key === "biodata" && !(await persistBiodata())) return;
-
+    // if (key === "biodata" && !(await persistBiodata())) return;
+if (key === "biodata") {
+  if (!clientId) {
+    if (!(await persistBiodata())) return;
+  }
+}
     if (key === "precounsel") {
       if (preCounsel.preScreeningConsent === "no") {
         toast.error("Screening cannot proceed without the client's consent.");
@@ -791,6 +806,87 @@ export default function ScreeningWizardPage() {
   );
 
   const consentDenied = preCounsel.preScreeningConsent === "no";
+
+const [lookupValue, setLookupValue] = useState("");
+const [lookupLoading, setLookupLoading] = useState(false);
+const [clientFound, setClientFound] = useState(false);
+const [lookupAttempted, setLookupAttempted] = useState(false);
+const isExistingClient = !!clientId;
+
+  async function searchClient() {
+  if (!lookupValue.trim()) {
+    toast.error("Enter a phone number or client ID");
+    return;
+  }
+
+  setLookupLoading(true);
+  setLookupAttempted(true);
+
+  try {
+    const isPhone = /^[0-9]+$/.test(lookupValue);
+
+    // const { data } = await api.get(
+    //   `${ENDPOINTS.findClient()}?${
+    //     isPhone
+    //       ? `phoneNumber=${lookupValue}`
+    //       : `clientId=${lookupValue}`
+    //   }`
+    // );
+
+    const { data } = await api.get(
+  `${ENDPOINTS.findClient()}?search=${lookupValue}`
+);
+
+    const client = data?.client || data?.data;
+
+    if (!client) {
+      setClientFound(false);
+
+      toast.success(
+        "Client not found. Please complete biodata registration."
+      );
+
+      return;
+    }
+
+    setClientFound(true);
+
+    setClientId(client.clientId ?? client.id);
+
+    setBiodata((prev) => ({
+      ...prev,
+      fullName: client.fullName ?? "",
+      nin: client.nin ?? "",
+      gender: client.gender ?? "",
+      dateOfBirth: dateOnly(client.dateOfBirth),
+      phoneNumber: client.phoneNumber ?? "",
+      screeningCategory: "follow_up",
+
+      stateOfOrigin: client.stateOfOrigin ?? "",
+      lgaOfOrigin: client.lgaOfOrigin ?? "",
+
+      stateOfResidence: client.stateOfResidence ?? "",
+      lgaOfResidence: client.lgaOfResidence ?? "",
+
+      address: client.address ?? "",
+      landmark: client.landmark ?? "",
+
+      registrationDate:
+        dateOnly(client.registrationDate) || today(),
+    }));
+
+    toast.success("Client record found");
+  } catch (error) {
+    setClientFound(false);
+
+    toast.success(
+      "Client not found. Continue with biodata registration."
+    );
+  } finally {
+    setLookupLoading(false);
+  }
+}
+  
 
   return (
     <Layout>
@@ -871,6 +967,42 @@ export default function ScreeningWizardPage() {
 
       {/* Step body */}
       <div className="rounded-3xl bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 shadow-lg p-4 sm:p-6">
+        
+        {currentKey === "precounsel" && (
+          <div className="space-y-5">
+            <h3 className="text-lg font-semibold text-gray-800 dark:text-white">
+              Pre-Screening Counselling
+            </h3>
+            <p className="text-sm text-gray-500 dark:text-gray-400">
+              Counselling and consent are recorded before any test is performed.
+            </p>
+            <div className="grid gap-4 grid-cols-1 sm:grid-cols-2">
+              {PRE_COUNSELLING_FIELDS.map((f) => (
+                <FieldRenderer
+                  key={f.name}
+                  field={f}
+                  value={preCounsel[f.name]}
+                  values={preCounsel}
+                  onChange={(n, val) =>
+                    setPreCounsel((prev) => ({ ...prev, [n]: val }))
+                  }
+                />
+              ))}
+            </div>
+
+            {consentDenied && (
+              <div className="rounded-xl bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 px-4 py-3 flex items-start gap-3">
+                <AlertTriangle className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />
+                <p className="text-sm text-red-700 dark:text-red-300">
+                  Consent was not obtained. Screening cannot proceed until the
+                  client consents. You can record this and exit, but the flow is
+                  blocked from here.
+                </p>
+              </div>
+            )}
+          </div>
+        )}
+        
         {currentKey === "biodata" && (
           <div className="space-y-5">
             <h3 className="text-lg font-semibold text-gray-800 dark:text-white">
@@ -886,6 +1018,7 @@ export default function ScreeningWizardPage() {
                   value={biodata.fullName}
                   onChange={(e) => setBiodataField("fullName", e.target.value)}
                   placeholder="Enter full name"
+                  disabled={isExistingClient}
                 />
               </Label>
 
@@ -899,6 +1032,7 @@ export default function ScreeningWizardPage() {
                   inputMode="numeric"
                   maxLength={11}
                   type="number"
+                  disabled={isExistingClient}
                 />
               </Label>
 
@@ -1084,40 +1218,64 @@ export default function ScreeningWizardPage() {
           </div>
         )}
 
-        {currentKey === "precounsel" && (
-          <div className="space-y-5">
-            <h3 className="text-lg font-semibold text-gray-800 dark:text-white">
-              Pre-Screening Counselling
-            </h3>
-            <p className="text-sm text-gray-500 dark:text-gray-400">
-              Counselling and consent are recorded before any test is performed.
-            </p>
-            <div className="grid gap-4 grid-cols-1 sm:grid-cols-2">
-              {PRE_COUNSELLING_FIELDS.map((f) => (
-                <FieldRenderer
-                  key={f.name}
-                  field={f}
-                  value={preCounsel[f.name]}
-                  values={preCounsel}
-                  onChange={(n, val) =>
-                    setPreCounsel((prev) => ({ ...prev, [n]: val }))
-                  }
-                />
-              ))}
-            </div>
 
-            {consentDenied && (
-              <div className="rounded-xl bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 px-4 py-3 flex items-start gap-3">
-                <AlertTriangle className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />
-                <p className="text-sm text-red-700 dark:text-red-300">
-                  Consent was not obtained. Screening cannot proceed until the
-                  client consents. You can record this and exit, but the flow is
-                  blocked from here.
-                </p>
-              </div>
-            )}
-          </div>
+{currentKey === "clientlookup" && (
+  <div className="space-y-5">
+    <h3 className="text-lg font-semibold text-gray-800 dark:text-white">
+      Search Existing Client
+    </h3>
+
+    <p className="text-sm text-gray-500">
+      Enter a Client ID or Phone Number.
+      Existing client information will be loaded automatically.
+    </p>
+
+    <div className="flex gap-3">
+      <Input
+        className="h-12 rounded-2xl"
+        placeholder="Client ID or Phone Number"
+        value={lookupValue}
+        onChange={(e) => setLookupValue(e.target.value)}
+      />
+
+      <Button
+        onClick={searchClient}
+        disabled={lookupLoading}
+      >
+        {lookupLoading ? (
+          <Loader2 className="w-4 h-4 animate-spin" />
+        ) : (
+          <Search className="w-4 h-4" />
         )}
+      </Button>
+    </div>
+
+    {lookupAttempted && clientFound && (
+      <div className="rounded-xl border border-green-200 bg-green-50 p-4">
+        <p className="font-semibold text-green-700">
+          Existing client found
+        </p>
+
+        <p>{biodata.fullName}</p>
+        <p>{biodata.phoneNumber}</p>
+      </div>
+    )}
+
+    {lookupAttempted && !clientFound && (
+      <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
+        <p className="font-semibold text-amber-700">
+          No matching client found
+        </p>
+
+        <p>
+          Click Continue to register a new client.
+        </p>
+      </div>
+    )}
+  </div>
+)}
+
+
 
         {currentKey === "cancer" && (
           <div className="space-y-5">
