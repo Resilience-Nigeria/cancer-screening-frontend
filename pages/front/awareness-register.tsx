@@ -101,6 +101,9 @@ export default function AwarenessRegistrationPage() {
   const [facility, setFacility] = useState<Facility | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
+  const [facilityFromStore, setFacilityFromStore] = useState<Facility | null>(null);
+
+
   function setField(name: string, value: string) {
     setForm((prev) => {
       const next = { ...prev, [name]: value };
@@ -121,48 +124,55 @@ export default function AwarenessRegistrationPage() {
   }
 
   async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    const errs = validate();
-    if (Object.keys(errs).length) { setErrors(errs); return; }
+  e.preventDefault();
+  const errs = validate();
+  if (Object.keys(errs).length) { setErrors(errs); return; }
 
-    setSubmitting(true);
-    try {
-      const { data } = await api.post(`/awareness/register`, form);
-      setRegistrationId(String(data.registrationId));
-      setMaskedPhone(data.maskedPhone);
-      setStage("otp");
-    } catch (err: any) {
-      const apiErrors = err?.response?.data?.errors ?? {};
-      const mapped: Record<string, string> = {};
-      Object.keys(apiErrors).forEach((k) => {
-        mapped[k] = Array.isArray(apiErrors[k]) ? apiErrors[k][0] : apiErrors[k];
-      });
-      setErrors(
-        Object.keys(mapped).length
-          ? mapped
-          : { fullName: err?.response?.data?.message ?? "Something went wrong." }
-      );
-    } finally {
-      setSubmitting(false);
+  setSubmitting(true);
+  try {
+    const { data } = await api.post(`/awareness/register`, form);
+    setRegistrationId(String(data.registrationId));
+    setMaskedPhone(data.maskedPhone);
+    
+    // 👇 Capture facility from store response — it's returned here
+    if (data.facility) {
+      setFacilityFromStore(data.facility);
     }
+    
+    setStage("otp");
+  } catch (err: any) {
+    const apiErrors = err?.response?.data?.errors ?? {};
+    const mapped: Record<string, string> = {};
+    Object.keys(apiErrors).forEach((k) => {
+      mapped[k] = Array.isArray(apiErrors[k]) ? apiErrors[k][0] : apiErrors[k];
+    });
+    setErrors(
+      Object.keys(mapped).length
+        ? mapped
+        : { fullName: err?.response?.data?.message ?? "Something went wrong." }
+    );
+  } finally {
+    setSubmitting(false);
+  }
   }
 
   // ── Stage gates ──────────────────────────────────────────────────────────
-  if (stage === "otp") {
-    return (
-      <OtpVerificationStep
-        phoneNumber={form.phoneNumber}
-        maskedPhone={maskedPhone}
-        registrationId={registrationId}
-        email={form.email || undefined}    // 👈 add
+ if (stage === "otp") {
+  return (
+    <OtpVerificationStep
+      phoneNumber={form.phoneNumber}
+      maskedPhone={maskedPhone}
+      registrationId={registrationId}
+      email={form.email || undefined}
       name={form.fullName || undefined}
-        onVerified={(fac) => {
-          setFacility(fac);
-          setStage("success");
-        }}
-      />
-    );
-  }
+      onVerified={(fac) => {
+        // Use facility from verify response, fall back to the one from store
+        setFacility(fac ?? facilityFromStore);
+        setStage("success");
+      }}
+    />
+  );
+}
 
   if (stage === "success") {
     return <SuccessScreen name={form.fullName} email={form.email} facility={facility} />;
