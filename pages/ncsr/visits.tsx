@@ -313,6 +313,11 @@ export default function VisitsIndexPage() {
                   <h3 className="text-base font-semibold text-gray-800 dark:text-gray-100">
                     Visit #{visit.visitId}
                   </h3>
+                </div>
+                <div>
+                  <h3 className="text-base font-semibold text-gray-800 dark:text-gray-100">
+                    Client Id: {visit?.client?.clientId}
+                  </h3>
                   <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
                     {visit.client?.fullName || "Unknown client"}
                   </p>
@@ -391,6 +396,7 @@ export default function VisitsIndexPage() {
             <thead>
               <tr className="text-left text-xs font-semibold tracking-wide uppercase border-b bg-gray-50 dark:bg-gray-800/60 text-gray-500 dark:text-gray-400">
                 <th className="px-6 py-4">Visit</th>
+                <th className="px-6 py-4">Client ID</th>
                 <th className="px-6 py-4">Client</th>
                 <th className="px-6 py-4">Visit Type</th>
                 <th className="px-6 py-4">Date</th>
@@ -404,6 +410,9 @@ export default function VisitsIndexPage() {
               {loading ? (
                 Array.from({ length: 6 }).map((_, i) => (
                   <tr key={i}>
+                    <td className="px-6 py-4">
+                      <div className="h-4 w-24 bg-gray-200 dark:bg-gray-700 rounded animate-pulse" />
+                    </td>
                     <td className="px-6 py-4">
                       <div className="h-4 w-24 bg-gray-200 dark:bg-gray-700 rounded animate-pulse" />
                     </td>
@@ -437,6 +446,14 @@ export default function VisitsIndexPage() {
                       <div>
                         <p className="font-semibold text-gray-800 dark:text-gray-100">
                           Visit #{visit.visitId}
+                        </p>
+                      </div>
+                    </td>
+
+                    <td className="px-6 py-4">
+                      <div>
+                        <p className="font-semibold text-gray-800 dark:text-gray-100">
+                          {visit?.client?.clientId}
                         </p>
                       </div>
                     </td>

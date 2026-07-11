@@ -10,7 +10,7 @@ interface Facility {
 
 interface UserRole {
   roleId: number;
-  roleName: 'SUPER_ADMIN' | 'NICRAT_STAFF' | 'HOSPITAL_ADMIN' | 'DATA_CLERK';
+  roleName: 'SUPER_ADMIN' | 'NICRAT_STAFF' | 'HOSPITAL_ADMIN' | 'DATA_CLERK' | 'PARTNER';
   roleDescription?: string;
 }
 
@@ -39,6 +39,7 @@ interface AuthContextType {
   isNicratStaff: () => boolean;
   isHospitalAdmin: () => boolean;
   isDataClerk: () => boolean;
+  isPartner: () => boolean;
   
   // Access level checks
   hasNationalAccess: () => boolean;
@@ -132,6 +133,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return user?.user_role?.roleName === 'DATA_CLERK';
   }
 
+  function isPartner(): boolean {
+    return user?.user_role?.roleName === 'PARTNER';
+  }
+
   // Access level checks
   function hasNationalAccess(): boolean {
     const roleName = user?.user_role?.roleName;
@@ -167,6 +172,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       'NICRAT_STAFF': 'NICRAT Staff',
       'HOSPITAL_ADMIN': 'Hospital Administrator',
       'DATA_CLERK': 'Data Clerk',
+      'PARTNER': 'Partner',
     };
     
     return roleNames[roleName] || roleName;
@@ -179,6 +185,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     logout,
     refreshUser,
     isSuperAdmin,
+    isPartner,
     isNicratStaff,
     isHospitalAdmin,
     isDataClerk,
@@ -204,7 +211,7 @@ export function useAuth() {
 // HOC for protected routes
 export function withAuth<P extends object>(
   Component: React.ComponentType<P>,
-  allowedRoles?: Array<'SUPER_ADMIN' | 'NICRAT_STAFF' | 'HOSPITAL_ADMIN' | 'DATA_CLERK'>
+  allowedRoles?: Array<'SUPER_ADMIN' | 'NICRAT_STAFF' | 'HOSPITAL_ADMIN' | 'DATA_CLERK' | 'PARTNER'>
 ) {
   return function ProtectedRoute(props: P) {
     const { user, loading } = useAuth();

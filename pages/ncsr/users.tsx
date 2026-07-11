@@ -117,6 +117,7 @@ export default function UsersManagementPage() {
   const currentUserRole = currentUser?.user_role?.roleName || currentUser?.role;
   const isHospitalAdmin = currentUserRole === 'HOSPITAL_ADMIN';
   const isSuperAdmin = currentUserRole === 'SUPER_ADMIN';
+  const isPartner = currentUserRole === 'PARTNER';
 
   useEffect(() => {
     const userData = getUser();

@@ -382,6 +382,28 @@ export default function ScreeningWizardPage() {
   const [facilities, setFacilities] = useState<Facility[]>([]);
   const [facilitySearch, setFacilitySearch] = useState("");
 
+
+  // Add this state near the top of ScreeningWizardPage:
+const [referralFacilities, setReferralFacilities] = useState<Facility[]>([]);
+const [referralType, setReferralType] = useState
+  "screening_to_confirmation" | "confirmation_to_treatment"
+>("screening_to_confirmation");
+const [referralNotes, setReferralNotes] = useState("");
+const [referralSubmitting, setReferralSubmitting] = useState(false);
+
+// Load main hub / treatment facilities for referral
+useEffect(() => {
+  if (!anyPositive) return;
+  (async () => {
+    try {
+      const { data } = await api.get("/facilities", {
+        params: { types: "main_hub,treatment_center" },
+      });
+      setReferralFacilities(data?.facilities ?? data?.data ?? []);
+    } catch {}
+  })();
+}, [anyPositive]);
+
   // Load existing client (returning client) and prefill everything
   useEffect(() => {
     const qId = router.query.clientId as string | undefined;
@@ -1404,103 +1426,109 @@ const isExistingClient = !!clientId;
           </div>
         )}
 
-        {currentKey === "referral" && (
-          <div className="space-y-5">
-            <h3 className="text-lg font-semibold text-gray-800 dark:text-white">
-              Referral to Treatment Centre
-            </h3>
-            <div className="rounded-xl bg-amber-50 dark:bg-amber-900/20 border border-amber-100 dark:border-amber-800 px-4 py-3 text-sm text-amber-800 dark:text-amber-300">
-              {positiveTypes.length === 1 ? (
-                <>The {cancerLabel(positiveTypes[0])} result was positive.</>
-              ) : (
-                <>
-                  Positive results: {positiveTypes.map((c) => cancerLabel(c)).join(", ")}.
-                </>
-              )}{" "}
-              Select the hospital this client is being referred to.
-            </div>
+        // Replace the referral step JSX (currentKey === "referral"):
+{currentKey === "referral" && (
+  <div className="space-y-5">
+    <h3 className="text-lg font-semibold text-gray-800 dark:text-white">
+      Refer Client
+    </h3>
 
-            <div className="relative">
-              <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-              <Input
-                className="pl-11 h-12 rounded-2xl"
-                placeholder="Search hospitals"
-                value={facilitySearch}
-                onChange={(e) => setFacilitySearch(e.target.value)}
-              />
-            </div>
+    <div className="rounded-xl bg-amber-50 dark:bg-amber-900/20 border border-amber-100
+      dark:border-amber-800 px-4 py-3 text-sm text-amber-800 dark:text-amber-300">
+      {positiveTypes.length === 1 ? (
+        <>{cancerLabel(positiveTypes[0])} result was suspicious.</>
+      ) : (
+        <>Suspicious results: {positiveTypes.map((c) => cancerLabel(c)).join(", ")}.</>
+      )}{" "}
+      Select the facility to refer this client to.
+    </div>
 
-            {filteredFacilities.length === 0 ? (
-              <p className="text-sm text-gray-500 dark:text-gray-400">
-                No treatment centres available.
-              </p>
-            ) : (
-              <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 max-h-72 overflow-y-auto">
-                {filteredFacilities.map((f) => {
-                  const selected = String(referral.facilityId) === String(f.facilityId);
-                  return (
-                    <button
-                      key={f.facilityId}
-                      type="button"
-                      onClick={() =>
-                        setReferral((prev) => ({
-                          ...prev,
-                          facilityId: f.facilityId,
-                          facilityName: f.facilityName,
-                        }))
-                      }
-                      className={`text-left rounded-2xl border p-4 transition-all ${
-                        selected
-                          ? "border-green-600 ring-2 ring-green-200 dark:ring-green-900 bg-green-50/50 dark:bg-green-900/20"
-                          : "border-gray-200 dark:border-gray-700 hover:border-green-300"
-                      }`}
-                    >
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="flex items-start gap-2 min-w-0">
-                          <Building2 className="w-4 h-4 mt-0.5 shrink-0 text-gray-400" />
-                          <div className="min-w-0">
-                            <p className="font-semibold text-gray-800 dark:text-white break-words">
-                              {f.facilityName}
-                            </p>
-                            <p className="text-xs text-gray-500 dark:text-gray-400">
-                              {[f.facilityLga, f.facilityState].filter(Boolean).join(", ") || "—"}
-                            </p>
-                          </div>
-                        </div>
-                        {selected && <Check className="w-4 h-4 text-green-600 shrink-0" />}
-                      </div>
-                    </button>
-                  );
-                })}
+    {/* Referral type */}
+    <div className="grid gap-4 grid-cols-1 sm:grid-cols-2">
+      <Label>
+        <span className="text-sm font-semibold">Referral Type</span>
+        <Select
+          className="mt-2 rounded-2xl h-12 shadow-sm"
+          value={referralType}
+          onChange={(e) => setReferralType(e.target.value as any)}
+        >
+          <option value="screening_to_confirmation">
+            To Main Hub — Confirmation Screening
+          </option>
+          <option value="confirmation_to_treatment">
+            To Treatment Centre
+          </option>
+        </Select>
+      </Label>
+
+      <Label>
+        <span className="text-sm font-semibold">Notes (optional)</span>
+        <Input
+          className="mt-2 rounded-2xl h-12"
+          value={referralNotes}
+          onChange={(e) => setReferralNotes(e.target.value)}
+          placeholder="Any notes for the receiving facility"
+        />
+      </Label>
+    </div>
+
+    {/* Facility picker */}
+    <div className="relative">
+      <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+      <Input
+        className="pl-11 h-12 rounded-2xl"
+        placeholder="Search facilities"
+        value={facilitySearch}
+        onChange={(e) => setFacilitySearch(e.target.value)}
+      />
+    </div>
+
+    <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 max-h-72 overflow-y-auto">
+      {referralFacilities
+        .filter((f) =>
+          f.facilityName.toLowerCase().includes(facilitySearch.toLowerCase())
+        )
+        .map((f) => {
+          const selected = String(referral.facilityId) === String(f.facilityId);
+          return (
+            <button
+              key={f.facilityId}
+              type="button"
+              onClick={() =>
+                setReferral((prev) => ({
+                  ...prev,
+                  facilityId: f.facilityId,
+                  facilityName: f.facilityName,
+                }))
+              }
+              className={`text-left rounded-2xl border p-4 transition-all ${
+                selected
+                  ? "border-green-600 ring-2 ring-green-200 dark:ring-green-900 bg-green-50/50"
+                  : "border-gray-200 dark:border-gray-700 hover:border-green-300"
+              }`}
+            >
+              <div className="flex items-start justify-between gap-2">
+                <div>
+                  <p className="font-semibold text-gray-800 dark:text-white">
+                    {f.facilityName}
+                  </p>
+                  <p className="text-xs text-gray-500 mt-0.5">
+                    {[f.facilityLga, f.facilityState].filter(Boolean).join(", ")}
+                  </p>
+                  {f.navigatorName && (
+                    <p className="text-xs text-green-700 dark:text-green-400 mt-1">
+                      Navigator: {f.navigatorName}
+                    </p>
+                  )}
+                </div>
+                {selected && <Check className="w-4 h-4 text-green-600 shrink-0" />}
               </div>
-            )}
-
-            <div className="grid gap-4 grid-cols-1 sm:grid-cols-2">
-              <Label>
-                <span className="text-sm font-semibold">Referral Date</span>
-                <Input
-                  type="date"
-                  className="mt-2 rounded-2xl h-12"
-                  value={referral.referralDate}
-                  onChange={(e) =>
-                    setReferral((prev) => ({ ...prev, referralDate: e.target.value }))
-                  }
-                />
-              </Label>
-              <Label>
-                <span className="text-sm font-semibold">Referral Notes</span>
-                <Input
-                  className="mt-2 rounded-2xl h-12"
-                  value={referral.notes}
-                  onChange={(e) =>
-                    setReferral((prev) => ({ ...prev, notes: e.target.value }))
-                  }
-                  placeholder="Optional notes"
-                />
-              </Label>
-            </div>
-          </div>
-        )}
+            </button>
+          );
+        })}
+    </div>
+  </div>
+)}
 
         {currentKey === "outcome" && (
           <div className="space-y-5">

@@ -62,7 +62,7 @@ export default function SidebarContent({ linkClicked }: SidebarContentProps) {
       'NICRAT_STAFF': 'NICRAT Staff',
       'HOSPITAL_ADMIN': 'Hospital Administrator',
       'DATA_CLERK': 'Data Clerk',
-      'PARTNER': 'Partner - CHAI'
+      'PARTNER': 'Partner'
     };
     
     return roleNames[userRoleName] || userRoleName.replace(/_/g, ' ');

@@ -58,6 +58,7 @@ function Header() {
       'NICRAT_STAFF': <Database className="h-4 w-4" />,
       'HOSPITAL_ADMIN': <Building2 className="h-4 w-4" />,
       'DATA_CLERK': <UsersIcon className="h-4 w-4" />,
+      'PARTNER': <UsersIcon className="h-4 w-4" />,
     };
     return icons[roleName] || <UsersIcon className="h-4 w-4" />;
   }
@@ -69,6 +70,7 @@ function Header() {
       'NICRAT_STAFF': 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
       'HOSPITAL_ADMIN': 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
       'DATA_CLERK': 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400',
+      'PARTNER': 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400',
     };
     return colors[roleName] || 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300';
   }
@@ -91,7 +93,7 @@ function Header() {
         setRoleDisplayName(getRoleDisplayName(roleName));
         
         // Check if user has national access (SUPER_ADMIN or NICRAT_STAFF)
-        const nationalAccess = roleName === 'SUPER_ADMIN' || roleName === 'NICRAT_STAFF';
+        const nationalAccess = roleName === 'SUPER_ADMIN' || roleName === 'NICRAT_STAFF' || roleName === 'PARTNER';
         setHasNationalAccess(nationalAccess);
         
         // Set facility name only for facility-level users
