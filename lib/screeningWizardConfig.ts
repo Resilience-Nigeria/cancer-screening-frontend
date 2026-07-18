@@ -158,8 +158,9 @@ const commonRiskGroup: FieldGroup = {
       colSpan: 1,
       showIf: (v) => v.alcoholFrequency && v.alcoholFrequency !== "never",
     },
-    { name: "weightKg", label: "Weight (kg)", type: "number", step: "0.1", min: 0, colSpan: 1 },
-    { name: "heightCm", label: "Height (cm)", type: "number", step: "0.1", min: 0, colSpan: 1 },
+    // Rendered via a dedicated dual-unit (metric/imperial) input below, not the generic renderer.
+    { name: "weightKg", label: "Weight (kg)", type: "number", step: "0.1", min: 0, colSpan: 1, showIf: () => false },
+    { name: "heightCm", label: "Height (cm)", type: "number", step: "0.1", min: 0, colSpan: 1, showIf: () => false },
     {
       name: "bmi",
       label: "BMI",
@@ -168,6 +169,7 @@ const commonRiskGroup: FieldGroup = {
       colSpan: 1,
       readOnly: true,
       help: "Auto-calculated from weight and height",
+      showIf: () => false,
     },
     {
       name: "comorbidities",
@@ -263,6 +265,28 @@ export function getRiskGroups(cancer: CancerType): FieldGroup[] {
               min: "0",
               max: "100",
               placeholder: "Age",
+            },
+            {
+              name: "breastfeedingHistory",
+              label: "Breastfeeding History",
+              type: "select",
+              options: yesNo,
+              colSpan: 1,
+            },
+            {
+              name: "breastfeedingDuration",
+              label: "Breastfeeding Duration (months)",
+              type: "number",
+              min: "0",
+              colSpan: 1,
+              showIf: (v) => v.breastfeedingHistory === "yes",
+            },
+            {
+              name: "previousBreastSurgery",
+              label: "Previous Breast Surgery",
+              type: "select",
+              options: yesNo,
+              colSpan: 1,
             },
           ],
         }
@@ -528,6 +552,16 @@ export const SCREENING_GROUPS: Record<CancerType, FieldGroup[]> = {
 
 breast: [
   {
+    title: "Screening Methods",
+    description: "Select all methods used during this encounter.",
+    fields: [
+      { name: "methodCbe", label: "Clinical Breast Exam (CBE)", type: "checkbox", colSpan: 1 },
+      { name: "methodMammography", label: "Mammography", type: "checkbox", colSpan: 1 },
+      { name: "methodUltrasound", label: "Ultrasound (USS)", type: "checkbox", colSpan: 1 },
+    ],
+  },
+
+  {
     title: "Screening Details",
     fields: [
       // Multi-select via checkboxes — rendered specially by the wizard
@@ -551,22 +585,41 @@ breast: [
   },
 
   {
-    title: "Screening Methods",
-    description: "Select all methods used during this encounter.",
+    title: "CBE Findings — Left & Right",
+    description: "Document each breast independently during the clinical exam.",
     fields: [
-      { name: "methodCbe", label: "Clinical Breast Exam (CBE)", type: "checkbox", colSpan: 1 },
-      { name: "methodMammography", label: "Mammography", type: "checkbox", colSpan: 1 },
-      { name: "methodUltrasound", label: "Ultrasound (USS)", type: "checkbox", colSpan: 1 },
+      {
+        name: "leftCbeFinding",
+        label: "Left Breast",
+        type: "select",
+        colSpan: 1,
+        showIf: (v) => !!v.methodCbe,
+        options: [
+          { value: "normal", label: "Normal" },
+          { value: "suspicious", label: "Suspicious" },
+        ],
+      },
+      {
+        name: "rightCbeFinding",
+        label: "Right Breast",
+        type: "select",
+        colSpan: 1,
+        showIf: (v) => !!v.methodCbe,
+        options: [
+          { value: "normal", label: "Normal" },
+          { value: "suspicious", label: "Suspicious" },
+        ],
+      },
     ],
   },
 
   {
     title: "Imaging Findings",
-    description: "BI-RADS category and breast density (from mammography / ultrasound).",
+    description: "BI-RADS category, breast density, and overall finding — recorded per side (from mammography / ultrasound).",
     fields: [
       {
-        name: "biradsScore",
-        label: "BI-RADS Score",
+        name: "leftBiradsScore",
+        label: "Left BI-RADS Score",
         type: "select",
         colSpan: 1,
         showIf: (v) => !!v.methodMammography || !!v.methodUltrasound,
@@ -582,8 +635,25 @@ breast: [
         ],
       },
       {
-        name: "breastDensity",
-        label: "Breast Density (ACR)",
+        name: "rightBiradsScore",
+        label: "Right BI-RADS Score",
+        type: "select",
+        colSpan: 1,
+        showIf: (v) => !!v.methodMammography || !!v.methodUltrasound,
+        options: [
+          { value: "", label: "Select" },
+          { value: "0", label: "BI-RADS 0 — Incomplete" },
+          { value: "1", label: "BI-RADS 1 — Negative" },
+          { value: "2", label: "BI-RADS 2 — Benign" },
+          { value: "3", label: "BI-RADS 3 — Probably Benign" },
+          { value: "4", label: "BI-RADS 4 — Suspicious" },
+          { value: "5", label: "BI-RADS 5 — Highly Suggestive of Malignancy" },
+          { value: "6", label: "BI-RADS 6 — Known Malignancy" },
+        ],
+      },
+      {
+        name: "leftBreastDensity",
+        label: "Left Breast Density (ACR)",
         type: "select",
         colSpan: 1,
         showIf: (v) => !!v.methodMammography || !!v.methodUltrasound,
@@ -595,21 +665,48 @@ breast: [
           { value: "d", label: "D — Extremely dense" },
         ],
       },
+      {
+        name: "rightBreastDensity",
+        label: "Right Breast Density (ACR)",
+        type: "select",
+        colSpan: 1,
+        showIf: (v) => !!v.methodMammography || !!v.methodUltrasound,
+        options: [
+          { value: "", label: "Select" },
+          { value: "a", label: "A — Almost entirely fatty" },
+          { value: "b", label: "B — Scattered fibroglandular" },
+          { value: "c", label: "C — Heterogeneously dense" },
+          { value: "d", label: "D — Extremely dense" },
+        ],
+      },
+      {
+        name: "leftImagingFinding",
+        label: "Left Overall Finding",
+        type: "select",
+        colSpan: 1,
+        showIf: (v) => !!v.methodMammography || !!v.methodUltrasound,
+        options: [
+          { value: "normal", label: "Normal" },
+          { value: "suspicious", label: "Suspicious" },
+        ],
+      },
+      {
+        name: "rightImagingFinding",
+        label: "Right Overall Finding",
+        type: "select",
+        colSpan: 1,
+        showIf: (v) => !!v.methodMammography || !!v.methodUltrasound,
+        options: [
+          { value: "normal", label: "Normal" },
+          { value: "suspicious", label: "Suspicious" },
+        ],
+      },
     ],
   },
 
   {
     title: "Breast Health History & Symptoms",
     fields: [
-      { name: "breastfeedingHistory", label: "Breastfeeding History", type: "select", options: yesNo, colSpan: 1 },
-      {
-        name: "breastfeedingDuration",
-        label: "Breastfeeding Duration (months)",
-        type: "number",
-        min: 0,
-        colSpan: 1,
-        showIf: (v) => v.breastfeedingHistory === "yes",
-      },
       {
         name: "breastLumps",
         label: "Breast Lumps",
@@ -640,7 +737,6 @@ breast: [
       },
       { name: "skinChanges", label: "Skin Appearance Changes", type: "select", options: yesNo, colSpan: 1 },
       { name: "breastPain", label: "Breast Pain", type: "select", options: yesNo, colSpan: 1 },
-      { name: "previousBreastSurgery", label: "Previous Breast Surgery", type: "select", options: yesNo, colSpan: 1 },
       { name: "previousBiopsy", label: "Previous Biopsy", type: "select", options: yesNo, colSpan: 1 },
     ],
   },
@@ -685,6 +781,31 @@ breast: [
       ],
     },
 
+    // Standardized histology classification — drives the automated
+    // IHC prompt / referral trigger (see BreastScreeningController).
+    {
+      name: "histologyResult",
+      label: "Histology Result",
+      type: "select",
+      colSpan: 1,
+      showIf: (v) => !!v.biopsyDone && v.biopsyResult === "positive",
+      options: [
+        { value: "", label: "Select" },
+        { value: "malignant", label: "Malignant" },
+        { value: "benign", label: "Benign" },
+      ],
+      help: "Selecting Malignant automatically requests IHC and triggers referral.",
+    },
+    {
+      name: "ihcResult",
+      label: "IHC Result",
+      type: "text",
+      colSpan: 1,
+      showIf: (v) => v.histologyResult === "malignant",
+      placeholder: "e.g. ER+/PR+/HER2- (enter once available)",
+      help: "IHC has been automatically requested for this malignant result.",
+    },
+
     // Previous biopsy = no → checkbox to book
     {
       name: "biopsyBookNow",
@@ -703,7 +824,7 @@ breast: [
       showIf: (v) => v.previousBiopsy === "no" && !!v.biopsyBookNow,
     },
     {
-      name: "biopsyBookingFacility",
+      name: "biopsyBookingFacilityId",
       label: "Facility",
       type: "select",
       colSpan: 1,

@@ -114,6 +114,7 @@ const SCREENING_INT_FIELDS = [
   "ageAtFirstMenstruation",
   "ageAtMenopause",
   "ipssScore",
+  "biopsyBookingFacilityId",
 ];
 const SCREENING_FLOAT_FIELDS = ["psaLevel", "afpValue"];
 
@@ -497,6 +498,10 @@ const initialReferral = () => ({
             alcoholUnitsPerWeek:rp.alcoholUnitsPerWeek ?? "",
             weightKg:           rp.weightKg           ?? "",
             heightCm:           rp.heightCm           ?? "",
+            weightInput:        rp.weightKg           ?? "",
+            weightUnit:         "kg",
+            heightInput:        rp.heightCm           ?? "",
+            heightUnit:         "cm",
             bmi:                rp.bmi                ?? "",
             hivStatus:          rp.hivStatus          ?? "",
             hbvStatus:          rp.hbvStatus          ?? "",
@@ -504,6 +509,11 @@ const initialReferral = () => ({
             comorbidities: Array.isArray(rp.comorbiditiesJson)
               ? rp.comorbiditiesJson.join(", ")
               : "",
+            ageAtFirstMenstruation: rp.ageAtFirstMenstruation ?? "",
+            ageAtMenopause:         rp.ageAtMenopause         ?? "",
+            breastfeedingHistory:   rp.breastfeedingHistory   ?? "",
+            breastfeedingDuration:  rp.breastfeedingDuration  ?? "",
+            previousBreastSurgery:  rp.previousBreastSurgery  ?? "",
           });
         }
         setStepIndex(1);
@@ -525,6 +535,27 @@ const initialReferral = () => ({
       } catch {}
     })();
   }, []);
+
+  // Dual-unit (metric/imperial) input support — the user enters weight/height
+  // in whichever unit they prefer; we convert to the canonical weightKg /
+  // heightCm fields that the BMI calc and backend already expect.
+  useEffect(() => {
+    const raw = parseFloat(risk.weightInput);
+    const kg = raw > 0
+      ? (risk.weightUnit === "lb" ? raw * 0.45359237 : raw)
+      : null;
+    const kgStr = kg !== null ? kg.toFixed(1) : "";
+    setRisk((prev) => (prev.weightKg === kgStr ? prev : { ...prev, weightKg: kgStr }));
+  }, [risk.weightInput, risk.weightUnit]);
+
+  useEffect(() => {
+    const raw = parseFloat(risk.heightInput);
+    const cm = raw > 0
+      ? (risk.heightUnit === "ft" ? raw * 30.48 : raw)
+      : null;
+    const cmStr = cm !== null ? cm.toFixed(1) : "";
+    setRisk((prev) => (prev.heightCm === cmStr ? prev : { ...prev, heightCm: cmStr }));
+  }, [risk.heightInput, risk.heightUnit]);
 
   // Auto-calculate BMI
   useEffect(() => {
@@ -650,7 +681,7 @@ const initialReferral = () => ({
     try {
       const payload: Record<string, any> = { ...risk };
       ["cigarettesPerDay", "smokingDuration", "alcoholUnitsPerWeek",
-       "ageAtFirstMenstruation", "ageAtMenopause"].forEach(
+       "ageAtFirstMenstruation", "ageAtMenopause", "breastfeedingDuration"].forEach(
         (k) => (payload[k] = payload[k] ? parseInt(payload[k]) : null)
       );
       ["weightKg", "heightCm", "bmi"].forEach(
@@ -660,6 +691,10 @@ const initialReferral = () => ({
         ? String(risk.comorbidities).split(",").map((s: string) => s.trim()).filter(Boolean)
         : [];
       delete payload.comorbidities;
+      delete payload.weightInput;
+      delete payload.weightUnit;
+      delete payload.heightInput;
+      delete payload.heightUnit;
       await api.post(ENDPOINTS.riskProfile(clientId), payload);
       return true;
     } catch (err: any) {
@@ -1269,6 +1304,70 @@ const initialReferral = () => ({
                 ? RISK_FOCUS[cancerTypes[0]]
                 : "Risk factors relevant to all selected screenings are collected once below."}
             </div>
+            <div className="grid gap-4 grid-cols-1 sm:grid-cols-2">
+              <Label>
+                <span className="text-sm font-semibold text-gray-700 dark:text-gray-300">Weight</span>
+                <div className="mt-2 flex gap-2">
+                  <Input
+                    className="rounded-2xl h-12 shadow-sm flex-1"
+                    type="number"
+                    step="0.1"
+                    min={0}
+                    value={risk.weightInput ?? ""}
+                    placeholder={risk.weightUnit === "lb" ? "e.g. 154" : "e.g. 70"}
+                    onChange={(e) => setRiskField("weightInput", e.target.value)}
+                  />
+                  <Select
+                    className="rounded-2xl h-12 shadow-sm w-24"
+                    value={risk.weightUnit ?? "kg"}
+                    onChange={(e) => setRiskField("weightUnit", e.target.value)}
+                  >
+                    <option value="kg">kg</option>
+                    <option value="lb">lb</option>
+                  </Select>
+                </div>
+              </Label>
+              <Label>
+                <span className="text-sm font-semibold text-gray-700 dark:text-gray-300">Height</span>
+                <div className="mt-2 flex gap-2">
+                  <Input
+                    className="rounded-2xl h-12 shadow-sm flex-1"
+                    type="number"
+                    step="0.1"
+                    min={0}
+                    value={risk.heightInput ?? ""}
+                    placeholder={risk.heightUnit === "ft" ? "e.g. 5.6" : "e.g. 170"}
+                    onChange={(e) => setRiskField("heightInput", e.target.value)}
+                  />
+                  <Select
+                    className="rounded-2xl h-12 shadow-sm w-24"
+                    value={risk.heightUnit ?? "cm"}
+                    onChange={(e) => setRiskField("heightUnit", e.target.value)}
+                  >
+                    <option value="cm">cm</option>
+                    <option value="ft">ft</option>
+                  </Select>
+                </div>
+                {risk.heightUnit === "ft" && (
+                  <span className="mt-1 block text-xs text-gray-500 dark:text-gray-400">
+                    Use decimal feet, e.g. 5 ft 6 in = 5.5
+                  </span>
+                )}
+              </Label>
+              <Label>
+                <span className="text-sm font-semibold text-gray-700 dark:text-gray-300">BMI</span>
+                <Input
+                  className="mt-2 rounded-2xl h-12 shadow-sm bg-gray-50 dark:bg-gray-700 cursor-not-allowed"
+                  type="text"
+                  value={risk.bmi ?? ""}
+                  readOnly
+                  disabled
+                />
+                <span className="mt-1 block text-xs text-gray-500 dark:text-gray-400">
+                  Auto-calculated from weight and height
+                </span>
+              </Label>
+            </div>
             <GroupedForm
               groups={riskGroups}
               values={risk}
@@ -1290,7 +1389,7 @@ const initialReferral = () => ({
                 return {
                   ...g,
                   fields: g.fields.map((f) =>
-                    f.name === "biopsyBookingFacility"
+                    f.name === "biopsyBookingFacilityId"
                       ? {
                           ...f,
                           options: [
@@ -1449,6 +1548,12 @@ const initialReferral = () => ({
         {currentKey === "outcome" && (
           <div className="space-y-5">
             <h3 className="text-lg font-semibold text-gray-800 dark:text-white">Screening Outcome</h3>
+            <div className="rounded-xl bg-amber-50 dark:bg-amber-900/20 border border-amber-100 dark:border-amber-800 px-4 py-3 text-xs text-amber-800 dark:text-amber-300">
+              This platform is a clinical decision support tool — it documents
+              findings and guides next steps. It does not diagnose. Outcomes
+              and referrals below must be interpreted and confirmed by a
+              trained navigator or clinician.
+            </div>
             <div className="rounded-xl bg-gray-50 dark:bg-gray-700/40 px-4 py-3 text-sm text-gray-600 dark:text-gray-300 space-y-1">
               {cancerTypes.map((ct) => (
                 <div key={ct} className="flex items-center justify-between">

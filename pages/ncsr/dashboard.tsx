@@ -1,11 +1,8 @@
 import React, { useState, useEffect } from "react";
 import { useRouter } from "next/router";
-import { Doughnut, Line } from "react-chartjs-2";
 import Link from "next/link";
 import toast from "react-hot-toast";
 
-import ChartCard from "../components/Chart/ChartCard";
-import ChartLegend from "../components/Chart/ChartLegend";
 import PageTitle from "../components/Typography/PageTitle";
 import Layout from "../containers/Layout";
 import api from "../../lib/api";
@@ -23,18 +20,6 @@ import {
   Pagination,
   Button,
 } from "@roketid/windmill-react-ui";
-
-import {
-  Chart,
-  ArcElement,
-  CategoryScale,
-  LinearScale,
-  PointElement,
-  LineElement,
-  Title,
-  Tooltip,
-  Legend,
-} from "chart.js";
 
 import {
   Activity,
@@ -76,12 +61,6 @@ type DashboardStats = {
   liverScreenings: number;
   positiveFindings: number;
   totalReferred: number;
-};
-
-type MonthlyTrendData = {
-  month: string;
-  screenings: number;
-  referrals: number;
 };
 
 type Facility = {
@@ -242,17 +221,6 @@ function Dashboard() {
   const userRole = currentUser?.user_role?.roleName || currentUser?.role;
   const hasNationalAccess = ['SUPER_ADMIN', 'NICRAT_STAFF', 'PARTNER'].includes(userRole);
 
-  Chart.register(
-    ArcElement,
-    CategoryScale,
-    LinearScale,
-    PointElement,
-    LineElement,
-    Title,
-    Tooltip,
-    Legend
-  );
-
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState<DashboardStats>({
     totalClients: 0,
@@ -267,7 +235,6 @@ function Dashboard() {
     positiveFindings: 0,
     totalReferred: 0,
   });
-  const [monthlyTrend, setMonthlyTrend] = useState<MonthlyTrendData[]>([]);
   const [activities, setActivities] = useState<ScreeningActivity[]>([]);
   const [page, setPage] = useState(1);
   const [totalResults, setTotalResults] = useState(0);
@@ -345,37 +312,6 @@ function Dashboard() {
     } catch (err: any) {
       console.error("Error fetching stats:", err);
       toast.error("Unable to load dashboard statistics");
-    }
-  }
-
-  async function fetchMonthlyTrend() {
-    try {
-      const params: any = {};
-      
-      if (hasNationalAccess) {
-        if (selectedFacility !== "all") {
-          params.facilityId = selectedFacility;
-        }
-        if (dateFrom) {
-          params.dateFrom = dateFrom;
-        }
-        if (dateTo) {
-          params.dateTo = dateTo;
-        }
-      }
-
-      const trendResponse = await api.get("/dashboard/monthly-trends", { params });
-      const trendData = trendResponse.data?.data || trendResponse.data?.trend || [];
-
-      const mappedTrend: MonthlyTrendData[] = trendData.map((item: any) => ({
-        month: item.month,
-        screenings: item.screenings ?? item.total_screenings ?? 0,
-        referrals: item.referrals ?? item.total_referrals ?? 0,
-      }));
-
-      setMonthlyTrend(mappedTrend);
-    } catch (err: any) {
-      console.error("Error fetching monthly trend:", err);
     }
   }
 
@@ -465,7 +401,6 @@ function Dashboard() {
     
     // Fetch data with new filters
     fetchDashboardData();
-    fetchMonthlyTrend();
     fetchRecentActivity();
   }, [selectedFacility, dateFrom, dateTo]);
 
@@ -474,7 +409,6 @@ function Dashboard() {
       fetchFacilities();
     }
     fetchDashboardData();
-    fetchMonthlyTrend();
   }, []);
 
   useEffect(() => {
@@ -525,93 +459,6 @@ function Dashboard() {
   function handlePositiveFindingsClick() {
     router.push("/ncsr/positive-findings");
   }
-
-  const screeningDistributionData = {
-    data: {
-      datasets: [
-        {
-          data: [
-            stats.cervicalScreenings,
-            stats.breastScreenings,
-            stats.prostateScreenings,
-            stats.colorectalScreenings,
-            stats.liverScreenings,
-          ],
-          backgroundColor: [
-            "#15803d",
-            "#22c55e",
-            "#86efac",
-            "#65a30d",
-            "#0f766e",
-          ],
-          borderWidth: 0,
-        },
-      ],
-      labels: ["Cervical", "Breast", "Prostate", "Colorectal", "Liver"],
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      cutout: "72%",
-      plugins: {
-        legend: {
-          display: false,
-        },
-      },
-    },
-  };
-
-  const monthlyTrendData = {
-    data: {
-      labels: monthlyTrend.length > 0 
-        ? monthlyTrend.map(item => item.month)
-        : ["No Data"],
-      datasets: [
-        {
-          label: "Screenings",
-          backgroundColor: "rgba(21, 128, 61, 0.15)",
-          borderColor: "#15803d",
-          data: monthlyTrend.length > 0
-            ? monthlyTrend.map(item => item.screenings)
-            : [0],
-          fill: true,
-          tension: 0.35,
-        },
-        {
-          label: "Referrals",
-          backgroundColor: "rgba(217, 119, 6, 0.12)",
-          borderColor: "#d97706",
-          data: monthlyTrend.length > 0
-            ? monthlyTrend.map(item => item.referrals)
-            : [0],
-          fill: true,
-          tension: 0.35,
-        },
-      ],
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      plugins: {
-        legend: {
-          display: false,
-        },
-      },
-      scales: {
-        y: {
-          beginAtZero: true,
-          grid: {
-            color: "rgba(0,0,0,0.05)",
-          },
-        },
-        x: {
-          grid: {
-            display: false,
-          },
-        },
-      },
-    },
-  };
 
   function getBadgeType(status: ScreeningActivity["status"]) {
     switch (status) {
@@ -1040,93 +887,26 @@ function Dashboard() {
         )}
       </div>
 
-      {/* Analytics & Trends - same as before */}
-      <PageTitle>Analytics & Trends</PageTitle>
-
-      <div className="grid grid-cols-1 gap-6 mb-8 xl:grid-cols-2">
-        <div className="min-w-0">
-          <div className="rounded-2xl bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 shadow-sm p-4 sm:p-5 overflow-hidden">
-            <h2 className="text-base sm:text-lg font-semibold text-gray-800 dark:text-white">
-              Screening Distribution by Module
-            </h2>
-
-            <div className="mt-4 min-w-0 w-full overflow-hidden">
-              <div className="relative w-full h-[260px] sm:h-[320px] lg:h-[360px] xl:h-[320px]">
-                <Doughnut
-                  data={screeningDistributionData.data}
-                  options={screeningDistributionData.options as any}
-                />
-              </div>
+      {/* Dense analytics moved to a dedicated page to keep this view focused
+          on high-priority actions (patient lists, recent activity). */}
+      <Link href="/ncsr/analytics">
+        <div className="mb-8 rounded-2xl bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 shadow-sm p-4 sm:p-5 flex items-center justify-between gap-3 cursor-pointer hover:shadow-lg hover:border-green-300 dark:hover:border-green-600 transition-all">
+          <div className="flex items-center gap-3">
+            <div className="shrink-0 w-11 h-11 rounded-xl flex items-center justify-center bg-green-50 dark:bg-green-900/30 text-green-700 dark:text-green-400">
+              <Activity className="w-5 h-5" />
             </div>
-
-            <div className="mt-5 flex flex-wrap gap-3">
-              {[
-                ["Cervical", "bg-green-700"],
-                ["Breast", "bg-green-500"],
-                ["Prostate", "bg-green-300"],
-                ["Colorectal", "bg-lime-600"],
-                ["Liver", "bg-teal-700"],
-              ].map(([label, color]) => (
-                <div
-                  key={label}
-                  className="inline-flex items-center gap-2 rounded-full bg-gray-50 dark:bg-gray-700 px-3 py-1.5 text-xs sm:text-sm text-gray-700 dark:text-gray-200"
-                >
-                  <span className={`w-3 h-3 rounded-full ${color}`} />
-                  <span className="whitespace-nowrap">{label}</span>
-                </div>
-              ))}
+            <div>
+              <h3 className="text-sm font-semibold text-gray-800 dark:text-white">
+                Analytics &amp; Trends
+              </h3>
+              <p className="text-xs text-gray-500 dark:text-gray-400">
+                Screening distribution by module and monthly trend charts
+              </p>
             </div>
           </div>
+          <ArrowUpRight className="w-4 h-4 text-green-600 dark:text-green-400 shrink-0" />
         </div>
-
-        <div className="min-w-0">
-          <div className="rounded-2xl bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 shadow-sm p-4 sm:p-5 overflow-hidden">
-            <h2 className="text-base sm:text-lg font-semibold text-gray-800 dark:text-white">
-              Monthly Screening and Referral Trend
-            </h2>
-
-            {monthlyTrend.length > 0 ? (
-              <>
-                <div className="mt-4 min-w-0 w-full overflow-hidden">
-                  <div className="relative w-full h-[260px] sm:h-[320px] lg:h-[360px] xl:h-[320px]">
-                    <Line
-                      data={monthlyTrendData.data}
-                      options={monthlyTrendData.options as any}
-                    />
-                  </div>
-                </div>
-
-                <div className="mt-5 flex flex-wrap gap-3">
-                  {[
-                    ["Screenings", "bg-green-700"],
-                    ["Referrals", "bg-amber-500"],
-                  ].map(([label, color]) => (
-                    <div
-                      key={label}
-                      className="inline-flex items-center gap-2 rounded-full bg-gray-50 dark:bg-gray-700 px-3 py-1.5 text-xs sm:text-sm text-gray-700 dark:text-gray-200"
-                    >
-                      <span className={`w-3 h-3 rounded-full ${color}`} />
-                      <span className="whitespace-nowrap">{label}</span>
-                    </div>
-                  ))}
-                </div>
-              </>
-            ) : (
-              <div className="mt-4 flex items-center justify-center h-[260px] sm:h-[320px] lg:h-[360px] xl:h-[320px]">
-                <div className="text-center">
-                  <Activity className="w-12 h-12 mx-auto text-gray-300 dark:text-gray-600" />
-                  <p className="mt-4 text-sm text-gray-500 dark:text-gray-400">
-                    No trend data available yet
-                  </p>
-                  <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">
-                    Data will appear as screenings are recorded
-                  </p>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
+      </Link>
     </Layout>
   );
 }
