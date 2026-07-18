@@ -1,6 +1,7 @@
 "use client";
 import React, { useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/router";
 import {
   Input,
   Button,
@@ -40,6 +41,7 @@ type Client = {
   fullName: string;
   gender: string;
   phoneNumber?: string | null;
+  email?: string | null;
   nin?: string | null;
   screeningCategory?: string;
   stateOfOrigin?: string | null;
@@ -63,6 +65,7 @@ type ClientForm = {
   gender: string;
   dateOfBirth: string;
   phoneNumber: string;
+  email: string;
   nin: string;
   screeningCategory: string;
   stateOfOrigin: string;
@@ -92,6 +95,7 @@ const initialFormData: ClientForm = {
   gender: "",
   dateOfBirth: "",
   phoneNumber: "",
+  email: "",
   nin: "",
   screeningCategory: "",
   stateOfOrigin: "",
@@ -104,6 +108,7 @@ const initialFormData: ClientForm = {
 };
 
 export default function ClientsIndexPage() {
+  const router = useRouter();
   const [clients, setClients] = useState<Client[]>([]);
   const [loading, setLoading] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -135,6 +140,7 @@ export default function ClientsIndexPage() {
         fullName: client.fullName ?? client.full_name ?? "",
         gender: client.gender ?? "",
         phoneNumber: client.phoneNumber ?? client.phone_number ?? "",
+        email: client.email ?? "",
         nin: client.nin ?? "",
         screeningCategory:
           client.screeningCategory ?? client.screening_category ?? "",
@@ -168,10 +174,14 @@ export default function ClientsIndexPage() {
     setSearch(searchInput.trim());
   }
 
+  // "Add Client" now goes straight into the screening wizard instead of
+  // this page's own modal — the wizard already includes the consent step,
+  // biodata, risk profile, and screening in one seamless flow, so
+  // clinicians no longer have to save-and-then-separately-find the client
+  // to start screening. The modal is retained only for editing existing
+  // client records (see openEditModal).
   function openModal() {
-    setEditingClient(null);
-    setFormData(initialFormData);
-    setIsModalOpen(true);
+    router.push("/ncsr/screening-wizard");
   }
 
   
@@ -195,6 +205,7 @@ function openEditModal(client: Client) {
     gender: client.gender || "",
     dateOfBirth: formatDateForInput(client.dateOfBirth),
     phoneNumber: client.phoneNumber || "",
+    email: client.email || "",
     nin: client.nin || "",
     screeningCategory: client.screeningCategory || "",
     stateOfOrigin: client.stateOfOrigin || "",
@@ -442,6 +453,24 @@ function openEditModal(client: Client) {
                     </Label>
                   </div>
 
+                  {/* Email Address */}
+                  <div>
+                    <Label>
+                      <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                        Email Address <span className="text-red-500">*</span>
+                      </span>
+                      <Input
+                        name="email"
+                        value={formData.email}
+                        onChange={handleInputChange}
+                        className="mt-1 rounded-xl"
+                        placeholder="Enter email address"
+                        type="email"
+                        disabled={isSubmitting}
+                        required
+                      />
+                    </Label>
+                  </div>
 
                    {/* NIN*/}
                   <div>

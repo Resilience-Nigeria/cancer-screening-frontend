@@ -321,6 +321,35 @@ function collectMissing(
 // Wizard Component
 // ---------------------------------------------------------------------------
 export default function ScreeningWizard() {
+const initialBiodata = () => ({
+  fullName:          "",
+  nin:               "",
+  gender:            "",
+  dateOfBirth:       "",
+  phoneNumber:       "",
+  screeningCategory: "",
+  stateOfOrigin:     "",
+  lgaOfOrigin:       "",
+  stateOfResidence:  "",
+  lgaOfResidence:    "",
+  address:           "",
+  landmark:          "",
+  registrationDate:  today(),
+});
+
+const initialPreCounsel = () => ({
+  preScreeningCounselingDate: today(),
+  preScreeningCounselor:      "",
+  preScreeningConsent:        "",
+});
+
+const initialReferral = () => ({
+  facilityId:   "",
+  facilityName: "",
+  referralDate: today(),
+  notes:        "",
+});
+
   const router = useRouter();
 
   const [stepIndex, setStepIndex] = useState(0);
@@ -331,37 +360,14 @@ export default function ScreeningWizard() {
 
   const [cancerTypes, setCancerTypes] = useState<CancerType[]>([]);
 
-  const [biodata, setBiodata] = useState<Record<string, any>>({
-    fullName:          "",
-    nin:               "",
-    gender:            "",
-    dateOfBirth:       "",
-    phoneNumber:       "",
-    screeningCategory: "",
-    stateOfOrigin:     "",
-    lgaOfOrigin:       "",
-    stateOfResidence:  "",
-    lgaOfResidence:    "",
-    address:           "",
-    landmark:          "",
-    registrationDate:  today(),
-  });
+  const [biodata, setBiodata] = useState<Record<string, any>>(initialBiodata());
 
-  const [preCounsel, setPreCounsel] = useState<Record<string, any>>({
-    preScreeningCounselingDate: today(),
-    preScreeningCounselor:      "",
-    preScreeningConsent:        "",
-  });
+  const [preCounsel, setPreCounsel] = useState<Record<string, any>>(initialPreCounsel());
 
   const [risk,      setRisk]      = useState<Record<string, any>>({});
   const [screenings, setScreenings] = useState<Record<string, Record<string, any>>>({});
 
-  const [referral, setReferral] = useState<Record<string, any>>({
-    facilityId:   "",
-    facilityName: "",
-    referralDate: today(),
-    notes:        "",
-  });
+  const [referral, setReferral] = useState<Record<string, any>>(initialReferral());
   const [outcome, setOutcome] = useState<Record<string, any>>({});
 
   const [treatmentReferral, setTreatmentReferral] = useState<string>("not_referred");
@@ -424,11 +430,37 @@ export default function ScreeningWizard() {
     })();
   }, [anyPositive]);
 
-  // Load existing client from query param — guard with router.isReady
+  // Load existing client from query param — guard with router.isReady.
+  // Also handles the "fresh session" case: whenever this param changes
+  // (including becoming empty, e.g. navigating here for a NEW client
+  // right after finishing a previous client's screening), every piece
+  // of client-scoped state is reset first so nothing leaks between
+  // clients within the same mounted wizard instance.
   useEffect(() => {
     if (!router.isReady) return;
     const qId = router.query.clientId as string | undefined;
+
+    // Always start from a clean slate before (re)hydrating.
+    setClientId("");
+    setVisitId(null);
+    setCancerTypes([]);
+    setBiodata(initialBiodata());
+    setPreCounsel(initialPreCounsel());
+    setRisk({});
+    setScreenings({});
+    setReferral(initialReferral());
+    setOutcome({});
+    setTreatmentReferral("not_referred");
+    setBiodataErrors({});
+    setRiskErrors({});
+    setScreeningErrors({});
+    setLookupValue("");
+    setClientFound(false);
+    setLookupAttempted(false);
+    setStepIndex(0);
+
     if (!qId) return;
+
     (async () => {
       setBusy(true);
       try {
