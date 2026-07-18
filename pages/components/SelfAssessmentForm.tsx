@@ -100,9 +100,16 @@ const SYMPTOM_GROUPS: { title: string; items: { key: string; label: string }[] }
     ],
   },
   {
-    title: "Lumps",
+    title: "Breast Changes (applies to everyone — men can get breast cancer too)",
     items: [
       { key: "lump_breast", label: "Lump in breast" },
+      { key: "nipple_discharge", label: "Nipple discharge" },
+      { key: "breast_skin_changes", label: "Skin changes on the breast (dimpling, puckering, redness)" },
+    ],
+  },
+  {
+    title: "Other Lumps",
+    items: [
       { key: "lump_neck", label: "Lump in neck" },
       { key: "lump_underarm", label: "Lump under arm" },
       { key: "lump_groin", label: "Lump in groin" },
@@ -114,7 +121,6 @@ const SYMPTOM_GROUPS: { title: string; items: { key: string; label: string }[] }
     items: [
       { key: "blood_in_stool", label: "Blood in stool" },
       { key: "blood_in_urine", label: "Blood in urine" },
-      { key: "coughing_blood", label: "Coughing blood" },
       { key: "vaginal_bleeding_after_menopause", label: "Vaginal bleeding after menopause" },
       { key: "bleeding_after_sex", label: "Bleeding after sex" },
     ],
@@ -124,30 +130,18 @@ const SYMPTOM_GROUPS: { title: string; items: { key: string; label: string }[] }
     items: [
       { key: "pain_breast", label: "Breast pain" },
       { key: "pain_abdomen", label: "Abdominal pain" },
-      { key: "pain_bone", label: "Bone pain" },
-      { key: "pain_chest", label: "Chest pain" },
       { key: "pain_back", label: "Back pain" },
     ],
   },
   {
     title: "Digestive & Urinary",
     items: [
-      { key: "difficulty_swallowing", label: "Difficulty swallowing" },
-      { key: "persistent_heartburn", label: "Persistent heartburn" },
       { key: "change_in_bowel_habit", label: "Change in bowel habit" },
       { key: "persistent_diarrhoea", label: "Persistent diarrhoea" },
       { key: "difficulty_urinating", label: "Difficulty passing urine" },
       { key: "frequent_urination", label: "Frequent urination" },
-    ],
-  },
-  {
-    title: "Respiratory & Skin",
-    items: [
-      { key: "persistent_cough", label: "Persistent cough (over 3 weeks)" },
-      { key: "hoarseness", label: "Hoarseness" },
-      { key: "shortness_of_breath", label: "Shortness of breath" },
-      { key: "mole_changing_size", label: "A mole changing size or colour" },
-      { key: "non_healing_ulcer", label: "A sore or ulcer that won't heal" },
+      { key: "persistent_abdominal_pain", label: "Persistent abdominal pain or swelling" },
+      { key: "jaundice", label: "Yellowing of the eyes or skin" },
     ],
   },
 ];
@@ -165,7 +159,7 @@ const MEDICAL_HISTORY_ITEMS = [
   { key: "colon_polyps", label: "Colon polyps" },
 ];
 
-const FAMILY_CANCER_TYPES = ["Breast", "Cervical", "Prostate", "Colorectal", "Lung", "Ovarian", "Liver", "Stomach"];
+const FAMILY_CANCER_TYPES = ["Breast", "Cervical", "Prostate", "Colorectal", "Liver"];
 
 const INFECTION_ITEMS = [
   { key: "hpv", label: "HPV" },
@@ -587,7 +581,10 @@ export default function SelfAssessmentForm({
           )}
 
           {currentKey === "womens" && (
-            <StepShell title="Women's health">
+            <StepShell
+              title="Women's health"
+              subtitle="These questions relate to cervical health and reproductive history. (Breast changes were already covered earlier.)"
+            >
               <div className="grid grid-cols-2 gap-4">
                 <Label>
                   <span className="text-sm font-semibold">Age at first period</span>
@@ -689,17 +686,14 @@ export default function SelfAssessmentForm({
                   />
                 </Label>
               )}
-              <div>
-                <p className="text-sm font-semibold mb-1">Breast symptoms</p>
-                <p className="text-xs text-gray-400 mb-1">
-                  (Already covered lumps in the earlier symptoms section — this is just for anything else.)
-                </p>
-              </div>
             </StepShell>
           )}
 
           {currentKey === "mens" && (
-            <StepShell title="Men's health">
+            <StepShell
+              title="Men's health"
+              subtitle="These questions relate to prostate health. (Breast changes were already covered earlier — men can get breast cancer too.)"
+            >
               <Label>
                 <span className="text-sm font-semibold">Difficulty passing urine?</span>
                 <Select
