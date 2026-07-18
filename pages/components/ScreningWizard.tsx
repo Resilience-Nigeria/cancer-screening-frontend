@@ -1309,7 +1309,7 @@ const initialReferral = () => ({
                 <span className="text-sm font-semibold text-gray-700 dark:text-gray-300">Weight</span>
                 <div className="mt-2 flex gap-2">
                   <Input
-                    className="rounded-2xl h-12 shadow-sm flex-1"
+                    className="rounded-2xl h-12 shadow-sm flex-1 min-w-0"
                     type="number"
                     step="0.1"
                     min={0}
@@ -1318,7 +1318,8 @@ const initialReferral = () => ({
                     onChange={(e) => setRiskField("weightInput", e.target.value)}
                   />
                   <Select
-                    className="rounded-2xl h-12 shadow-sm w-24"
+                    className="rounded-2xl h-12 shadow-sm shrink-0"
+                    style={{ width: "5.5rem" }}
                     value={risk.weightUnit ?? "kg"}
                     onChange={(e) => setRiskField("weightUnit", e.target.value)}
                   >
@@ -1331,7 +1332,7 @@ const initialReferral = () => ({
                 <span className="text-sm font-semibold text-gray-700 dark:text-gray-300">Height</span>
                 <div className="mt-2 flex gap-2">
                   <Input
-                    className="rounded-2xl h-12 shadow-sm flex-1"
+                    className="rounded-2xl h-12 shadow-sm flex-1 min-w-0"
                     type="number"
                     step="0.1"
                     min={0}
@@ -1340,7 +1341,8 @@ const initialReferral = () => ({
                     onChange={(e) => setRiskField("heightInput", e.target.value)}
                   />
                   <Select
-                    className="rounded-2xl h-12 shadow-sm w-24"
+                    className="rounded-2xl h-12 shadow-sm shrink-0"
+                    style={{ width: "5.5rem" }}
                     value={risk.heightUnit ?? "cm"}
                     onChange={(e) => setRiskField("heightUnit", e.target.value)}
                   >
