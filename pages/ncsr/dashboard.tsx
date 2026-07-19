@@ -37,6 +37,7 @@ import {
   Globe,
   Plus,
   StethoscopeIcon,
+  ClipboardCheck,
 } from "lucide-react";
 
 type ScreeningActivity = {
@@ -564,6 +565,17 @@ function Dashboard() {
                             <span className="inline-flex items-center gap-2">
                               <StethoscopeIcon className="w-4 h-4" />
                               New Screening
+                            </span>
+                          </Button>
+                        </Link>
+
+  <Link
+                          href={`/ncsr/clinical-screening`}
+                        >
+                          <Button layout="outline" className="text-green-700 dark:text-green-400 rounded-2xl h-12 border-green-700 hover:bg-green-50 dark:hover:bg-green-900/20">
+                            <span className="inline-flex items-center gap-2">
+                              <ClipboardCheck className="w-4 h-4" />
+                              Stage 2: Clinical Screening (PHC)
                             </span>
                           </Button>
                         </Link>
