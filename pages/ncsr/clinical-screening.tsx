@@ -69,14 +69,12 @@ const NEXT_OF_KIN_RELATIONSHIP_OPTIONS = [
 
 const MEDICAL_HISTORY_GROUP: FieldGroup = {
   title: "Medical History — Confirm",
-  description: "Review and confirm with the client. Infection status and family history are covered in the previous step — this section covers the rest.",
+  description: "Review and confirm with the client. Infection status, family history, and comorbidities (including diabetes/hypertension) are covered in the previous step — this section covers the rest.",
   fields: [
     { name: "previousCancer", label: "Previous cancer diagnosis", type: "select", options: yesNoUnknown, colSpan: 1 },
     { name: "previousCancerDetails", label: "Details (if yes)", type: "text", colSpan: 1, showIf: (v) => v.previousCancer === "yes" },
     { name: "previousSurgeries", label: "Previous surgeries", type: "select", options: yesNoUnknown, colSpan: 1 },
     { name: "previousSurgeriesDetails", label: "Details (if yes)", type: "text", colSpan: 1, showIf: (v) => v.previousSurgeries === "yes" },
-    { name: "diabetes", label: "Diabetes", type: "select", options: yesNoUnknown, colSpan: 1 },
-    { name: "hypertension", label: "Hypertension", type: "select", options: yesNoUnknown, colSpan: 1 },
     { name: "previousScreening", label: "Previous cancer screening", type: "select", options: yesNoUnknown, colSpan: 1 },
     { name: "previousScreeningDetails", label: "Details (if yes)", type: "text", colSpan: 1, showIf: (v) => v.previousScreening === "yes" },
   ],
@@ -179,6 +177,7 @@ export default function ClinicalScreeningPage() {
     outcomeNotes: "",
     repeatScreeningDate: "",
   });
+  const [autoReferral, setAutoReferral] = useState<any>(null);
 
   const currentKey = STEPS[stepIndex];
 
@@ -191,6 +190,18 @@ export default function ClinicalScreeningPage() {
     const primaryType = cancerTypes[0] || availableCancerTypes[0]?.value || "breast";
     return getRiskGroups(primaryType as CancerType);
   }, [cancerTypes, availableCancerTypes]);
+
+  // Prefill physical exam weight/height from the risk profile (Stage 1 /
+  // Section B) once it's available, so the nurse isn't re-measuring/re-typing
+  // values already on file — still editable if today's reading differs.
+  useEffect(() => {
+    if (!risk.weightKg && !risk.heightCm) return;
+    setExamination((prev) => ({
+      ...prev,
+      weightKg: prev.weightKg || risk.weightKg || "",
+      heightCm: prev.heightCm || risk.heightCm || "",
+    }));
+  }, [risk.weightKg, risk.heightCm]);
 
   // Auto-calc BMI for physical exam
   useEffect(() => {
@@ -346,8 +357,13 @@ export default function ClinicalScreeningPage() {
     }
     setBusy(true);
     try {
-      await api.post(`/visits/${visitId}/outcome`, outcome);
-      toast.success("Screening outcome recorded.");
+      const { data } = await api.post(`/visits/${visitId}/outcome`, outcome);
+      if (data?.referral) {
+        setAutoReferral(data.referral);
+        toast.success("Screening outcome recorded — client auto-linked to a referral facility.");
+      } else {
+        toast.success("Screening outcome recorded.");
+      }
       next();
     } catch (err: any) {
       toast.error(err?.response?.data?.message ?? "Could not save the outcome.");
@@ -698,8 +714,35 @@ export default function ClinicalScreeningPage() {
                 "All findings have been saved to the client's record."
               )}
             </p>
+
+            {autoReferral && (
+              <div className="max-w-sm mx-auto text-left rounded-2xl border border-green-100 bg-green-50 dark:bg-green-900/20 dark:border-green-800 p-4 mt-4">
+                <p className="text-xs font-semibold text-green-700 dark:text-green-400 uppercase tracking-wide mb-1">
+                  Auto-linked for referral
+                </p>
+                <p className="text-sm font-bold text-gray-800 dark:text-white">
+                  {autoReferral.toFacility?.facilityName || autoReferral.to_facility?.facilityName || "Referral facility"}
+                </p>
+                {(autoReferral.toFacility?.facilityAddress || autoReferral.to_facility?.facilityAddress) && (
+                  <p className="text-xs text-gray-500 mt-0.5">
+                    {autoReferral.toFacility?.facilityAddress || autoReferral.to_facility?.facilityAddress}
+                  </p>
+                )}
+                <p className="text-xs text-gray-400 mt-2">
+                  A referral notification has been sent to this facility and the client.
+                </p>
+              </div>
+            )}
+            {(outcome.overallOutcome === "urgent_referral" || outcome.overallOutcome === "suspicious") && !autoReferral && (
+              <div className="max-w-sm mx-auto text-left rounded-2xl border border-amber-100 bg-amber-50 dark:bg-amber-900/20 dark:border-amber-800 p-4 mt-4">
+                <p className="text-sm text-amber-700 dark:text-amber-400">
+                  No secondary/tertiary facility could be auto-matched (missing address or none nearby) — please arrange the referral manually.
+                </p>
+              </div>
+            )}
+
             <Button
-              onClick={() => router.push(`/ncsr/client-summary?clientId=${clientId}`)}
+              onClick={() => router.push(`/ncsr/client-record?clientId=${clientId}`)}
               className="mt-4 h-12 px-6 rounded-2xl bg-green-700 border-green-700 hover:bg-green-800"
             >
               View Client Record
