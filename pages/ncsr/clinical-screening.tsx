@@ -236,7 +236,7 @@ export default function ClinicalScreeningPage() {
     try {
       let cId = clientId;
       if (cId) {
-        await api.put(`/clients/${cId}`, biodata);
+        await api.patch(`/clients/${cId}`, biodata);
       } else {
         const { data } = await api.post(`/clients`, biodata);
         cId = data?.client?.clientId ?? data?.clientId;

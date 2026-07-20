@@ -1,5 +1,5 @@
 "use client";
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Button, Input, Label, Select } from "@roketid/windmill-react-ui";
 import { CheckCircle, Loader2 } from "lucide-react";
 import { nigerianStates, lgasByState, getStateCode } from "../../lib/nigerianstates";
@@ -88,6 +88,8 @@ export default function AwarenessRegistrationPage() {
     email: "",
     stateOfResidence: "",
     lgaOfResidence: "",
+    areaOfResidence: "",
+
     campaignSource:
       typeof window !== "undefined"
         ? new URLSearchParams(window.location.search).get("src") ?? ""
@@ -100,6 +102,7 @@ export default function AwarenessRegistrationPage() {
   const [maskedPhone, setMaskedPhone] = useState<string>("");
   const [facility, setFacility] = useState<Facility | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
+const [availableAreas, setAvailableAreas] = useState<string[]>([]);
 
   const [facilityFromStore, setFacilityFromStore] = useState<Facility | null>(null);
 
@@ -122,6 +125,29 @@ export default function AwarenessRegistrationPage() {
     if (!form.lgaOfResidence) e.lgaOfResidence = "Please select your LGA.";
     return e;
   }
+
+  useEffect(() => {
+  if (!form.stateOfResidence || !form.lgaOfResidence) {
+    setAvailableAreas([]);
+    setForm((prev) => ({ ...prev, areaOfResidence: "" }));
+    return;
+  }
+  (async () => {
+    try {
+      const { data } = await api.get("/areas", {
+        params: {
+          state: form.stateOfResidence,
+          lga:   form.lgaOfResidence,
+        },
+      });
+      setAvailableAreas(data?.areas ?? []);
+      setForm((prev) => ({ ...prev, areaOfResidence: "" }));
+    } catch {
+      setAvailableAreas([]);
+    }
+  })();
+}, [form.stateOfResidence, form.lgaOfResidence]);
+
 
   async function handleSubmit(e: React.FormEvent) {
   e.preventDefault();
@@ -307,6 +333,26 @@ export default function AwarenessRegistrationPage() {
                 <span className="text-xs text-red-500 mt-1 block">{errors.lgaOfResidence}</span>
               )}
             </Label>
+
+
+            {availableAreas.length > 0 && (
+  <Label className="col-span-2">
+    <span className="text-sm font-semibold">
+      Area / District{" "}
+      <span className="text-gray-400 font-normal">(helps us find the closest centre)</span>
+    </span>
+    <Select
+      className="mt-2 rounded-2xl h-12"
+      value={form.areaOfResidence}
+      onChange={(e) => setField("areaOfResidence", e.target.value)}
+    >
+      <option value="">Select your area</option>
+      {availableAreas.map((a) => (
+        <option key={a} value={a}>{a}</option>
+      ))}
+    </Select>
+  </Label>
+)}
           </div>
 
           <Button
