@@ -457,7 +457,7 @@ function openEditModal(client: Client) {
                   <div>
                     <Label>
                       <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                        Email Address <span className="text-red-500">*</span>
+                        Email Address <span className="text-gray-400 font-normal">(optional)</span>
                       </span>
                       <Input
                         name="email"
@@ -467,7 +467,6 @@ function openEditModal(client: Client) {
                         placeholder="Enter email address"
                         type="email"
                         disabled={isSubmitting}
-                        required
                       />
                     </Label>
                   </div>
