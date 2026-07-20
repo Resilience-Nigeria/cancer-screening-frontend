@@ -22,6 +22,7 @@ import {
   X,
   Edit,
   Stethoscope,
+  FileText,
 } from "lucide-react";
 import toast from "react-hot-toast";
 
@@ -970,6 +971,15 @@ function openEditModal(client: Client) {
                               <Stethoscope className="w-4 h-4" />
                               Screen
                             </span>
+                          </Button>
+                        </Link>
+
+                        <Link
+                          href={`/ncsr/client-record?clientId=${client.clientId}`}
+                          title="View comprehensive record"
+                        >
+                          <Button layout="outline" className="rounded-xl">
+                            <FileText className="w-4 h-4" />
                           </Button>
                         </Link>
 
