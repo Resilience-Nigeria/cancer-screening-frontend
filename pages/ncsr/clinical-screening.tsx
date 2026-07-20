@@ -30,6 +30,7 @@ import {
   FieldGroup,
 } from "../../lib/screeningWizardConfig";
 import { GroupedForm, buildScreeningPayload } from "../components/ScreningWizard";
+import OtpVerificationStep from "../components/OtpVerificationService";
 
 // ---------------------------------------------------------------------------
 // Medical history confirm-checklist — Stage 2, Section C
@@ -120,7 +121,7 @@ const OUTCOME_OPTIONS: { value: string; label: string; description: string; tone
 ];
 
 const STEPS = [
-  "lookup", "registration", "riskVerify", "medicalHistory",
+  "lookup", "registration", "otpConsent", "riskVerify", "medicalHistory",
   "cancerTypeSelect", "screening", "physicalExam", "outcome", "done",
 ] as const;
 type StepKey = typeof STEPS[number];
@@ -128,6 +129,7 @@ type StepKey = typeof STEPS[number];
 const STEP_LABELS: Record<StepKey, string> = {
   lookup: "Find Client",
   registration: "A. Registration",
+  otpConsent: "Consent (OTP)",
   riskVerify: "B. Risk Assessment",
   medicalHistory: "C. Medical History",
   cancerTypeSelect: "Cancer Type(s)",
@@ -178,6 +180,9 @@ export default function ClinicalScreeningPage() {
     repeatScreeningDate: "",
   });
   const [autoReferral, setAutoReferral] = useState<any>(null);
+  const [pendingRegistrationId, setPendingRegistrationId] = useState<string>("");
+  const [pendingMaskedPhone, setPendingMaskedPhone] = useState<string>("");
+  const [bloomReference, setBloomReference] = useState<{ registration: any; selfAssessment: any } | null>(null);
 
   const currentKey = STEPS[stepIndex];
 
@@ -218,7 +223,14 @@ export default function ClinicalScreeningPage() {
     setStepIndex((i) => Math.min(i + 1, STEPS.length - 1));
   }
   function back() {
-    setStepIndex((i) => Math.max(i - 1, 0));
+    setStepIndex((i) => {
+      const prevIndex = Math.max(i - 1, 0);
+      // otpConsent was never shown for an existing client — skip past it.
+      if (STEPS[prevIndex] === "otpConsent" && !pendingRegistrationId) {
+        return Math.max(prevIndex - 1, 0);
+      }
+      return prevIndex;
+    });
   }
 
   // ── Lookup ───────────────────────────────────────────────────────────
@@ -246,7 +258,34 @@ export default function ClinicalScreeningPage() {
         });
         toast.success("Client found — details pre-filled below.");
       } else {
-        toast("No matching client — continuing as a new registration.", { icon: "ℹ️" });
+        // No existing Client record — check for a prior Bloom
+        // self-assessment. Bloom only ever creates an AwarenessRegistration,
+        // never a Client, so this is a separate lookup by phone number.
+        try {
+          const { data: bloomData } = await api.get(`/awareness/lookup`, { params: { phone: lookupValue.trim() } });
+          if (bloomData?.registration) {
+            const reg = bloomData.registration;
+            setBiodata((p) => ({
+              ...p,
+              fullName: reg.fullName || "",
+              gender: reg.gender || "",
+              phoneNumber: reg.phoneNumber || "",
+              email: reg.email || "",
+              stateOfResidence: reg.stateOfResidence || "",
+              lgaOfResidence: reg.lgaOfResidence || "",
+            }));
+            setBloomReference({ registration: reg, selfAssessment: bloomData.selfAssessment || null });
+            toast.success(
+              bloomData.selfAssessment
+                ? "Found a prior Bloom self-assessment — details pre-filled, findings shown in Risk Assessment."
+                : "Found a prior Bloom registration — details pre-filled below."
+            );
+          } else {
+            toast("No matching client or Bloom record — continuing as a new registration.", { icon: "ℹ️" });
+          }
+        } catch {
+          toast("No matching client — continuing as a new registration.", { icon: "ℹ️" });
+        }
       }
     } catch {
       toast.error("Lookup failed. You can continue as a new registration.");
@@ -262,40 +301,96 @@ export default function ClinicalScreeningPage() {
       toast.error("Full name, sex, and phone number are required.");
       return;
     }
+
+    // Existing client (found via lookup) — no consent gate needed, they
+    // already consented at first registration. Just update and continue.
+    if (clientId) {
+      setBusy(true);
+      try {
+        await api.put(`/clients/${clientId}`, biodata);
+        await createVisitAndLoadRisk(clientId);
+        toast.success("Client updated and visit created.");
+        goTo("riskVerify");
+      } catch (err: any) {
+        toast.error(err?.response?.data?.message ?? "Could not save registration.");
+      } finally {
+        setBusy(false);
+      }
+      return;
+    }
+
+    // New client — seek consent via OTP before creating the record,
+    // same as Stage 1 (Bloom).
     setBusy(true);
     try {
-      let cId = clientId;
-      if (cId) {
-        await api.put(`/clients/${cId}`, biodata);
-      } else {
-        const { data } = await api.post(`/clients`, biodata);
-        cId = data?.client?.clientId ?? data?.clientId;
-        setClientId(cId);
-      }
-
-      const { data: visitData } = await api.post(`/clients/${cId}/visits`, {
-        visitDate: todayStr(),
-        visitType: "initial",
+      const { data } = await api.post(`/awareness/register`, {
+        fullName: biodata.fullName,
+        gender: biodata.gender,
+        phoneNumber: biodata.phoneNumber,
+        email: biodata.email || undefined,
+        stateOfResidence: biodata.stateOfResidence,
+        lgaOfResidence: biodata.lgaOfResidence,
+        campaignSource: "phc_stage2",
       });
-      setVisitId(visitData?.visit?.visitId ?? visitData?.visitId);
-
-      // Pull any existing risk profile (e.g. from a prior Bloom self-assessment)
-      try {
-        const { data: rp } = await api.get(`/clients/${cId}/risk-profile`);
-        const profile = rp?.risk_profile ?? rp?.riskProfile ?? rp?.data ?? rp;
-        if (profile) setRisk((prev) => ({ ...prev, ...profile }));
-      } catch {
-        // no existing profile — fine, start blank
-      }
-
-      toast.success("Client registered and visit created.");
-      next();
+      setPendingRegistrationId(String(data.registrationId));
+      setPendingMaskedPhone(data.maskedPhone);
+      goTo("otpConsent");
     } catch (err: any) {
-      toast.error(err?.response?.data?.message ?? "Could not save registration.");
+      const apiErrors = err?.response?.data?.errors;
+      const firstError = apiErrors ? Object.values(apiErrors)[0] : null;
+      toast.error(
+        (Array.isArray(firstError) ? firstError[0] : firstError) ??
+          err?.response?.data?.message ??
+          "Could not start registration."
+      );
     } finally {
       setBusy(false);
     }
   }
+
+  // Shared by both the existing-client and post-OTP new-client paths.
+  async function createVisitAndLoadRisk(cId: string) {
+    const { data: visitData } = await api.post(`/clients/${cId}/visits`, {
+      visitDate: todayStr(),
+      visitType: "initial",
+    });
+    setVisitId(visitData?.visit?.visitId ?? visitData?.visitId);
+
+    // Pull any existing risk profile (e.g. from a prior Bloom self-assessment)
+    try {
+      const { data: rp } = await api.get(`/clients/${cId}/risk-profile`);
+      const profile = rp?.risk_profile ?? rp?.riskProfile ?? rp?.data ?? rp;
+      if (profile) setRisk((prev) => ({ ...prev, ...profile }));
+    } catch {
+      // no existing profile — fine, start blank
+    }
+  }
+
+  // Called once OTP consent is verified for a brand-new client.
+  async function completeNewClientRegistration() {
+    setBusy(true);
+    try {
+      const { data } = await api.post(`/clients`, {
+        ...biodata,
+        stateOfOrigin: biodata.stateOfResidence,
+        lgaOfOrigin: biodata.lgaOfResidence,
+        registrationDate: todayStr(),
+        screeningCategory: "new_client",
+      });
+      const cId = data?.client?.clientId ?? data?.clientId;
+      setClientId(cId);
+      await createVisitAndLoadRisk(cId);
+      toast.success("Client registered and visit created.");
+      goTo("riskVerify");
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message ?? "Could not complete registration.");
+      goTo("registration");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+
 
   // ── B + C. Risk verify & medical history (same risk-profile record) ───
   async function submitRiskAndHistory() {
@@ -370,6 +465,19 @@ export default function ClinicalScreeningPage() {
     } finally {
       setBusy(false);
     }
+  }
+
+  if (currentKey === "otpConsent" && pendingRegistrationId) {
+    return (
+      <OtpVerificationStep
+        phoneNumber={biodata.phoneNumber}
+        maskedPhone={pendingMaskedPhone}
+        registrationId={pendingRegistrationId}
+        email={biodata.email || undefined}
+        name={biodata.fullName || undefined}
+        onVerified={() => completeNewClientRegistration()}
+      />
+    );
   }
 
   return (
@@ -576,6 +684,32 @@ export default function ClinicalScreeningPage() {
             <p className="text-sm text-gray-500">
               Review the responses from Stage 1 (if any) and update as needed.
             </p>
+
+            {bloomReference?.selfAssessment && (
+              <div className="rounded-2xl border border-amber-200 bg-amber-50 dark:bg-amber-900/20 dark:border-amber-800 p-4">
+                <p className="text-xs font-semibold text-amber-700 dark:text-amber-400 uppercase tracking-wide mb-2">
+                  Stage 1 — Bloom Self-Assessment (reference only, not auto-filled below)
+                </p>
+                <p className="text-sm font-bold text-gray-800 dark:text-white capitalize">
+                  Risk category: {String(bloomReference.selfAssessment.riskCategory).replace(/_/g, " ")}
+                </p>
+                <p className="text-sm text-gray-600 dark:text-gray-300 mt-1">
+                  {bloomReference.selfAssessment.recommendation}
+                </p>
+                {Array.isArray(bloomReference.selfAssessment.flaggedReasonsJson) &&
+                  bloomReference.selfAssessment.flaggedReasonsJson.length > 0 && (
+                    <ul className="mt-2 text-xs text-gray-600 dark:text-gray-400 list-disc list-inside space-y-0.5">
+                      {bloomReference.selfAssessment.flaggedReasonsJson.map((r: string, i: number) => (
+                        <li key={i} className="capitalize">{r}</li>
+                      ))}
+                    </ul>
+                  )}
+                <p className="text-xs text-amber-600 dark:text-amber-500 mt-2">
+                  Use this to guide your questioning — enter your own findings in the fields below.
+                </p>
+              </div>
+            )}
+
             <GroupedForm
               groups={riskGroupsForVerify}
               values={risk}
