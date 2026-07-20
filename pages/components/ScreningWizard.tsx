@@ -127,7 +127,7 @@ function withoutReferral(groups: FieldGroup[]): FieldGroup[] {
     .filter((g) => g.fields.length > 0);
 }
 
-function buildScreeningPayload(
+export function buildScreeningPayload(
   data: Record<string, any>,
   referralValue?: string
 ): Record<string, any> {

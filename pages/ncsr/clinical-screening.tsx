@@ -29,7 +29,7 @@ import {
   SCREENING_GROUPS,
   FieldGroup,
 } from "../../lib/screeningWizardConfig";
-import { GroupedForm } from "../components/ScreningWizard";
+import { GroupedForm, buildScreeningPayload } from "../components/ScreningWizard";
 
 // ---------------------------------------------------------------------------
 // Medical history confirm-checklist — Stage 2, Section C
@@ -40,22 +40,45 @@ const yesNoUnknown = [
   { value: "unknown", label: "Unknown" },
 ];
 
+const OCCUPATION_OPTIONS = [
+  "Farmer/Agriculture",
+  "Trader/Business Owner",
+  "Civil Servant",
+  "Teacher/Educator",
+  "Healthcare Worker",
+  "Artisan/Skilled Trade",
+  "Driver/Transport",
+  "Military/Security",
+  "Religious Worker",
+  "Student",
+  "Homemaker",
+  "Retired",
+  "Unemployed",
+  "Other",
+];
+
+const NEXT_OF_KIN_RELATIONSHIP_OPTIONS = [
+  "Spouse",
+  "Parent",
+  "Child",
+  "Sibling",
+  "Other Relative",
+  "Friend",
+  "Other",
+];
+
 const MEDICAL_HISTORY_GROUP: FieldGroup = {
   title: "Medical History — Confirm",
-  description: "Review and confirm with the client. Update anything that's changed since Stage 1.",
+  description: "Review and confirm with the client. Infection status and family history are covered in the previous step — this section covers the rest.",
   fields: [
     { name: "previousCancer", label: "Previous cancer diagnosis", type: "select", options: yesNoUnknown, colSpan: 1 },
     { name: "previousCancerDetails", label: "Details (if yes)", type: "text", colSpan: 1, showIf: (v) => v.previousCancer === "yes" },
     { name: "previousSurgeries", label: "Previous surgeries", type: "select", options: yesNoUnknown, colSpan: 1 },
     { name: "previousSurgeriesDetails", label: "Details (if yes)", type: "text", colSpan: 1, showIf: (v) => v.previousSurgeries === "yes" },
-    { name: "hivStatus", label: "HIV status", type: "select", options: [{ value: "positive", label: "Positive" }, { value: "negative", label: "Negative" }, { value: "unknown", label: "Unknown" }], colSpan: 1 },
-    { name: "hbvStatus", label: "Hepatitis B status", type: "select", options: [{ value: "positive", label: "Positive" }, { value: "negative", label: "Negative" }, { value: "unknown", label: "Unknown" }], colSpan: 1 },
-    { name: "hcvStatus", label: "Hepatitis C status", type: "select", options: [{ value: "positive", label: "Positive" }, { value: "negative", label: "Negative" }, { value: "unknown", label: "Unknown" }], colSpan: 1 },
     { name: "diabetes", label: "Diabetes", type: "select", options: yesNoUnknown, colSpan: 1 },
     { name: "hypertension", label: "Hypertension", type: "select", options: yesNoUnknown, colSpan: 1 },
     { name: "previousScreening", label: "Previous cancer screening", type: "select", options: yesNoUnknown, colSpan: 1 },
     { name: "previousScreeningDetails", label: "Details (if yes)", type: "text", colSpan: 1, showIf: (v) => v.previousScreening === "yes" },
-    { name: "familyHistory", label: "Family history of cancer", type: "select", options: [{ value: "yes", label: "Yes" }, { value: "no", label: "No" }, { value: "unknown", label: "Unknown" }], colSpan: 1 },
   ],
 };
 
@@ -228,10 +251,6 @@ export default function ClinicalScreeningPage() {
       toast.error("Full name, sex, and phone number are required.");
       return;
     }
-    if (!clientId && !biodata.email) {
-      toast.error("Email address is required for new client registration.");
-      return;
-    }
     setBusy(true);
     try {
       let cId = clientId;
@@ -252,7 +271,7 @@ export default function ClinicalScreeningPage() {
       // Pull any existing risk profile (e.g. from a prior Bloom self-assessment)
       try {
         const { data: rp } = await api.get(`/clients/${cId}/risk-profile`);
-        const profile = rp?.riskProfile ?? rp?.data ?? rp;
+        const profile = rp?.risk_profile ?? rp?.riskProfile ?? rp?.data ?? rp;
         if (profile) setRisk((prev) => ({ ...prev, ...profile }));
       } catch {
         // no existing profile — fine, start blank
@@ -288,7 +307,7 @@ export default function ClinicalScreeningPage() {
     setBusy(true);
     try {
       for (const ct of cancerTypes) {
-        await api.post(`/visits/${visitId}/${ct}-screening`, screenings[ct] || {});
+        await api.post(`/visits/${visitId}/${ct}-screening`, buildScreeningPayload(screenings[ct] || {}));
       }
       toast.success("Screening findings saved.");
       next();
@@ -439,22 +458,26 @@ export default function ClinicalScreeningPage() {
                 />
               </Label>
               <Label>
-                <span className="text-sm font-semibold">Email Address *</span>
+                <span className="text-sm font-semibold">Email Address <span className="text-gray-400 font-normal">(optional)</span></span>
                 <Input
                   type="email"
                   className="mt-2 rounded-2xl h-12"
                   value={biodata.email}
                   onChange={(e) => setBiodata((p) => ({ ...p, email: e.target.value }))}
-                  placeholder="Required for new registrations"
                 />
               </Label>
               <Label>
                 <span className="text-sm font-semibold">Occupation</span>
-                <Input
+                <Select
                   className="mt-2 rounded-2xl h-12"
                   value={biodata.occupation}
                   onChange={(e) => setBiodata((p) => ({ ...p, occupation: e.target.value }))}
-                />
+                >
+                  <option value="">Select occupation</option>
+                  {OCCUPATION_OPTIONS.map((o) => (
+                    <option key={o} value={o}>{o}</option>
+                  ))}
+                </Select>
               </Label>
               <Label className="col-span-2">
                 <span className="text-sm font-semibold">Address</span>
@@ -515,11 +538,16 @@ export default function ClinicalScreeningPage() {
                 </Label>
                 <Label>
                   <span className="text-sm font-semibold">Relationship</span>
-                  <Input
+                  <Select
                     className="mt-2 rounded-2xl h-12"
                     value={biodata.nextOfKinRelationship}
                     onChange={(e) => setBiodata((p) => ({ ...p, nextOfKinRelationship: e.target.value }))}
-                  />
+                  >
+                    <option value="">Select relationship</option>
+                    {NEXT_OF_KIN_RELATIONSHIP_OPTIONS.map((r) => (
+                      <option key={r} value={r}>{r}</option>
+                    ))}
+                  </Select>
                 </Label>
               </div>
             </div>
