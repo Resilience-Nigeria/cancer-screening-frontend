@@ -124,7 +124,7 @@ export default function UsersManagementPage() {
 
   // Get current user role
   const currentUserRole = currentUser?.user_role?.roleName || currentUser?.role;
-  const isHospitalAdmin = currentUserRole === 'NAVIGATOR';
+  const isHospitalAdmin = currentUserRole === 'NAVIGATOR' || currentUserRole === 'HOSPITAL_ADMIN';
   const isSuperAdmin = currentUserRole === 'NICRAT_SUPER_ADMIN';
   const isPartner = currentUserRole === 'PARTNER';
 
@@ -369,7 +369,9 @@ if (selectedRole?.roleName !== "PARTNER") {
       'NICRAT_SUPER_ADMIN': 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400',
       'NICRAT_ADMIN': 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
       'NAVIGATOR': 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
+      'HOSPITAL_ADMIN': 'bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-400',
       'NURSE': 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400',
+      'DOCTOR': 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400',
       'PARTNER': 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400',
       
       'super_admin': 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400',

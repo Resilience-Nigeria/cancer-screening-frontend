@@ -45,8 +45,10 @@ function Header() {
     const roleNames: Record<string, string> = {
       'NICRAT_SUPER_ADMIN': 'Super Administrator',
       'NICRAT_ADMIN': 'NICRAT Staff',
-      'NAVIGATOR': 'Hospital Administrator',
-      'NURSE': 'Data Clerk',
+      'NAVIGATOR': 'Navigator',
+      'HOSPITAL_ADMIN': 'Hospital Administrator',
+      'NURSE': 'Nurse',
+      'DOCTOR': 'Doctor',
     };
     return roleNames[roleName] || roleName.replace(/_/g, ' ');
   }
@@ -57,7 +59,9 @@ function Header() {
       'NICRAT_SUPER_ADMIN': <Shield className="h-4 w-4" />,
       'NICRAT_ADMIN': <Database className="h-4 w-4" />,
       'NAVIGATOR': <Building2 className="h-4 w-4" />,
+      'HOSPITAL_ADMIN': <Building2 className="h-4 w-4" />,
       'NURSE': <UsersIcon className="h-4 w-4" />,
+      'DOCTOR': <UsersIcon className="h-4 w-4" />,
       'PARTNER': <UsersIcon className="h-4 w-4" />,
     };
     return icons[roleName] || <UsersIcon className="h-4 w-4" />;
@@ -69,7 +73,9 @@ function Header() {
       'NICRAT_SUPER_ADMIN': 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400',
       'NICRAT_ADMIN': 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
       'NAVIGATOR': 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
+      'HOSPITAL_ADMIN': 'bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-400',
       'NURSE': 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400',
+      'DOCTOR': 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400',
       'PARTNER': 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400',
     };
     return colors[roleName] || 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300';

@@ -60,8 +60,10 @@ export default function SidebarContent({ linkClicked }: SidebarContentProps) {
     const roleNames: Record<string, string> = {
       'NICRAT_SUPER_ADMIN': 'Super Administrator',
       'NICRAT_ADMIN': 'NICRAT Staff',
-      'NAVIGATOR': 'Hospital Administrator',
-      'NURSE': 'Data Clerk',
+      'NAVIGATOR': 'Navigator',
+      'HOSPITAL_ADMIN': 'Hospital Administrator',
+      'NURSE': 'Nurse',
+      'DOCTOR': 'Doctor',
       'PARTNER': 'Partner'
     };
     
@@ -76,7 +78,9 @@ export default function SidebarContent({ linkClicked }: SidebarContentProps) {
       'NICRAT_SUPER_ADMIN': <Shield className="w-3.5 h-3.5" />,
       'NICRAT_ADMIN': <Database className="w-3.5 h-3.5" />,
       'NAVIGATOR': <Building2 className="w-3.5 h-3.5" />,
+      'HOSPITAL_ADMIN': <Building2 className="w-3.5 h-3.5" />,
       'NURSE': <Users className="w-3.5 h-3.5" />,
+      'DOCTOR': <Users className="w-3.5 h-3.5" />,
       'PARTNER': <Users className="w-3.5 h-3.5" />,
     };
     
@@ -91,7 +95,9 @@ export default function SidebarContent({ linkClicked }: SidebarContentProps) {
       'NICRAT_SUPER_ADMIN': 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400',
       'NICRAT_ADMIN': 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
       'NAVIGATOR': 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
+      'HOSPITAL_ADMIN': 'bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-400',
       'NURSE': 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400',
+      'DOCTOR': 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400',
       'PARTNER': 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400',
     };
     
