@@ -41,6 +41,7 @@ function ResultsScreen({ name, result }: { name: string; result: AssessmentResul
             Thank you{name ? `, ${name.split(" ")[0]}` : ""}
           </h1>
           <p className="mt-2 text-sm text-gray-500">Here's what your assessment found.</p>
+          <p className="mt-1 text-xs text-gray-400">Reference: SA-{result.assessmentId}</p>
         </div>
 
         <div className="bg-white rounded-3xl shadow-lg border border-gray-100 p-6 space-y-4">
