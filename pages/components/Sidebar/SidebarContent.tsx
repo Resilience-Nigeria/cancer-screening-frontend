@@ -58,10 +58,10 @@ export default function SidebarContent({ linkClicked }: SidebarContentProps) {
     if (!userRoleName) return 'User';
     
     const roleNames: Record<string, string> = {
-      'SUPER_ADMIN': 'Super Administrator',
-      'NICRAT_STAFF': 'NICRAT Staff',
-      'HOSPITAL_ADMIN': 'Hospital Administrator',
-      'DATA_CLERK': 'Data Clerk',
+      'NICRAT_SUPER_ADMIN': 'Super Administrator',
+      'NICRAT_ADMIN': 'NICRAT Staff',
+      'NAVIGATOR': 'Hospital Administrator',
+      'NURSE': 'Data Clerk',
       'PARTNER': 'Partner'
     };
     
@@ -73,10 +73,10 @@ export default function SidebarContent({ linkClicked }: SidebarContentProps) {
     if (!userRoleName) return null;
     
     const icons: Record<string, JSX.Element> = {
-      'SUPER_ADMIN': <Shield className="w-3.5 h-3.5" />,
-      'NICRAT_STAFF': <Database className="w-3.5 h-3.5" />,
-      'HOSPITAL_ADMIN': <Building2 className="w-3.5 h-3.5" />,
-      'DATA_CLERK': <Users className="w-3.5 h-3.5" />,
+      'NICRAT_SUPER_ADMIN': <Shield className="w-3.5 h-3.5" />,
+      'NICRAT_ADMIN': <Database className="w-3.5 h-3.5" />,
+      'NAVIGATOR': <Building2 className="w-3.5 h-3.5" />,
+      'NURSE': <Users className="w-3.5 h-3.5" />,
       'PARTNER': <Users className="w-3.5 h-3.5" />,
     };
     
@@ -88,19 +88,21 @@ export default function SidebarContent({ linkClicked }: SidebarContentProps) {
     if (!userRoleName) return 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300';
     
     const colors: Record<string, string> = {
-      'SUPER_ADMIN': 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400',
-      'NICRAT_STAFF': 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
-      'HOSPITAL_ADMIN': 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
-      'DATA_CLERK': 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400',
+      'NICRAT_SUPER_ADMIN': 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400',
+      'NICRAT_ADMIN': 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
+      'NAVIGATOR': 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
+      'NURSE': 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400',
       'PARTNER': 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400',
     };
     
     return colors[userRoleName] || 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300';
   }
 
-  // Check if user has national access
+  // Backend-computed from the role's configured dataScopeType — falls
+  // back to the role-name check only for sessions stored before this
+  // field existed (until they next log in).
   function hasNationalAccess(): boolean {
-    return userRoleName === 'SUPER_ADMIN' || userRoleName === 'NICRAT_STAFF' || userRoleName === 'PARTNER';
+    return user?.hasNationalAccess ?? (userRoleName === 'NICRAT_SUPER_ADMIN' || userRoleName === 'NICRAT_ADMIN' || userRoleName === 'PARTNER');
   }
 
   async function handleLogout() {

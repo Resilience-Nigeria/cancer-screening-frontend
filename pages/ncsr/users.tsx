@@ -21,6 +21,7 @@ import {
   Info,
 } from "lucide-react";
 import api from "../../lib/api";
+import toast from "react-hot-toast";
 import Layout from "../containers/Layout";
 import { getUser } from "../../lib/auth";
 
@@ -99,6 +100,14 @@ export default function UsersManagementPage() {
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [showModal, setShowModal] = useState(false);
   const [modalMode, setModalMode] = useState<"view" | "add" | "edit">("view");
+
+  // Additional per-user facility access grants
+  const [grantsUser, setGrantsUser] = useState<User | null>(null);
+  const [userGrants, setUserGrants] = useState<any[]>([]);
+  const [allFacilitiesForGrants, setAllFacilitiesForGrants] = useState<Facility[]>([]);
+  const [grantsLoading, setGrantsLoading] = useState(false);
+  const [grantFacilityId, setGrantFacilityId] = useState("");
+  const [grantSaving, setGrantSaving] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [formData, setFormData] = useState<FormData>({
@@ -115,8 +124,8 @@ export default function UsersManagementPage() {
 
   // Get current user role
   const currentUserRole = currentUser?.user_role?.roleName || currentUser?.role;
-  const isHospitalAdmin = currentUserRole === 'HOSPITAL_ADMIN';
-  const isSuperAdmin = currentUserRole === 'SUPER_ADMIN';
+  const isHospitalAdmin = currentUserRole === 'NAVIGATOR';
+  const isSuperAdmin = currentUserRole === 'NICRAT_SUPER_ADMIN';
   const isPartner = currentUserRole === 'PARTNER';
 
   useEffect(() => {
@@ -249,6 +258,59 @@ const isPartnerRole = selectedRole?.roleName === "PARTNER";
     setSubmitting(false);
   }
 
+  async function openGrantsModal(user: User) {
+    setGrantsUser(user);
+    setGrantFacilityId("");
+    setGrantsLoading(true);
+    try {
+      const [grantsRes, facilitiesRes] = await Promise.all([
+        api.get(`/users/${user.id}/facility-grants`),
+        allFacilitiesForGrants.length ? Promise.resolve(null) : api.get("/facilities"),
+      ]);
+      setUserGrants(grantsRes.data.grants || []);
+      if (facilitiesRes) {
+        setAllFacilitiesForGrants(facilitiesRes.data.facilities || facilitiesRes.data.data || []);
+      }
+    } catch {
+      toast.error("Could not load this user's facility access.");
+    } finally {
+      setGrantsLoading(false);
+    }
+  }
+
+  function closeGrantsModal() {
+    setGrantsUser(null);
+    setUserGrants([]);
+  }
+
+  async function addFacilityGrant() {
+    if (!grantsUser || !grantFacilityId) return;
+    setGrantSaving(true);
+    try {
+      const { data } = await api.post(`/users/${grantsUser.id}/facility-grants`, {
+        facilityId: Number(grantFacilityId),
+      });
+      setUserGrants((prev) => [...prev, data.grant]);
+      setGrantFacilityId("");
+      toast.success("Facility access granted.");
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message ?? "Could not grant access to this facility.");
+    } finally {
+      setGrantSaving(false);
+    }
+  }
+
+  async function removeFacilityGrant(facilityId: number) {
+    if (!grantsUser) return;
+    try {
+      await api.delete(`/users/${grantsUser.id}/facility-grants/${facilityId}`);
+      setUserGrants((prev) => prev.filter((g) => g.facilityId !== facilityId));
+      toast.success("Facility access removed.");
+    } catch {
+      toast.error("Could not remove this facility.");
+    }
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setSubmitting(true);
@@ -304,10 +366,10 @@ if (selectedRole?.roleName !== "PARTNER") {
 
   function getRoleBadgeColor(role: string) {
     const colors: Record<string, string> = {
-      'SUPER_ADMIN': 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400',
-      'NICRAT_STAFF': 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
-      'HOSPITAL_ADMIN': 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
-      'DATA_CLERK': 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400',
+      'NICRAT_SUPER_ADMIN': 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400',
+      'NICRAT_ADMIN': 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
+      'NAVIGATOR': 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
+      'NURSE': 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400',
       'PARTNER': 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400',
       
       'super_admin': 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400',
@@ -622,6 +684,13 @@ if (selectedRole?.roleName !== "PARTNER") {
                         <Edit2 className="w-4 h-4" />
                       </button>
                       <button
+                        onClick={() => openGrantsModal(user)}
+                        className="p-2 rounded-lg text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                        title="Manage Facility Access"
+                      >
+                        <Building2 className="w-4 h-4" />
+                      </button>
+                      <button
                         onClick={() => handleDelete(user)}
                         className="p-2 rounded-lg text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
                         title="Delete"
@@ -722,6 +791,13 @@ if (selectedRole?.roleName !== "PARTNER") {
                 className="flex items-center justify-center w-10 h-10 rounded-xl border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
               >
                 <Edit2 className="w-4 h-4" />
+              </button>
+              <button
+                onClick={() => openGrantsModal(user)}
+                className="flex items-center justify-center w-10 h-10 rounded-xl border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                title="Manage Facility Access"
+              >
+                <Building2 className="w-4 h-4" />
               </button>
               <button
                 onClick={() => handleDelete(user)}
@@ -992,6 +1068,72 @@ if (selectedRole?.roleName !== "PARTNER") {
                   </form>
                 )}
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* Additional Facility Access modal */}
+        {grantsUser && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+            <div className="max-w-md w-full bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-6">
+              <div className="flex items-center justify-between mb-1">
+                <h3 className="text-lg font-bold text-gray-800 dark:text-white">Additional Facility Access</h3>
+                <button onClick={closeGrantsModal} className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700">
+                  <X className="w-4 h-4 text-gray-500" />
+                </button>
+              </div>
+              <p className="text-sm text-gray-500 mb-4">
+                For <span className="font-semibold">{grantsUser.firstName} {grantsUser.lastName}</span> — on top of
+                whatever their role's scope already grants, not instead of it.
+              </p>
+
+              {grantsLoading ? (
+                <div className="flex justify-center py-6">
+                  <Loader2 className="w-6 h-6 animate-spin text-green-600" />
+                </div>
+              ) : (
+                <>
+                  <div className="space-y-2 mb-4 max-h-56 overflow-y-auto">
+                    {userGrants.length === 0 ? (
+                      <p className="text-xs text-gray-400 italic py-2">No additional facilities granted yet.</p>
+                    ) : (
+                      userGrants.map((g) => (
+                        <div key={g.grantId} className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-900/40 rounded-xl">
+                          <span className="text-sm text-gray-700 dark:text-gray-300">{g.facility?.facilityName}</span>
+                          <button
+                            onClick={() => removeFacilityGrant(g.facilityId)}
+                            className="text-xs text-red-600 hover:text-red-700 font-medium"
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      ))
+                    )}
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <select
+                      value={grantFacilityId}
+                      onChange={(e) => setGrantFacilityId(e.target.value)}
+                      className="flex-1 px-3 py-2.5 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-sm text-gray-800 dark:text-white focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                    >
+                      <option value="">Select a facility to add</option>
+                      {allFacilitiesForGrants
+                        .filter((f) => !userGrants.some((g) => g.facilityId === Number(f.id)))
+                        .map((f) => (
+                          <option key={f.id} value={f.id}>{f.facilityName}</option>
+                        ))}
+                    </select>
+                    <button
+                      onClick={addFacilityGrant}
+                      disabled={!grantFacilityId || grantSaving}
+                      className="px-4 py-2.5 rounded-xl bg-green-600 text-white hover:bg-green-700 transition-colors font-medium disabled:opacity-50 whitespace-nowrap"
+                    >
+                      {grantSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : "Add"}
+                    </button>
+                  </div>
+                </>
+              )}
             </div>
           </div>
         )}

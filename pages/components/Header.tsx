@@ -43,10 +43,10 @@ function Header() {
   // Get role display name
   function getRoleDisplayName(roleName: string): string {
     const roleNames: Record<string, string> = {
-      'SUPER_ADMIN': 'Super Administrator',
-      'NICRAT_STAFF': 'NICRAT Staff',
-      'HOSPITAL_ADMIN': 'Hospital Administrator',
-      'DATA_CLERK': 'Data Clerk',
+      'NICRAT_SUPER_ADMIN': 'Super Administrator',
+      'NICRAT_ADMIN': 'NICRAT Staff',
+      'NAVIGATOR': 'Hospital Administrator',
+      'NURSE': 'Data Clerk',
     };
     return roleNames[roleName] || roleName.replace(/_/g, ' ');
   }
@@ -54,10 +54,10 @@ function Header() {
   // Get role icon
   function getRoleIcon(roleName: string) {
     const icons: Record<string, JSX.Element> = {
-      'SUPER_ADMIN': <Shield className="h-4 w-4" />,
-      'NICRAT_STAFF': <Database className="h-4 w-4" />,
-      'HOSPITAL_ADMIN': <Building2 className="h-4 w-4" />,
-      'DATA_CLERK': <UsersIcon className="h-4 w-4" />,
+      'NICRAT_SUPER_ADMIN': <Shield className="h-4 w-4" />,
+      'NICRAT_ADMIN': <Database className="h-4 w-4" />,
+      'NAVIGATOR': <Building2 className="h-4 w-4" />,
+      'NURSE': <UsersIcon className="h-4 w-4" />,
       'PARTNER': <UsersIcon className="h-4 w-4" />,
     };
     return icons[roleName] || <UsersIcon className="h-4 w-4" />;
@@ -66,10 +66,10 @@ function Header() {
   // Get role badge color
   function getRoleBadgeColor(roleName: string): string {
     const colors: Record<string, string> = {
-      'SUPER_ADMIN': 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400',
-      'NICRAT_STAFF': 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
-      'HOSPITAL_ADMIN': 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
-      'DATA_CLERK': 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400',
+      'NICRAT_SUPER_ADMIN': 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400',
+      'NICRAT_ADMIN': 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
+      'NAVIGATOR': 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
+      'NURSE': 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400',
       'PARTNER': 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400',
     };
     return colors[roleName] || 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300';
@@ -92,8 +92,10 @@ function Header() {
         setUserRole(roleName);
         setRoleDisplayName(getRoleDisplayName(roleName));
         
-        // Check if user has national access (SUPER_ADMIN or NICRAT_STAFF)
-        const nationalAccess = roleName === 'SUPER_ADMIN' || roleName === 'NICRAT_STAFF' || roleName === 'PARTNER';
+        // Backend-computed from the role's configured dataScopeType —
+        // falls back to the role-name check only for sessions stored
+        // before this field existed (until they next log in).
+        const nationalAccess = user.hasNationalAccess ?? (roleName === 'NICRAT_SUPER_ADMIN' || roleName === 'NICRAT_ADMIN' || roleName === 'PARTNER');
         setHasNationalAccess(nationalAccess);
         
         // Set facility name only for facility-level users
@@ -241,7 +243,7 @@ function Header() {
             // National-Level Users
             <div className="flex items-center gap-3 min-w-0 flex-1 max-w-md">
               <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-purple-500 to-purple-600 shadow-sm">
-                {userRole === 'SUPER_ADMIN' ? (
+                {userRole === 'NICRAT_SUPER_ADMIN' ? (
                   <Shield className="h-5 w-5 text-white" />
                 ) : (
                   <Database className="h-5 w-5 text-white" />

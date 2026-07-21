@@ -172,7 +172,10 @@ function StatBlock({
 export default function AnalyticsPage() {
   const currentUser = getUser();
   const userRole = currentUser?.user_role?.roleName || currentUser?.role;
-  const hasNationalAccess = ["SUPER_ADMIN", "NICRAT_STAFF", "PARTNER"].includes(userRole);
+  // Backend-computed from the role's configured dataScopeType — not a
+  // hardcoded role list, so this stays correct if scope is reconfigured
+  // via the Roles admin page without needing a frontend redeploy.
+  const hasNationalAccess = currentUser?.hasNationalAccess ?? ["NICRAT_SUPER_ADMIN", "NICRAT_ADMIN", "PARTNER"].includes(userRole);
 
   const [loading, setLoading] = useState(true);
 
