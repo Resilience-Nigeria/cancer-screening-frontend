@@ -1,8 +1,7 @@
 "use client";
 import React, { useState } from "react";
 import { useRouter } from "next/router";
-import { Button, Input, Label } from "@roketid/windmill-react-ui";
-import { Loader2, ShieldCheck, ArrowLeft } from "lucide-react";
+import { Loader2, ShieldCheck, ArrowLeft, Lock, MessageSquareText } from "lucide-react";
 import toast from "react-hot-toast";
 import clientPortalApi from "../../lib/clientPortalApi";
 
@@ -51,100 +50,125 @@ export default function ClientLoginPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-green-50 to-white flex flex-col items-center justify-center p-4">
-      <div className="max-w-md w-full flex-1 flex flex-col justify-center">
-        <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-green-100 mb-4">
-            <img
-              src="/nicrat-logo.png"
-              alt="NICRAT"
-              className="w-10 h-10 object-contain"
-              onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
-            />
+    <div className="min-h-screen bg-gradient-to-br from-green-50 via-white to-emerald-50 flex flex-col">
+      <div className="flex-1 flex flex-col items-center justify-center p-4">
+        <div className="max-w-md w-full">
+          {/* Hero */}
+          <div className="text-center mb-8">
+            <div className="inline-flex items-center justify-center w-20 h-20 rounded-3xl bg-gradient-to-br from-green-600 to-emerald-600 shadow-lg shadow-green-200 mb-5">
+              <img
+                src="/nicrat-logo.png"
+                alt="NICRAT"
+                className="w-11 h-11 object-contain brightness-0 invert"
+                onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+              />
+            </div>
+            <h1 className="text-2xl font-bold text-gray-900">My NCSR Record</h1>
+            <p className="mt-2 text-sm text-gray-500 max-w-xs mx-auto leading-relaxed">
+              {stage === "phone"
+                ? "Securely view your screening history, results, and next steps — anytime."
+                : `We texted a 6-digit code to ${maskedPhone || "your phone"}.`}
+            </p>
           </div>
-          <h1 className="text-2xl font-bold text-gray-900">My NCSR Record</h1>
-          <p className="mt-2 text-sm text-gray-500">
-            {stage === "phone"
-              ? "Enter your phone number to view your screening record."
-              : `Enter the code sent to ${maskedPhone || "your phone"}.`}
-          </p>
-        </div>
 
-        <div className="bg-white rounded-3xl shadow-lg border border-gray-100 p-6 space-y-5">
-          {stage === "phone" ? (
-            <form onSubmit={handleSendOtp} className="space-y-5">
-              <Label>
-                <span className="text-sm font-semibold">Phone Number</span>
-                <Input
-                  type="tel"
-                  className="mt-2 rounded-2xl h-12"
-                  value={phoneNumber}
-                  onChange={(e) => setPhoneNumber(e.target.value)}
-                  placeholder="080xxxxxxxx"
-                />
-              </Label>
-              {error && <p className="text-sm text-red-500">{error}</p>}
-              <Button
-                type="submit"
-                disabled={submitting}
-                className="w-full h-12 rounded-2xl bg-green-700 border-green-700 hover:bg-green-800 text-base font-semibold"
-              >
-                {submitting ? (
-                  <span className="inline-flex items-center gap-2">
-                    <Loader2 className="w-4 h-4 animate-spin" /> Sending code...
-                  </span>
-                ) : (
-                  "Send Login Code"
-                )}
-              </Button>
-            </form>
-          ) : (
-            <form onSubmit={handleVerifyOtp} className="space-y-5">
-              <button
-                type="button"
-                onClick={() => { setStage("phone"); setOtp(""); setError(""); }}
-                className="inline-flex items-center gap-1 text-xs text-gray-400 hover:text-gray-600"
-              >
-                <ArrowLeft className="w-3.5 h-3.5" /> Use a different number
-              </button>
-              <Label>
-                <span className="text-sm font-semibold">6-Digit Code</span>
-                <Input
-                  type="text"
-                  inputMode="numeric"
-                  maxLength={6}
-                  className="mt-2 rounded-2xl h-12 text-center text-lg tracking-widest"
-                  value={otp}
-                  onChange={(e) => setOtp(e.target.value.replace(/\D/g, ""))}
-                  placeholder="000000"
-                />
-              </Label>
-              {error && <p className="text-sm text-red-500">{error}</p>}
-              <Button
-                type="submit"
-                disabled={submitting}
-                className="w-full h-12 rounded-2xl bg-green-700 border-green-700 hover:bg-green-800 text-base font-semibold"
-              >
-                {submitting ? (
-                  <span className="inline-flex items-center gap-2">
-                    <Loader2 className="w-4 h-4 animate-spin" /> Verifying...
-                  </span>
-                ) : (
-                  <span className="inline-flex items-center gap-2">
-                    <ShieldCheck className="w-4 h-4" /> Log In
-                  </span>
-                )}
-              </Button>
-            </form>
-          )}
-        </div>
+          {/* Card */}
+          <div className="bg-white rounded-3xl shadow-xl shadow-gray-100 border border-gray-100 p-7">
+            {stage === "phone" ? (
+              <form onSubmit={handleSendOtp} className="space-y-5">
+                <div>
+                  <label className="text-sm font-semibold text-gray-700">Phone Number</label>
+                  <input
+                    type="tel"
+                    className="mt-2 w-full h-13 px-4 py-3.5 rounded-2xl border border-gray-200 bg-gray-50 focus:bg-white focus:border-green-500 focus:ring-4 focus:ring-green-50 outline-none transition-all text-base"
+                    value={phoneNumber}
+                    onChange={(e) => setPhoneNumber(e.target.value)}
+                    placeholder="080xxxxxxxx"
+                    autoFocus
+                  />
+                  <p className="mt-2 text-xs text-gray-400">
+                    Use the phone number on file with your screening facility.
+                  </p>
+                </div>
 
-        <p className="mt-6 text-center text-xs text-gray-400">
-          This shows only your own screening information — kept private and confidential.
-        </p>
+                {error && (
+                  <div className="rounded-xl bg-red-50 border border-red-100 px-4 py-3 text-sm text-red-600">
+                    {error}
+                  </div>
+                )}
+
+                <button
+                  type="submit"
+                  disabled={submitting}
+                  className="w-full h-13 py-3.5 rounded-2xl bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white text-base font-semibold shadow-lg shadow-green-200 transition-all disabled:opacity-60"
+                >
+                  {submitting ? (
+                    <span className="inline-flex items-center gap-2">
+                      <Loader2 className="w-4 h-4 animate-spin" /> Sending code...
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-2 justify-center">
+                      <MessageSquareText className="w-4 h-4" /> Send Login Code
+                    </span>
+                  )}
+                </button>
+              </form>
+            ) : (
+              <form onSubmit={handleVerifyOtp} className="space-y-5">
+                <button
+                  type="button"
+                  onClick={() => { setStage("phone"); setOtp(""); setError(""); }}
+                  className="inline-flex items-center gap-1 text-xs font-medium text-gray-400 hover:text-gray-600"
+                >
+                  <ArrowLeft className="w-3.5 h-3.5" /> Use a different number
+                </button>
+
+                <div>
+                  <label className="text-sm font-semibold text-gray-700">6-Digit Code</label>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    maxLength={6}
+                    autoFocus
+                    className="mt-2 w-full h-14 px-4 rounded-2xl border border-gray-200 bg-gray-50 focus:bg-white focus:border-green-500 focus:ring-4 focus:ring-green-50 outline-none transition-all text-center text-2xl font-bold tracking-[0.5em]"
+                    value={otp}
+                    onChange={(e) => setOtp(e.target.value.replace(/\D/g, ""))}
+                    placeholder="······"
+                  />
+                </div>
+
+                {error && (
+                  <div className="rounded-xl bg-red-50 border border-red-100 px-4 py-3 text-sm text-red-600">
+                    {error}
+                  </div>
+                )}
+
+                <button
+                  type="submit"
+                  disabled={submitting}
+                  className="w-full h-13 py-3.5 rounded-2xl bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white text-base font-semibold shadow-lg shadow-green-200 transition-all disabled:opacity-60"
+                >
+                  {submitting ? (
+                    <span className="inline-flex items-center gap-2 justify-center">
+                      <Loader2 className="w-4 h-4 animate-spin" /> Verifying...
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-2 justify-center">
+                      <ShieldCheck className="w-4 h-4" /> Log In
+                    </span>
+                  )}
+                </button>
+              </form>
+            )}
+          </div>
+
+          <div className="mt-5 flex items-center justify-center gap-2 text-xs text-gray-400">
+            <Lock className="w-3.5 h-3.5" />
+            Private and confidential — only you can see your own record
+          </div>
+        </div>
       </div>
 
-      <p className="mt-6 text-center text-xs text-gray-400">
+      <p className="pb-6 text-center text-xs text-gray-400">
         Platform powered by Resilience Nigeria
       </p>
     </div>
