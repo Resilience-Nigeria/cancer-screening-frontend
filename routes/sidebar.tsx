@@ -79,7 +79,7 @@ const routes: IRoute[] = [
   
   // Admin-only routes
   {
-    path: "/ncsr/cancer-analytics",
+    path: "/ncsr/analytics",
     icon: ChartBar,
     name: "Analytics",
     roles: ["SUPER_ADMIN", "PARTNER"], // Only super admin manages facilities
