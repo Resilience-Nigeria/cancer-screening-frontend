@@ -366,8 +366,8 @@ export default function SelfAssessmentForm({
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-green-50 to-white flex items-center justify-center p-4">
-      <div className="max-w-lg w-full">
+    <div className="min-h-screen bg-gradient-to-br from-green-50 to-white flex flex-col items-center justify-center p-4">
+      <div className="max-w-lg w-full flex-1 flex flex-col justify-center">
         <div className="mb-4">
           <div className="h-1.5 w-full rounded-full bg-green-100 overflow-hidden">
             <div
@@ -884,6 +884,10 @@ export default function SelfAssessmentForm({
           </div>
         </div>
       </div>
+
+      <p className="mt-6 text-center text-xs text-gray-400">
+        Platform powered by Resilience Nigeria
+      </p>
     </div>
   );
 }

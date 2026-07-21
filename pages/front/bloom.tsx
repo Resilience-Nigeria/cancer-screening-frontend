@@ -1,7 +1,7 @@
 "use client";
 import React, { useEffect, useState } from "react";
 import { Button, Input, Label, Select } from "@roketid/windmill-react-ui";
-import { AlertTriangle, CheckCircle, Loader2, ShieldCheck } from "lucide-react";
+import { AlertTriangle, CheckCircle, Loader2 } from "lucide-react";
 import { nigerianStates, lgasByState, getStateCode } from "../../lib/nigerianstates";
 import api from "@/lib/api";
 import OtpVerificationStep from "../components/OtpVerificationService";
@@ -34,8 +34,8 @@ function ResultsScreen({ name, result }: { name: string; result: AssessmentResul
   const style = RISK_STYLES[result.riskCategory];
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-green-50 to-white flex items-center justify-center p-4">
-      <div className="max-w-md w-full space-y-6">
+    <div className="min-h-screen bg-gradient-to-br from-green-50 to-white flex flex-col items-center justify-center p-4">
+      <div className="max-w-md w-full space-y-6 flex-1 flex flex-col justify-center">
         <div className="text-center">
           <h1 className="text-2xl font-bold text-gray-900">
             Thank you{name ? `, ${name.split(" ")[0]}` : ""}
@@ -105,6 +105,10 @@ function ResultsScreen({ name, result }: { name: string; result: AssessmentResul
           Please attend your screening as soon as possible. Early detection saves lives.
         </p>
       </div>
+
+      <p className="mt-6 text-center text-xs text-gray-400">
+        Platform powered by Resilience Nigeria
+      </p>
     </div>
   );
 }
@@ -233,13 +237,18 @@ export default function BloomPage() {
 
   // ── Default: biodata registration form ──────────────────────────────────
   return (
-    <div className="min-h-screen bg-gradient-to-br from-green-50 to-white flex items-center justify-center p-4">
-      <div className="max-w-lg w-full">
+    <div className="min-h-screen bg-gradient-to-br from-green-50 to-white flex flex-col items-center justify-center p-4">
+      <div className="max-w-lg w-full flex-1 flex flex-col justify-center">
         <div className="text-center mb-8">
           <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-green-100 mb-4">
-            <ShieldCheck className="w-8 h-8 text-green-700" />
+            <img
+              src="/nicrat-logo.png"
+              alt="NICRAT"
+              className="w-10 h-10 object-contain"
+              onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+            />
           </div>
-          <h1 className="text-2xl font-bold text-gray-900">Bloom Cancer Self-Assessment</h1>
+          <h1 className="text-2xl font-bold text-gray-900">NCSR Self-Assessment</h1>
           <p className="mt-2 text-sm text-gray-500">
             Answer a few questions about your health to find out your risk level and get
             connected to a nearby screening centre. Takes about 5 minutes.
@@ -396,6 +405,10 @@ export default function BloomPage() {
           </p>
         </form>
       </div>
+
+      <p className="mt-6 text-center text-xs text-gray-400">
+        Platform powered by Resilience Nigeria
+      </p>
     </div>
   );
 }
