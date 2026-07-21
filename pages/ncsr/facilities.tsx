@@ -38,6 +38,8 @@ interface Facility {
   totalScreenings: number;
   status: "active" | "inactive";
   facilityLevel: "feeder" | "subhub" | "hub" | null;
+  parentFacilityId: number | null;
+  stagesSupported: string[] | null;
   isScreeningCenter: boolean;
   isTreatmentCenter: boolean;
   facilityTypes: string;
@@ -64,6 +66,8 @@ interface FormData {
   email: string;
   status: "active" | "inactive";
   facilityLevel: "feeder" | "subhub" | "hub" | "";
+  parentFacilityId: number | "";
+  stagesSupported: string[];
   isScreeningCenter: boolean;
   isTreatmentCenter: boolean;
 }
@@ -101,6 +105,8 @@ export default function FacilitiesManagementPage() {
     email: "",
     status: "active",
     facilityLevel: "",
+    parentFacilityId: "",
+    stagesSupported: ["stage2"],
     isScreeningCenter: true,
     isTreatmentCenter: false,
   });
@@ -179,6 +185,8 @@ export default function FacilitiesManagementPage() {
         email: "",
         status: "active",
         facilityLevel: "",
+        parentFacilityId: "",
+        stagesSupported: ["stage2"],
         isScreeningCenter: true,
         isTreatmentCenter: false,
       });
@@ -193,6 +201,8 @@ export default function FacilitiesManagementPage() {
         email: facility.email,
         status: facility.status,
         facilityLevel: facility.facilityLevel || "",
+        parentFacilityId: facility.parentFacilityId || "",
+        stagesSupported: facility.stagesSupported || ["stage2"],
         isScreeningCenter: facility.isScreeningCenter,
         isTreatmentCenter: facility.isTreatmentCenter,
       });
@@ -936,6 +946,68 @@ export default function FacilitiesManagementPage() {
                       </select>
                       <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
                         Referrals escalate up this hierarchy: Feeder → SubHub → Hub. Any tier can be a screening center; only a Hub can also be a Treatment Center.
+                      </p>
+                    </div>
+
+                    {/* Parent Facility */}
+                    {formData.facilityLevel && formData.facilityLevel !== "hub" && (
+                      <div className="md:col-span-2">
+                        <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
+                          Parent Facility {formData.facilityLevel === "feeder" ? "(SubHub)" : "(Hub)"} *
+                        </label>
+                        <select
+                          value={formData.parentFacilityId}
+                          onChange={(e) => setFormData({ ...formData, parentFacilityId: e.target.value ? Number(e.target.value) : "" })}
+                          className="w-full px-4 py-2.5 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                          required
+                        >
+                          <option value="">Select parent facility</option>
+                          {facilities
+                            .filter((f) => f.facilityLevel === (formData.facilityLevel === "feeder" ? "subhub" : "hub"))
+                            .map((f) => (
+                              <option key={f.id} value={f.id}>{f.facilityName}</option>
+                            ))}
+                        </select>
+                        <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                          {formData.facilityLevel === "feeder"
+                            ? "Which SubHub does this Feeder refer up to?"
+                            : "Which Hub does this SubHub refer up to?"}
+                        </p>
+                      </div>
+                    )}
+
+                    {/* Stage Capabilities */}
+                    <div className="md:col-span-2">
+                      <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
+                        Stage Capabilities
+                      </label>
+                      <div className="flex flex-wrap gap-3">
+                        {[
+                          { value: "stage2", label: "Stage 2 — Clinical Screening" },
+                          { value: "stage3", label: "Stage 3 — Confirmation/Diagnostic Workup" },
+                          { value: "stage4", label: "Stage 4 — Treatment" },
+                        ].map((s) => (
+                          <label
+                            key={s.value}
+                            className="flex items-center gap-2 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-xl cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/50 text-sm"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={formData.stagesSupported.includes(s.value)}
+                              onChange={(e) => {
+                                const next = e.target.checked
+                                  ? [...formData.stagesSupported, s.value]
+                                  : formData.stagesSupported.filter((v) => v !== s.value);
+                                setFormData({ ...formData, stagesSupported: next });
+                              }}
+                              className="w-4 h-4 text-green-600 border-gray-300 rounded focus:ring-green-500"
+                            />
+                            {s.label}
+                          </label>
+                        ))}
+                      </div>
+                      <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                        Which stages of the patient journey this specific facility can perform — configured per facility, not assumed from its tier. If a client's Stage 2 facility already supports Stage 3, they continue there instead of being referred elsewhere.
                       </p>
                     </div>
 
