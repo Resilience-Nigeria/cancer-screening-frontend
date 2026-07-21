@@ -161,7 +161,9 @@ export default function ClinicalScreeningPage() {
     gender: "",
     phoneNumber: "",
     email: "",
+    nin: "",
     address: "",
+    landmark: "",
     stateOfResidence: "",
     lgaOfResidence: "",
     stateOfOrigin: "",
@@ -260,7 +262,9 @@ export default function ClinicalScreeningPage() {
           gender: found.gender || "",
           phoneNumber: found.phoneNumber || "",
           email: found.email || "",
+          nin: found.nin || "",
           address: found.address || "",
+          landmark: found.landmark || "",
           stateOfResidence: found.stateOfResidence || "",
           lgaOfResidence: found.lgaOfResidence || "",
           stateOfOrigin: found.stateOfOrigin || "",
@@ -433,7 +437,9 @@ export default function ClinicalScreeningPage() {
       gender: c.gender || "",
       phoneNumber: c.phoneNumber || "",
       email: c.email || "",
+      nin: c.nin || "",
       address: c.address || "",
+      landmark: c.landmark || "",
       stateOfResidence: c.stateOfResidence || "",
       lgaOfResidence: c.lgaOfResidence || "",
       stateOfOrigin: c.stateOfOrigin || "",
@@ -743,12 +749,28 @@ export default function ClinicalScreeningPage() {
                   ))}
                 </Select>
               </Label>
+              <Label>
+                <span className="text-sm font-semibold">NIN <span className="text-gray-400 font-normal">(optional)</span></span>
+                <Input
+                  className="mt-2 rounded-2xl h-12"
+                  value={biodata.nin}
+                  onChange={(e) => setBiodata((p) => ({ ...p, nin: e.target.value }))}
+                />
+              </Label>
               <Label className="col-span-2">
                 <span className="text-sm font-semibold">Address</span>
                 <Input
                   className="mt-2 rounded-2xl h-12"
                   value={biodata.address}
                   onChange={(e) => setBiodata((p) => ({ ...p, address: e.target.value }))}
+                />
+              </Label>
+              <Label className="col-span-2">
+                <span className="text-sm font-semibold">Landmark <span className="text-gray-400 font-normal">(optional)</span></span>
+                <Input
+                  className="mt-2 rounded-2xl h-12"
+                  value={biodata.landmark}
+                  onChange={(e) => setBiodata((p) => ({ ...p, landmark: e.target.value }))}
                 />
               </Label>
               <Label>
