@@ -37,6 +37,7 @@ interface Facility {
   activeUsers: number;
   totalScreenings: number;
   status: "active" | "inactive";
+  facilityLevel: "feeder" | "subhub" | "hub" | null;
   isScreeningCenter: boolean;
   isTreatmentCenter: boolean;
   facilityTypes: string;
@@ -62,6 +63,7 @@ interface FormData {
   phoneNumber: string;
   email: string;
   status: "active" | "inactive";
+  facilityLevel: "feeder" | "subhub" | "hub" | "";
   isScreeningCenter: boolean;
   isTreatmentCenter: boolean;
 }
@@ -98,6 +100,7 @@ export default function FacilitiesManagementPage() {
     phoneNumber: "",
     email: "",
     status: "active",
+    facilityLevel: "",
     isScreeningCenter: true,
     isTreatmentCenter: false,
   });
@@ -175,6 +178,7 @@ export default function FacilitiesManagementPage() {
         phoneNumber: "",
         email: "",
         status: "active",
+        facilityLevel: "",
         isScreeningCenter: true,
         isTreatmentCenter: false,
       });
@@ -188,6 +192,7 @@ export default function FacilitiesManagementPage() {
         phoneNumber: facility.phoneNumber,
         email: facility.email,
         status: facility.status,
+        facilityLevel: facility.facilityLevel || "",
         isScreeningCenter: facility.isScreeningCenter,
         isTreatmentCenter: facility.isTreatmentCenter,
       });
@@ -526,8 +531,21 @@ export default function FacilitiesManagementPage() {
               </span>
             </div>
 
-            {/* Facility Types */}
+            {/* Referral Tier + Facility Types */}
             <div className="flex flex-wrap gap-2 mb-4">
+              {facility.facilityLevel && (
+                <span
+                  className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold ${
+                    facility.facilityLevel === "hub"
+                      ? "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400"
+                      : facility.facilityLevel === "subhub"
+                      ? "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400"
+                      : "bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300"
+                  }`}
+                >
+                  {facility.facilityLevel === "hub" ? "Hub" : facility.facilityLevel === "subhub" ? "SubHub" : "Feeder"}
+                </span>
+              )}
               {facility.isScreeningCenter && (
                 <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-400">
                   <Stethoscope className="w-3 h-3" />
@@ -674,6 +692,30 @@ export default function FacilitiesManagementPage() {
                     <p className="text-sm font-mono text-gray-500 dark:text-gray-400">
                       {selectedFacility.facilityCode}
                     </p>
+                  </div>
+
+                  {/* Referral Tier */}
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
+                      Referral Tier
+                    </label>
+                    <span
+                      className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-semibold ${
+                        selectedFacility.facilityLevel === "hub"
+                          ? "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400"
+                          : selectedFacility.facilityLevel === "subhub"
+                          ? "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400"
+                          : "bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300"
+                      }`}
+                    >
+                      {selectedFacility.facilityLevel === "hub"
+                        ? "Hub"
+                        : selectedFacility.facilityLevel === "subhub"
+                        ? "SubHub"
+                        : selectedFacility.facilityLevel === "feeder"
+                        ? "Feeder"
+                        : "Not set"}
+                    </span>
                   </div>
 
                   {/* Facility Types */}
@@ -868,6 +910,35 @@ export default function FacilitiesManagementPage() {
                       />
                     </div>
 
+                    {/* Referral Tier */}
+                    <div className="md:col-span-2">
+                      <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
+                        Referral Tier *
+                      </label>
+                      <select
+                        value={formData.facilityLevel}
+                        onChange={(e) => {
+                          const level = e.target.value as FormData["facilityLevel"];
+                          setFormData({
+                            ...formData,
+                            facilityLevel: level,
+                            // A facility that's no longer a Hub can't stay a Treatment Center.
+                            isTreatmentCenter: level === "hub" ? formData.isTreatmentCenter : false,
+                          });
+                        }}
+                        className="w-full px-4 py-2.5 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                        required
+                      >
+                        <option value="">Select tier</option>
+                        <option value="feeder">Feeder (e.g. PHC Gwagwa)</option>
+                        <option value="subhub">SubHub (e.g. Garki District Hospital)</option>
+                        <option value="hub">Hub (e.g. FMC Jabi)</option>
+                      </select>
+                      <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                        Referrals escalate up this hierarchy: Feeder → SubHub → Hub. Any tier can be a screening center; only a Hub can also be a Treatment Center.
+                      </p>
+                    </div>
+
                     {/* Facility Types */}
                     <div className="md:col-span-2">
                       <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">
@@ -889,10 +960,17 @@ export default function FacilitiesManagementPage() {
                           </div>
                         </label>
 
-                        <label className="flex items-center gap-3 p-4 border border-gray-300 dark:border-gray-600 rounded-xl cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
+                        <label
+                          className={`flex items-center gap-3 p-4 border border-gray-300 dark:border-gray-600 rounded-xl transition-colors ${
+                            formData.facilityLevel === "hub"
+                              ? "cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/50"
+                              : "cursor-not-allowed opacity-50"
+                          }`}
+                        >
                           <input
                             type="checkbox"
                             checked={formData.isTreatmentCenter}
+                            disabled={formData.facilityLevel !== "hub"}
                             onChange={(e) => setFormData({ ...formData, isTreatmentCenter: e.target.checked })}
                             className="w-5 h-5 text-green-600 border-gray-300 rounded focus:ring-green-500 focus:ring-2"
                           />
@@ -903,6 +981,11 @@ export default function FacilitiesManagementPage() {
                             </span>
                           </div>
                         </label>
+                        {formData.facilityLevel && formData.facilityLevel !== "hub" && (
+                          <p className="text-xs text-gray-500 dark:text-gray-400">
+                            Only Hub facilities can be Treatment Centers — select "Hub" above to enable this.
+                          </p>
+                        )}
                       </div>
                       {!formData.isScreeningCenter && !formData.isTreatmentCenter && (
                         <p className="mt-2 text-sm text-red-600 dark:text-red-400">
