@@ -31,6 +31,9 @@ import {
   Calendar,
   ShieldCheck,
   HeartPulse,
+  GitBranch,
+  Clock,
+  Award,
 } from "lucide-react";
 import toast from "react-hot-toast";
 
@@ -111,6 +114,27 @@ type Stage2Distribution = {
 
 type Facility = { facilityId: string; facilityName: string };
 
+type FacilityPerformanceRow = {
+  facilityId: string;
+  facilityName: string;
+  screeningsCount: number;
+  referralsCount: number;
+  flaggedCount: number;
+};
+
+type FunnelStage = {
+  key: string;
+  label: string;
+  count: number;
+  conversionFromPrevious: number | null;
+};
+
+type TimingMetrics = {
+  registrationToScreeningDays: number;
+  registrationToReferralDays: number;
+  diagnosisToTreatmentDays: number;
+};
+
 // ---------------------------------------------------------------------------
 // Small shared bits
 // ---------------------------------------------------------------------------
@@ -180,6 +204,11 @@ export default function AnalyticsPage() {
   // Stage 2 outcome distribution
   const [stage2Dist, setStage2Dist] = useState<Stage2Distribution | null>(null);
 
+  // Facility performance, referral funnel, timing metrics
+  const [facilityPerformance, setFacilityPerformance] = useState<FacilityPerformanceRow[]>([]);
+  const [funnelStages, setFunnelStages] = useState<FunnelStage[]>([]);
+  const [timingMetrics, setTimingMetrics] = useState<TimingMetrics | null>(null);
+
   const filterParams: any = {};
   if (hasNationalAccess) {
     if (selectedFacility !== "all") filterParams.facilityId = selectedFacility;
@@ -207,6 +236,9 @@ export default function AnalyticsPage() {
       fetchGenderAgeComparison(),
       fetchOutcomeStatistics(),
       fetchStage2Outcomes(),
+      fetchFacilityPerformance(),
+      fetchReferralFunnel(),
+      fetchTimingMetrics(),
     ]);
     setLoading(false);
   }
@@ -271,6 +303,33 @@ export default function AnalyticsPage() {
       if (response.status) setStage2Dist(response.data.distribution);
     } catch (err) {
       console.error("Error fetching Stage 2 outcomes:", err);
+    }
+  }
+
+  async function fetchFacilityPerformance() {
+    try {
+      const { data: response } = await api.get("/analytics/facility-performance", { params: filterParams });
+      if (response.status) setFacilityPerformance(response.data || []);
+    } catch (err) {
+      console.error("Error fetching facility performance:", err);
+    }
+  }
+
+  async function fetchReferralFunnel() {
+    try {
+      const { data: response } = await api.get("/analytics/referral-funnel", { params: filterParams });
+      if (response.status) setFunnelStages(response.data || []);
+    } catch (err) {
+      console.error("Error fetching referral funnel:", err);
+    }
+  }
+
+  async function fetchTimingMetrics() {
+    try {
+      const { data: response } = await api.get("/analytics/timing-metrics", { params: filterParams });
+      if (response.status) setTimingMetrics(response.data);
+    } catch (err) {
+      console.error("Error fetching timing metrics:", err);
     }
   }
 
@@ -570,6 +629,117 @@ export default function AnalyticsPage() {
           )}
         </SectionCard>
       </div>
+
+      {/* Facility performance leaderboard */}
+      {facilityPerformance.length > 0 && (
+        <div className="mb-8">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="flex items-center justify-center w-10 h-10 rounded-xl bg-teal-600 shadow">
+              <Award className="w-5 h-5 text-white" />
+            </div>
+            <h2 className="text-xl font-bold text-gray-900 dark:text-white">Facility Performance</h2>
+          </div>
+          <div className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-200 dark:border-gray-700 shadow-sm overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-gray-50 dark:bg-gray-900/40 text-left">
+                  <tr>
+                    <th className="px-6 py-3 font-semibold text-gray-600 dark:text-gray-300">Facility</th>
+                    <th className="px-6 py-3 font-semibold text-gray-600 dark:text-gray-300">Screenings</th>
+                    <th className="px-6 py-3 font-semibold text-gray-600 dark:text-gray-300">Referrals</th>
+                    <th className="px-6 py-3 font-semibold text-gray-600 dark:text-gray-300">Flagged (Suspicious/Urgent)</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
+                  {facilityPerformance.map((row, i) => (
+                    <tr key={row.facilityId} className={i === 0 ? "bg-teal-50/50 dark:bg-teal-900/10" : ""}>
+                      <td className="px-6 py-3 font-medium text-gray-800 dark:text-gray-100 flex items-center gap-2">
+                        {i === 0 && <Award className="w-4 h-4 text-amber-500" />}
+                        {row.facilityName}
+                      </td>
+                      <td className="px-6 py-3 text-gray-700 dark:text-gray-300">{row.screeningsCount}</td>
+                      <td className="px-6 py-3 text-gray-700 dark:text-gray-300">{row.referralsCount}</td>
+                      <td className="px-6 py-3">
+                        {row.flaggedCount > 0 ? (
+                          <span className="inline-flex items-center gap-1 text-orange-700 dark:text-orange-400 font-semibold">
+                            <AlertTriangle className="w-3.5 h-3.5" /> {row.flaggedCount}
+                          </span>
+                        ) : (
+                          <span className="text-gray-400">0</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Referral / patient journey funnel */}
+      {funnelStages.length > 0 && (
+        <div className="mb-8">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="flex items-center justify-center w-10 h-10 rounded-xl bg-indigo-600 shadow">
+              <GitBranch className="w-5 h-5 text-white" />
+            </div>
+            <h2 className="text-xl font-bold text-gray-900 dark:text-white">Patient Journey Funnel</h2>
+          </div>
+          <SectionCard title="Registered → Screened → Referred → Confirmed → Treated">
+            <div className="grid grid-cols-1 sm:grid-cols-5 gap-4">
+              {funnelStages.map((stage, i) => (
+                <div key={stage.key} className="relative">
+                  <div className="bg-gray-50 dark:bg-gray-900/40 rounded-xl p-4 text-center">
+                    <p className="text-2xl font-bold text-gray-900 dark:text-white">{stage.count}</p>
+                    <p className="text-xs font-medium text-gray-500 dark:text-gray-400 mt-1">{stage.label}</p>
+                    {stage.conversionFromPrevious !== null && (
+                      <p className="text-xs mt-2 font-semibold text-indigo-600 dark:text-indigo-400">
+                        {stage.conversionFromPrevious}% conversion
+                      </p>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </SectionCard>
+        </div>
+      )}
+
+      {/* Timing metrics */}
+      {timingMetrics && (
+        <div className="mb-8">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="flex items-center justify-center w-10 h-10 rounded-xl bg-cyan-600 shadow">
+              <Clock className="w-5 h-5 text-white" />
+            </div>
+            <h2 className="text-xl font-bold text-gray-900 dark:text-white">Time-to-Milestone Metrics</h2>
+          </div>
+          <p className="text-xs text-gray-400 mb-4">
+            Baseline averages — review against NICRAT's protocol targets for what counts as timely vs. delayed.
+          </p>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
+            <StatBlock
+              icon={<Clock className="w-6 h-6 text-cyan-600" />}
+              iconWrapperClass="bg-cyan-100 dark:bg-cyan-900/30"
+              value={`${timingMetrics.registrationToScreeningDays}d`}
+              label="Avg. Registration → Screening"
+            />
+            <StatBlock
+              icon={<Clock className="w-6 h-6 text-indigo-600" />}
+              iconWrapperClass="bg-indigo-100 dark:bg-indigo-900/30"
+              value={`${timingMetrics.registrationToReferralDays}d`}
+              label="Avg. Registration → Referral"
+            />
+            <StatBlock
+              icon={<Clock className="w-6 h-6 text-red-600" />}
+              iconWrapperClass="bg-red-100 dark:bg-red-900/30"
+              value={`${timingMetrics.diagnosisToTreatmentDays}d`}
+              label="Avg. Diagnosis → Treatment"
+            />
+          </div>
+        </div>
+      )}
 
       {/* Treatment / clinical outcome statistics */}
       {outcomeStats && outcomeStats.total_outcomes > 0 && (
