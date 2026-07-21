@@ -185,6 +185,7 @@ export default function ClinicalScreeningPage() {
   const [pendingRegistrationId, setPendingRegistrationId] = useState<string>("");
   const [pendingMaskedPhone, setPendingMaskedPhone] = useState<string>("");
   const [bloomReference, setBloomReference] = useState<{ registration: any; selfAssessment: any } | null>(null);
+  const [duplicateMatch, setDuplicateMatch] = useState<{ field: "phone" | "email"; client: any } | null>(null);
 
   const currentKey = STEPS[stepIndex];
 
@@ -320,7 +321,7 @@ export default function ClinicalScreeningPage() {
     if (clientId) {
       setBusy(true);
       try {
-        await api.put(`/clients/${clientId}`, biodata);
+        await api.patch(`/clients/${clientId}`, biodata);
         await createVisitAndLoadRisk(clientId);
         toast.success("Client updated and visit created.");
         goTo("riskVerify");
@@ -377,6 +378,56 @@ export default function ClinicalScreeningPage() {
     } catch {
       // no existing profile — fine, start blank
     }
+  }
+
+  // Real-time duplicate check — only relevant while registering a NEW
+  // client (an existing client found via lookup already IS the match).
+  async function checkDuplicate(field: "phone" | "email", value: string) {
+    if (clientId || !value.trim()) return;
+    try {
+      const params = field === "phone" ? { phone: value.trim() } : { email: value.trim() };
+      const { data } = await api.get(`/clients/check-duplicate`, { params });
+      const match = data?.matches?.[0];
+      if (match) {
+        setDuplicateMatch({ field: match.field, client: match.client });
+      }
+    } catch {
+      // Non-blocking — if the check itself fails, just let them continue.
+    }
+  }
+
+  function acceptDuplicateMatch() {
+    if (!duplicateMatch) return;
+    const c = duplicateMatch.client;
+    setClientId(c.clientId);
+    setBiodata({
+      fullName: c.fullName || "",
+      dateOfBirth: c.dateOfBirth?.slice(0, 10) || "",
+      gender: c.gender || "",
+      phoneNumber: c.phoneNumber || "",
+      email: c.email || "",
+      address: c.address || "",
+      stateOfResidence: c.stateOfResidence || "",
+      lgaOfResidence: c.lgaOfResidence || "",
+      stateOfOrigin: c.stateOfOrigin || "",
+      lgaOfOrigin: c.lgaOfOrigin || "",
+      occupation: c.occupation || "",
+      nextOfKinName: c.nextOfKinName || "",
+      nextOfKinPhone: c.nextOfKinPhone || "",
+      nextOfKinRelationship: c.nextOfKinRelationship || "",
+    });
+    setDuplicateMatch(null);
+    toast.success("Continuing screening for the existing client.");
+  }
+
+  function rejectDuplicateMatch() {
+    if (!duplicateMatch) return;
+    if (duplicateMatch.field === "phone") {
+      setBiodata((p) => ({ ...p, phoneNumber: "" }));
+    } else {
+      setBiodata((p) => ({ ...p, email: "" }));
+    }
+    setDuplicateMatch(null);
   }
 
   // Called once OTP consent is verified for a brand-new client.
@@ -497,30 +548,66 @@ export default function ClinicalScreeningPage() {
 
   return (
     <Layout>
-      <div className="mb-6">
-        <PageTitle>Stage 2 — Clinical Screening (PHC)</PageTitle>
-        <p className="text-sm text-gray-500 mt-1">
-          For use by a nurse, CHEW, or trained screening officer at the point of care.
-        </p>
+      {duplicateMatch && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="max-w-sm w-full bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-6 space-y-4">
+            <h3 className="text-lg font-bold text-gray-800 dark:text-white">
+              This {duplicateMatch.field === "phone" ? "phone number" : "email address"} already exists
+            </h3>
+            <div className="rounded-xl bg-gray-50 dark:bg-gray-700/40 p-4 text-sm">
+              <p className="font-semibold text-gray-800 dark:text-white">{duplicateMatch.client.fullName}</p>
+              <p className="text-gray-500 mt-0.5">{duplicateMatch.client.clientId}</p>
+              <p className="text-gray-500">{duplicateMatch.client.phoneNumber}</p>
+            </div>
+            <p className="text-sm text-gray-600 dark:text-gray-300">
+              It's linked to the client above. Would you like to continue screening for this client instead?
+            </p>
+            <div className="flex gap-3 justify-end">
+              <Button layout="outline" onClick={rejectDuplicateMatch} className="rounded-xl">
+                No, use a different {duplicateMatch.field === "phone" ? "number" : "email"}
+              </Button>
+              <Button onClick={acceptDuplicateMatch} className="rounded-xl bg-green-700 border-green-700 hover:bg-green-800">
+                Yes, continue for this client
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className="mb-6 flex items-center justify-between flex-wrap gap-2">
+        <div>
+          <PageTitle>Stage 2 — Clinical Screening (PHC)</PageTitle>
+          <p className="text-sm text-gray-500 mt-1">
+            For use by a nurse, CHEW, or trained screening officer at the point of care.
+          </p>
+        </div>
+        {clientId && (
+          <span className="inline-flex items-center px-3 py-1.5 rounded-full text-xs font-bold bg-green-100 text-green-800">
+            Client ID: {clientId}
+          </span>
+        )}
       </div>
 
-      {/* Step progress */}
-      <div className="mb-6 flex flex-wrap gap-2">
-        {STEPS.map((key, i) => (
-          <div
-            key={key}
-            className={`px-3 py-1.5 rounded-full text-xs font-medium ${
-              i === stepIndex
-                ? "bg-green-700 text-white"
-                : i < stepIndex
-                ? "bg-green-100 text-green-700"
-                : "bg-gray-100 text-gray-400"
-            }`}
-          >
-            {STEP_LABELS[key]}
-          </div>
-        ))}
-      </div>
+      {/* Step progress — hidden during a fresh registration, shown once
+          the client/visit exists and Stage 2 screening is under way. */}
+      {!["lookup", "registration", "otpConsent"].includes(currentKey) && (
+        <div className="mb-6 flex flex-wrap gap-2">
+          {STEPS.map((key, i) => (
+            <div
+              key={key}
+              className={`px-3 py-1.5 rounded-full text-xs font-medium ${
+                i === stepIndex
+                  ? "bg-green-700 text-white"
+                  : i < stepIndex
+                  ? "bg-green-100 text-green-700"
+                  : "bg-gray-100 text-gray-400"
+              }`}
+            >
+              {STEP_LABELS[key]}
+            </div>
+          ))}
+        </div>
+      )}
 
       <div className="max-w-3xl bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700 shadow-sm p-6 space-y-6">
         {currentKey === "lookup" && (
@@ -594,6 +681,7 @@ export default function ClinicalScreeningPage() {
                   className="mt-2 rounded-2xl h-12"
                   value={biodata.phoneNumber}
                   onChange={(e) => setBiodata((p) => ({ ...p, phoneNumber: e.target.value }))}
+                  onBlur={(e) => checkDuplicate("phone", e.target.value)}
                 />
               </Label>
               <Label>
@@ -603,6 +691,7 @@ export default function ClinicalScreeningPage() {
                   className="mt-2 rounded-2xl h-12"
                   value={biodata.email}
                   onChange={(e) => setBiodata((p) => ({ ...p, email: e.target.value }))}
+                  onBlur={(e) => checkDuplicate("email", e.target.value)}
                 />
               </Label>
               <Label>
@@ -882,6 +971,7 @@ export default function ClinicalScreeningPage() {
           <div className="text-center py-10 space-y-3">
             <CheckCircle className="w-14 h-14 text-green-600 mx-auto" />
             <h3 className="text-xl font-bold text-gray-800 dark:text-white">Stage 2 screening complete</h3>
+            <p className="text-sm font-semibold text-green-700">Client ID: {clientId}</p>
             <p className="text-sm text-gray-500">
               {outcome.overallOutcome === "urgent_referral" || outcome.overallOutcome === "suspicious" ? (
                 <span className="inline-flex items-center gap-1.5 text-red-600 font-semibold">
