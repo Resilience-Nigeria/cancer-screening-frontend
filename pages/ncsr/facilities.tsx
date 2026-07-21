@@ -40,6 +40,8 @@ interface Facility {
   facilityLevel: "feeder" | "subhub" | "hub" | null;
   parentFacilityId: number | null;
   stagesSupported: string[] | null;
+  latitude: number | null;
+  longitude: number | null;
   isScreeningCenter: boolean;
   isTreatmentCenter: boolean;
   facilityTypes: string;
@@ -68,6 +70,8 @@ interface FormData {
   facilityLevel: "feeder" | "subhub" | "hub" | "";
   parentFacilityId: number | "";
   stagesSupported: string[];
+  latitude: string;
+  longitude: string;
   isScreeningCenter: boolean;
   isTreatmentCenter: boolean;
 }
@@ -107,6 +111,8 @@ export default function FacilitiesManagementPage() {
     facilityLevel: "",
     parentFacilityId: "",
     stagesSupported: ["stage2"],
+    latitude: "",
+    longitude: "",
     isScreeningCenter: true,
     isTreatmentCenter: false,
   });
@@ -187,6 +193,8 @@ export default function FacilitiesManagementPage() {
         facilityLevel: "",
         parentFacilityId: "",
         stagesSupported: ["stage2"],
+        latitude: "",
+        longitude: "",
         isScreeningCenter: true,
         isTreatmentCenter: false,
       });
@@ -203,6 +211,8 @@ export default function FacilitiesManagementPage() {
         facilityLevel: facility.facilityLevel || "",
         parentFacilityId: facility.parentFacilityId || "",
         stagesSupported: facility.stagesSupported || ["stage2"],
+        latitude: facility.latitude != null ? String(facility.latitude) : "",
+        longitude: facility.longitude != null ? String(facility.longitude) : "",
         isScreeningCenter: facility.isScreeningCenter,
         isTreatmentCenter: facility.isTreatmentCenter,
       });
@@ -890,6 +900,54 @@ export default function FacilitiesManagementPage() {
                         placeholder="Enter full address"
                         required
                       />
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
+                        Latitude
+                      </label>
+                      <input
+                        type="number"
+                        step="any"
+                        value={formData.latitude}
+                        onChange={(e) => setFormData({ ...formData, latitude: e.target.value })}
+                        className="w-full px-4 py-2.5 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                        placeholder="e.g. 9.0765"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
+                        Longitude
+                      </label>
+                      <input
+                        type="number"
+                        step="any"
+                        value={formData.longitude}
+                        onChange={(e) => setFormData({ ...formData, longitude: e.target.value })}
+                        className="w-full px-4 py-2.5 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                        placeholder="e.g. 7.4951"
+                      />
+                    </div>
+
+                    <div className="md:col-span-2 -mt-3">
+                      {formData.facilityAddress ? (
+                        <a
+                          href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(formData.facilityAddress)}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-xs text-green-700 dark:text-green-400 hover:underline"
+                        >
+                          Find these coordinates on Google Maps →
+                        </a>
+                      ) : (
+                        <p className="text-xs text-gray-400">
+                          Enter an address above, then use Google Maps to find its exact coordinates — right-click the pin and copy the lat/long shown.
+                        </p>
+                      )}
+                      <p className="text-xs text-gray-400 mt-1">
+                        Powers "nearest facility" matching for Bloom self-assessment referrals. Leave blank if unknown for now.
+                      </p>
                     </div>
 
                     <div>
