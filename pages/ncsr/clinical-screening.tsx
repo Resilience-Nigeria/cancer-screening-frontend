@@ -310,6 +310,22 @@ export default function ClinicalScreeningPage() {
   }
 
   // ── A. Registration ──────────────────────────────────────────────────
+  // Shared helper — returns the first match (if any) without touching state,
+  // so it can be used both for the onBlur early-warning AND as a guaranteed
+  // check right before submission (in case onBlur doesn't fire, e.g. if the
+  // UI kit's Input doesn't forward blur events reliably).
+  async function lookupDuplicate(field: "phone" | "email", value: string): Promise<{ field: "phone" | "email"; client: any } | null> {
+    if (!value.trim()) return null;
+    try {
+      const params = field === "phone" ? { phone: value.trim() } : { email: value.trim() };
+      const { data } = await api.get(`/clients/check-duplicate`, { params });
+      const match = data?.matches?.[0];
+      return match ? { field: match.field, client: match.client } : null;
+    } catch {
+      return null;
+    }
+  }
+
   async function submitRegistration() {
     if (!biodata.fullName || !biodata.gender || !biodata.phoneNumber) {
       toast.error("Full name, sex, and phone number are required.");
@@ -333,9 +349,26 @@ export default function ClinicalScreeningPage() {
       return;
     }
 
+    // Guaranteed duplicate check right before submission — don't rely only
+    // on onBlur having fired. Phone first, then email.
+    setBusy(true);
+    const phoneMatch = await lookupDuplicate("phone", biodata.phoneNumber);
+    if (phoneMatch) {
+      setDuplicateMatch(phoneMatch);
+      setBusy(false);
+      return;
+    }
+    if (biodata.email) {
+      const emailMatch = await lookupDuplicate("email", biodata.email);
+      if (emailMatch) {
+        setDuplicateMatch(emailMatch);
+        setBusy(false);
+        return;
+      }
+    }
+
     // New client — seek consent via OTP before creating the record,
     // same as Stage 1 (Bloom).
-    setBusy(true);
     try {
       const { data } = await api.post(`/awareness/register`, {
         fullName: biodata.fullName,
@@ -380,23 +413,17 @@ export default function ClinicalScreeningPage() {
     }
   }
 
-  // Real-time duplicate check — only relevant while registering a NEW
-  // client (an existing client found via lookup already IS the match).
+  // Real-time duplicate check on blur — only relevant while registering a
+  // NEW client. This is a best-effort early warning; submitRegistration()
+  // also runs a guaranteed check right before creating the record, in case
+  // this blur handler doesn't fire for some reason.
   async function checkDuplicate(field: "phone" | "email", value: string) {
-    if (clientId || !value.trim()) return;
-    try {
-      const params = field === "phone" ? { phone: value.trim() } : { email: value.trim() };
-      const { data } = await api.get(`/clients/check-duplicate`, { params });
-      const match = data?.matches?.[0];
-      if (match) {
-        setDuplicateMatch({ field: match.field, client: match.client });
-      }
-    } catch {
-      // Non-blocking — if the check itself fails, just let them continue.
-    }
+    if (clientId) return;
+    const match = await lookupDuplicate(field, value);
+    if (match) setDuplicateMatch(match);
   }
 
-  function acceptDuplicateMatch() {
+  async function acceptDuplicateMatch() {
     if (!duplicateMatch) return;
     const c = duplicateMatch.client;
     setClientId(c.clientId);
@@ -417,7 +444,16 @@ export default function ClinicalScreeningPage() {
       nextOfKinRelationship: c.nextOfKinRelationship || "",
     });
     setDuplicateMatch(null);
-    toast.success("Continuing screening for the existing client.");
+    setBusy(true);
+    try {
+      await createVisitAndLoadRisk(c.clientId);
+      toast.success("Continuing screening for the existing client.");
+      goTo("riskVerify");
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message ?? "Could not start the visit for this client.");
+    } finally {
+      setBusy(false);
+    }
   }
 
   function rejectDuplicateMatch() {

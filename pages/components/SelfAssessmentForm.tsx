@@ -7,6 +7,7 @@ import api from "@/lib/api";
 type Gender = "male" | "female";
 
 export type AssessmentResult = {
+  assessmentId: string | number;
   riskCategory: "low" | "average" | "increased" | "symptomatic_high";
   recommendation: string;
   flaggedReasons: string[];
@@ -352,6 +353,7 @@ export default function SelfAssessmentForm({
 
       const { data } = await api.post("/self-assessment", payload);
       onComplete({
+        assessmentId: data.assessmentId,
         riskCategory: data.riskCategory,
         recommendation: data.recommendation,
         flaggedReasons: data.flaggedReasons ?? [],
