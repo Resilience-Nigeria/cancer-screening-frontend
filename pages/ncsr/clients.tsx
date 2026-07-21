@@ -175,14 +175,13 @@ export default function ClientsIndexPage() {
     setSearch(searchInput.trim());
   }
 
-  // "Add Client" now goes straight into the screening wizard instead of
-  // this page's own modal — the wizard already includes the consent step,
-  // biodata, risk profile, and screening in one seamless flow, so
-  // clinicians no longer have to save-and-then-separately-find the client
-  // to start screening. The modal is retained only for editing existing
+  // "Add Client" now goes straight into Stage 2 (Clinical Screening) instead
+  // of this page's own modal or the old screening-wizard — Stage 2 already
+  // includes the consent step (OTP), biodata, risk profile, and screening
+  // in one seamless flow. The modal is retained only for editing existing
   // client records (see openEditModal).
   function openModal() {
-    router.push("/ncsr/screening-wizard");
+    router.push("/ncsr/clinical-screening?new=1");
   }
 
   

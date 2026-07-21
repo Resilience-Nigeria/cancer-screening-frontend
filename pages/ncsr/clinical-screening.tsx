@@ -164,6 +164,8 @@ export default function ClinicalScreeningPage() {
     address: "",
     stateOfResidence: "",
     lgaOfResidence: "",
+    stateOfOrigin: "",
+    lgaOfOrigin: "",
     occupation: "",
     nextOfKinName: "",
     nextOfKinPhone: "",
@@ -233,6 +235,15 @@ export default function ClinicalScreeningPage() {
     });
   }
 
+  // Entry points that already know it's a new client (e.g. "Add Client" on
+  // the clients list) can skip the lookup screen entirely.
+  useEffect(() => {
+    if (!router.isReady) return;
+    if (router.query.new) {
+      goTo("registration");
+    }
+  }, [router.isReady, router.query.new]);
+
   // ── Lookup ───────────────────────────────────────────────────────────
   async function handleLookup() {
     if (!lookupValue.trim()) return;
@@ -251,6 +262,8 @@ export default function ClinicalScreeningPage() {
           address: found.address || "",
           stateOfResidence: found.stateOfResidence || "",
           lgaOfResidence: found.lgaOfResidence || "",
+          stateOfOrigin: found.stateOfOrigin || "",
+          lgaOfOrigin: found.lgaOfOrigin || "",
           occupation: found.occupation || "",
           nextOfKinName: found.nextOfKinName || "",
           nextOfKinPhone: found.nextOfKinPhone || "",
@@ -372,8 +385,10 @@ export default function ClinicalScreeningPage() {
     try {
       const { data } = await api.post(`/clients`, {
         ...biodata,
-        stateOfOrigin: biodata.stateOfResidence,
-        lgaOfOrigin: biodata.lgaOfResidence,
+        // Fall back to residence only if origin was left blank, rather
+        // than always overriding what the form collected.
+        stateOfOrigin: biodata.stateOfOrigin || biodata.stateOfResidence,
+        lgaOfOrigin: biodata.lgaOfOrigin || biodata.lgaOfResidence,
         registrationDate: todayStr(),
         screeningCategory: "new_client",
       });
@@ -612,7 +627,7 @@ export default function ClinicalScreeningPage() {
                 />
               </Label>
               <Label>
-                <span className="text-sm font-semibold">State</span>
+                <span className="text-sm font-semibold">State of Residence</span>
                 <Select
                   className="mt-2 rounded-2xl h-12"
                   value={biodata.stateOfResidence}
@@ -625,7 +640,7 @@ export default function ClinicalScreeningPage() {
                 </Select>
               </Label>
               <Label>
-                <span className="text-sm font-semibold">LGA</span>
+                <span className="text-sm font-semibold">LGA of Residence</span>
                 <Select
                   className="mt-2 rounded-2xl h-12"
                   value={biodata.lgaOfResidence}
@@ -635,6 +650,34 @@ export default function ClinicalScreeningPage() {
                   <option value="">Select LGA</option>
                   {biodata.stateOfResidence &&
                     lgasByState[getStateCode(biodata.stateOfResidence)]?.map((lga) => (
+                      <option key={lga} value={lga}>{lga}</option>
+                    ))}
+                </Select>
+              </Label>
+              <Label>
+                <span className="text-sm font-semibold">State of Origin</span>
+                <Select
+                  className="mt-2 rounded-2xl h-12"
+                  value={biodata.stateOfOrigin}
+                  onChange={(e) => setBiodata((p) => ({ ...p, stateOfOrigin: e.target.value, lgaOfOrigin: "" }))}
+                >
+                  <option value="">Select state</option>
+                  {nigerianStates.map((s) => (
+                    <option key={s.code} value={s.name}>{s.name}</option>
+                  ))}
+                </Select>
+              </Label>
+              <Label>
+                <span className="text-sm font-semibold">LGA of Origin</span>
+                <Select
+                  className="mt-2 rounded-2xl h-12"
+                  value={biodata.lgaOfOrigin}
+                  disabled={!biodata.stateOfOrigin}
+                  onChange={(e) => setBiodata((p) => ({ ...p, lgaOfOrigin: e.target.value }))}
+                >
+                  <option value="">Select LGA</option>
+                  {biodata.stateOfOrigin &&
+                    lgasByState[getStateCode(biodata.stateOfOrigin)]?.map((lga) => (
                       <option key={lga} value={lga}>{lga}</option>
                     ))}
                 </Select>
