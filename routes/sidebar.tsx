@@ -149,7 +149,7 @@ const routes: IRoute[] = [
     path: "/ncsr/settings",
     icon: Settings,
     name: "Settings",
-    roles: ["NICRAT_SUPER_ADMIN", "NAVIGATOR", "HOSPITAL_ADMIN"], // Admins can change settings
+    roles: ["NICRAT_SUPER_ADMIN"], // Super Admin only — matches SettingsController
   },
 ];
 
