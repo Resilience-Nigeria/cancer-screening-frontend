@@ -89,6 +89,19 @@ const routes: IRoute[] = [
     // Visible to all authenticated users — the page itself tells staff
     // if their facility isn't configured for Stage 3.
   },
+  {
+    path: "/ncsr/treatment-plan",
+    icon: HospitalIcon,
+    name: "Stage 4: Treatment & Care",
+    // Visible to all authenticated users — the page itself tells staff
+    // if their facility isn't configured for Stage 4.
+  },
+  {
+    path: "/ncsr/follow-up-schedules",
+    icon: LinkIcon,
+    name: "Follow-up Schedules",
+    // Visible to all authenticated users
+  },
   
   // Admin-only routes
   {
