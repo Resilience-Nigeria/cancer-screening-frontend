@@ -11,6 +11,7 @@ import {
   ChartBar,
   LinkIcon,
   Activity,
+  MapPinned,
 } from "lucide-react";
 import { ComponentType } from "react";
 
@@ -136,6 +137,11 @@ const routes: IRoute[] = [
     path: "/ncsr/facilities",
     icon: Building2,
     name: "Facilities",
+  },
+  {
+    path: "/ncsr/facility-map",
+    icon: MapPinned,
+    name: "Facility Map",
   },
   {
     path: "/ncsr/roles",

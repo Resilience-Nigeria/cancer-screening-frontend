@@ -44,6 +44,7 @@
 
 import "../styles/globals.css";
 import "tailwindcss/tailwind.css";
+import "leaflet/dist/leaflet.css";
 
 import React from "react";
 import { Windmill } from "@roketid/windmill-react-ui";
