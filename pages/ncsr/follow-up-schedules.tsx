@@ -100,9 +100,11 @@ export default function FollowUpSchedulesPage() {
           {schedules.map((s) => (
             <div key={s.scheduleId} className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700 shadow-sm p-5 flex items-center justify-between gap-4 flex-wrap">
               <div>
-                <p className="text-sm font-bold text-gray-800 dark:text-white">{s.treatmentPlan?.client?.fullName}</p>
+                <h3 >
+                  {s.treatment_plan?.client?.fullName}
+                </h3>
                 <p className="text-xs text-gray-500 mt-0.5">
-                  {s.treatmentPlan?.client?.clientId} · {s.treatmentPlan?.facility?.facilityName} · Due {fmtDate(s.dueDate)}
+                  {s.treatment_plan?.client?.clientId} · {s.treatment_plan?.facility?.facilityName} · Due {fmtDate(s.dueDate)}
                 </p>
                 <p className="text-xs text-gray-600 dark:text-gray-300 mt-1">{s.activities}</p>
                 <span className={`inline-flex items-center gap-1 mt-2 px-2.5 py-1 rounded-full text-xs font-semibold capitalize ${STATUS_TONE[s.status] || "bg-gray-50 text-gray-600"}`}>
