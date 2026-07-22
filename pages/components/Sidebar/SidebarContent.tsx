@@ -10,6 +10,7 @@ import SidebarSubmenu from "./SidebarSubmenu";
 import Image from "next/image";
 import { logout } from "../../../lib/logout";
 import { getUser } from "../../../lib/auth";
+import api from "../../../lib/api";
 
 interface SidebarContentProps {
   linkClicked?: () => void;
@@ -22,12 +23,31 @@ export default function SidebarContent({ linkClicked }: SidebarContentProps) {
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [isMounted, setIsMounted] = useState(false);
   const [user, setUser] = useState<any>(null);
+  const [menuRules, setMenuRules] = useState<Record<string, string[] | null>>({});
+  const [menuRulesLoaded, setMenuRulesLoaded] = useState(false);
 
   // Load user data after component mounts (client-side only)
   useEffect(() => {
     setIsMounted(true);
     const userData = getUser();
     setUser(userData);
+  }, []);
+
+  // Menu visibility is admin-configurable (Settings > Menu Visibility)
+  // rather than hardcoded in routes/sidebar.tsx.
+  useEffect(() => {
+    api.get("/menu-visibility")
+      .then(({ data }) => {
+        const rules: Record<string, string[] | null> = {};
+        (data.rules || []).forEach((r: any) => {
+          rules[r.menuKey] = r.allowedRoles && r.allowedRoles.length > 0 ? r.allowedRoles : null;
+        });
+        setMenuRules(rules);
+      })
+      .catch(() => {
+        // Fail open — if this can't load, don't hide the whole nav.
+      })
+      .finally(() => setMenuRulesLoaded(true));
   }, []);
 
   // Get role name from user_role relationship (new RBAC) or fallback to old role field
@@ -38,10 +58,13 @@ export default function SidebarContent({ linkClicked }: SidebarContentProps) {
     return routes.filter((route): route is IRoute => {
       if (!route) return false;
 
-      // If route has no roles specified, it's visible to everyone
-      if (route.roles && route.roles.length > 0) {
-        if (!userRoleName) return false;
-        if (!route.roles.includes(userRoleName)) return false;
+      // Menu visibility is admin-configurable — a rule with allowed
+      // roles restricts the item; no rule (or an empty one) means
+      // everyone can see it. Fail open until rules have loaded, so the
+      // nav doesn't flash empty while the request is in flight.
+      const allowedRoles = route.path ? menuRules[route.path] : null;
+      if (menuRulesLoaded && allowedRoles && allowedRoles.length > 0) {
+        if (!userRoleName || !allowedRoles.includes(userRoleName)) return false;
       }
 
       // Stage-gated routes (Stage 2/3/4) only show if the user's own
@@ -59,7 +82,7 @@ export default function SidebarContent({ linkClicked }: SidebarContentProps) {
 
       return true;
     });
-  }, [userRoleName, user]);
+  }, [userRoleName, user, menuRules, menuRulesLoaded]);
 
   // Get role display name
   function getRoleDisplayName(): string {

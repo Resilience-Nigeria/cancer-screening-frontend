@@ -6,6 +6,7 @@ import toast from "react-hot-toast";
 import Layout from "../containers/Layout";
 import PageTitle from "../components/Typography/PageTitle";
 import NotificationProvidersPanel from "../components/NotificationProvidersPanel";
+import MenuVisibilityPanel from "../components/MenuVisibilityPanel";
 import api from "../../lib/api";
 
 type SettingRow = {
@@ -185,6 +186,10 @@ export default function SettingsPage() {
             </div>
           );
         })}
+
+        <div className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700 shadow-sm p-6">
+          <MenuVisibilityPanel />
+        </div>
       </div>
     </Layout>
   );
