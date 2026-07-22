@@ -28,7 +28,7 @@ const CANCER_TESTS: Record<string, string[]> = {
 
 const BLOOD_TESTS = ["CBC", "LFT", "RFT", "Tumour Markers"];
 
-const STEPS = ["lookup", "consultation", "examination", "tests", "pathology", "done"] as const;
+const STEPS = ["lookup", "consultation", "examination", "tests", "pathology", "decision", "done"] as const;
 type StepKey = typeof STEPS[number];
 const STEP_LABELS: Record<StepKey, string> = {
   lookup: "Find Client",
@@ -36,6 +36,7 @@ const STEP_LABELS: Record<StepKey, string> = {
   examination: "B. Advanced Exam",
   tests: "C. Diagnostic Tests",
   pathology: "D. Pathology",
+  decision: "Final Decision",
   done: "Complete",
 };
 
@@ -69,6 +70,12 @@ export default function DiagnosticEvaluationPage() {
   const [pathologyResult, setPathologyResult] = useState("");
   const [pathologyNotes, setPathologyNotes] = useState("");
   const [pathologyDate, setPathologyDate] = useState(todayStr());
+  const [decisionPathway, setDecisionPathway] = useState("");
+  const [managementNotes, setManagementNotes] = useState("");
+  const [routineRecallDate, setRoutineRecallDate] = useState("");
+  const [procedurePerformed, setProcedurePerformed] = useState("");
+  const [procedureComplications, setProcedureComplications] = useState("");
+  const [surveillanceNotes, setSurveillanceNotes] = useState("");
 
   function goTo(key: StepKey) {
     setStepIndex(STEPS.indexOf(key));
@@ -193,10 +200,34 @@ export default function DiagnosticEvaluationPage() {
         pathologyNotes,
         pathologyDate,
       });
-      toast.success("Diagnostic evaluation complete.");
+      toast.success("Pathology result recorded.");
       next();
     } catch (err: any) {
       toast.error(err?.response?.data?.message ?? "Could not finalize pathology.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function submitDecision() {
+    if (!evaluationId || !decisionPathway) {
+      toast.error("Please select a decision pathway.");
+      return;
+    }
+    setBusy(true);
+    try {
+      await api.post(`/diagnostic-evaluations/${evaluationId}/decision`, {
+        decisionPathway,
+        managementNotes,
+        routineRecallDate: routineRecallDate || null,
+        procedurePerformed,
+        procedureComplications,
+        surveillanceNotes,
+      });
+      toast.success("Clinical decision recorded — evaluation complete.");
+      next();
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message ?? "Could not save the decision.");
     } finally {
       setBusy(false);
     }
@@ -484,15 +515,71 @@ export default function DiagnosticEvaluationPage() {
           </div>
         )}
 
+        {currentKey === "decision" && (
+          <div className="space-y-5">
+            <h3 className="text-lg font-semibold text-gray-800 dark:text-white">4.2 Final Clinical Decision</h3>
+            <p className="text-sm text-gray-500">
+              Based on the pathology result: <span className="font-semibold capitalize">{pathologyResult.replace(/_/g, " ")}</span>
+            </p>
+            <div className="grid grid-cols-1 gap-3">
+              {[
+                { value: "no_cancer", label: "A. No Cancer Detected", desc: "Benign, normal, infection, inflammatory, fibroadenoma, BPE, benign cervical changes" },
+                { value: "pre_cancerous", label: "B. Pre-cancerous Disease", desc: "CIN, adenomatous polyps, oral leukoplakia with dysplasia, Barrett's with dysplasia" },
+                { value: "cancer_confirmed", label: "C. Cancer Confirmed", desc: "Proceeds to Stage 4 for staging, MDT review, and treatment" },
+              ].map((opt) => (
+                <button
+                  key={opt.value}
+                  onClick={() => setDecisionPathway(opt.value)}
+                  className={`text-left p-4 rounded-xl border-2 transition-colors ${
+                    decisionPathway === opt.value ? "border-green-600 bg-green-50 dark:bg-green-900/20" : "border-gray-200 dark:border-gray-700"
+                  }`}
+                >
+                  <p className="text-sm font-semibold text-gray-800 dark:text-white">{opt.label}</p>
+                  <p className="text-xs text-gray-500 mt-1">{opt.desc}</p>
+                </button>
+              ))}
+            </div>
+
+            {decisionPathway === "no_cancer" && (
+              <Label>
+                <span className="text-sm font-semibold">Routine Screening Recall Date</span>
+                <Input type="date" className="mt-2 rounded-2xl h-12" value={routineRecallDate} onChange={(e) => setRoutineRecallDate(e.target.value)} />
+              </Label>
+            )}
+
+            {decisionPathway === "pre_cancerous" && (
+              <div className="space-y-3">
+                <Label>
+                  <span className="text-sm font-semibold">Procedure Performed</span>
+                  <Input className="mt-2 rounded-2xl h-12" value={procedurePerformed} onChange={(e) => setProcedurePerformed(e.target.value)} placeholder="Cryotherapy, LEEP, polypectomy, etc." />
+                </Label>
+                <Label>
+                  <span className="text-sm font-semibold">Complications</span>
+                  <Textarea className="mt-2 rounded-2xl" rows={2} value={procedureComplications} onChange={(e) => setProcedureComplications(e.target.value)} />
+                </Label>
+                <Label>
+                  <span className="text-sm font-semibold">Surveillance Plan</span>
+                  <Textarea className="mt-2 rounded-2xl" rows={2} value={surveillanceNotes} onChange={(e) => setSurveillanceNotes(e.target.value)} placeholder="Repeat HPV test, VIA, colonoscopy, clinical review..." />
+                </Label>
+              </div>
+            )}
+
+            <Label>
+              <span className="text-sm font-semibold">Management Notes</span>
+              <Textarea className="mt-2 rounded-2xl" rows={3} value={managementNotes} onChange={(e) => setManagementNotes(e.target.value)} />
+            </Label>
+          </div>
+        )}
+
         {currentKey === "done" && (
           <div className="text-center py-10 space-y-3">
             <CheckCircle className="w-14 h-14 text-green-600 mx-auto" />
             <h3 className="text-xl font-bold text-gray-800 dark:text-white">Diagnostic evaluation complete</h3>
             <p className="text-sm text-gray-500">
-              Pathology result: <span className="font-semibold capitalize">{pathologyResult.replace(/_/g, " ")}</span>
+              Decision: <span className="font-semibold capitalize">{decisionPathway.replace(/_/g, " ")}</span>
             </p>
-            {pathologyResult === "malignant" && (
-              <p className="text-sm text-red-600 font-medium">Client's journey stage advanced to Treatment.</p>
+            {decisionPathway === "cancer_confirmed" && (
+              <p className="text-sm text-green-700 font-medium">Client is now in the Stage 4 treatment queue.</p>
             )}
             <Button
               onClick={() => router.push(`/ncsr/client-record?clientId=${clientId}`)}
@@ -530,7 +617,12 @@ export default function DiagnosticEvaluationPage() {
             )}
             {currentKey === "pathology" && (
               <Button onClick={submitPathology} disabled={busy} className="h-11 px-5 rounded-2xl bg-green-700 border-green-700 hover:bg-green-800">
-                {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : "Finalize Diagnosis"}
+                {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <>Continue <ChevronRight className="w-4 h-4 ml-1" /></>}
+              </Button>
+            )}
+            {currentKey === "decision" && (
+              <Button onClick={submitDecision} disabled={busy} className="h-11 px-5 rounded-2xl bg-green-700 border-green-700 hover:bg-green-800">
+                {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : "Finalize Decision"}
               </Button>
             )}
           </div>
