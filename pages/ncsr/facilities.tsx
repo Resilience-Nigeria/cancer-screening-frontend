@@ -131,6 +131,7 @@ export default function FacilitiesManagementPage() {
   const [filterState, setFilterState] = useState<string>("all");
   const [filterStatus, setFilterStatus] = useState<string>("all");
   const [filterType, setFilterType] = useState<string>("all");
+  const [filterLevel, setFilterLevel] = useState<string>("all");
   const [showFilters, setShowFilters] = useState(false);
   const [selectedFacility, setSelectedFacility] = useState<Facility | null>(null);
   const [showModal, setShowModal] = useState(false);
@@ -210,9 +211,20 @@ export default function FacilitiesManagementPage() {
         (filterType === "treatment" && facility.isTreatmentCenter) ||
         (filterType === "both" && facility.isScreeningCenter && facility.isTreatmentCenter);
 
-      return matchesSearch && matchesState && matchesStatus && matchesType;
+      const matchesLevel =
+        filterLevel === "all" || (facility.facilityLevel || "").toLowerCase() === filterLevel;
+
+      return matchesSearch && matchesState && matchesStatus && matchesType && matchesLevel;
     });
-  }, [facilities, searchQuery, filterState, filterStatus, filterType]);
+  }, [facilities, searchQuery, filterState, filterStatus, filterType, filterLevel]);
+
+  const tierCounts = useMemo(() => {
+    return {
+      hub: facilities.filter((f) => (f.facilityLevel || "").toLowerCase() === "hub").length,
+      subhub: facilities.filter((f) => (f.facilityLevel || "").toLowerCase() === "subhub").length,
+      feeder: facilities.filter((f) => (f.facilityLevel || "").toLowerCase() === "feeder").length,
+    };
+  }, [facilities]);
 
   function openModal(mode: "view" | "add" | "edit", facility?: Facility) {
     setModalMode(mode);
@@ -360,6 +372,27 @@ export default function FacilitiesManagementPage() {
               Manage healthcare facilities and screening centers
             </p>
           </div>
+        </div>
+
+        <div className="flex flex-wrap gap-2 mt-4">
+          {[
+            { value: "all", label: "All Facilities", count: facilities.length },
+            { value: "hub", label: "Hubs", count: tierCounts.hub },
+            { value: "subhub", label: "SubHubs", count: tierCounts.subhub },
+            { value: "feeder", label: "Feeders", count: tierCounts.feeder },
+          ].map((tab) => (
+            <button
+              key={tab.value}
+              onClick={() => setFilterLevel(tab.value)}
+              className={`px-4 py-2 rounded-xl text-sm font-semibold transition-colors ${
+                filterLevel === tab.value
+                  ? "bg-green-700 text-white"
+                  : "bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300"
+              }`}
+            >
+              {tab.label} <span className="opacity-75">({tab.count})</span>
+            </button>
+          ))}
         </div>
       </div>
 
@@ -554,6 +587,22 @@ export default function FacilitiesManagementPage() {
                 <option value="screening">Screening Center Only</option>
                 <option value="treatment">Treatment Center Only</option>
                 <option value="both">Both Types</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
+                Hospital Category
+              </label>
+              <select
+                value={filterLevel}
+                onChange={(e) => setFilterLevel(e.target.value)}
+                className="w-full px-4 py-2.5 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-green-500 focus:border-transparent"
+              >
+                <option value="all">All Categories</option>
+                <option value="hub">Hub</option>
+                <option value="subhub">SubHub</option>
+                <option value="feeder">Feeder</option>
               </select>
             </div>
           </div>
