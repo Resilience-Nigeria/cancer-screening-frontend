@@ -109,7 +109,9 @@ export default function DiagnosticEvaluationPage() {
       setClientInfo(data.client);
       setRiskProfile(data.riskProfile);
       setPriorVisits(data.visits || []);
-      setClientId(cId);
+      // Use the resolved client's actual ID, not the raw search input —
+      // that input could be a phone number now that lookup supports both.
+      setClientId(data.client?.clientId ?? cId);
       setReferralId(refId);
       goTo("consultation");
     } catch (err: any) {
