@@ -40,6 +40,7 @@ import {
   ClipboardCheck,
   Microscope,
   UserPlus,
+  HeartHandshake,
 } from "lucide-react";
 
 type ScreeningActivity = {
@@ -704,7 +705,7 @@ function Dashboard() {
       {showActionCards && (
         <div className="mb-6 sm:mb-8">
           {isFeederOnlyUser && <PageTitle>Quick Actions</PageTitle>}
-          <div className="grid gap-4 sm:gap-5 mt-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="grid gap-4 sm:gap-5 mt-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-5">
             <Link href="/ncsr/clinical-screening?new=1">
               <div className="cursor-pointer rounded-2xl bg-green-700 hover:bg-green-800 transition-colors p-6 text-white shadow-sm h-full">
                 <UserPlus className="w-6 h-6 mb-3" />
@@ -724,6 +725,13 @@ function Dashboard() {
                 <Microscope className="w-6 h-6 mb-3 text-teal-700" />
                 <p className="font-semibold text-gray-800 dark:text-white">Stage 3: Diagnostic Evaluation</p>
                 <p className="text-xs text-gray-500 mt-1">For facilities configured for Stage 3</p>
+              </div>
+            </Link>
+            <Link href="/ncsr/treatment-plan">
+              <div className="cursor-pointer rounded-2xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-750 transition-colors p-6 shadow-sm h-full">
+                <HeartHandshake className="w-6 h-6 mb-3 text-purple-700" />
+                <p className="font-semibold text-gray-800 dark:text-white">Stage 4: Treatment & Care</p>
+                <p className="text-xs text-gray-500 mt-1">For facilities configured for Stage 4</p>
               </div>
             </Link>
             <Link href="/ncsr/referred">
