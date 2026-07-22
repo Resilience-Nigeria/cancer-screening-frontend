@@ -10,6 +10,7 @@ import {
   Building2,
   ChartBar,
   LinkIcon,
+  Activity,
 } from "lucide-react";
 import { ComponentType } from "react";
 
@@ -95,6 +96,12 @@ const routes: IRoute[] = [
     name: "Stage 4: Treatment & Care",
     // Visible to all authenticated users — the page itself tells staff
     // if their facility isn't configured for Stage 4.
+  },
+  {
+    path: "/ncsr/treatments",
+    icon: Activity,
+    name: "Treatment Tracking",
+    // Visible to all authenticated users
   },
   {
     path: "/ncsr/follow-up-schedules",

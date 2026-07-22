@@ -103,6 +103,14 @@ export default function TreatmentPlanPage() {
     fetchPendingEvaluations();
   }, []);
 
+  useEffect(() => {
+    if (!router.isReady) return;
+    const qClientId = router.query.clientId;
+    if (typeof qClientId === "string" && qClientId) {
+      loadClientContext(qClientId, null);
+    }
+  }, [router.isReady]);
+
   async function fetchPendingEvaluations() {
     try {
       const { data } = await api.get("/treatment-plans/pending-evaluations");
