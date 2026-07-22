@@ -65,6 +65,7 @@ type DashboardStats = {
   liverScreenings: number;
   positiveFindings: number;
   totalReferred: number;
+  activeTreatmentPlans: number;
 };
 
 type Facility = {
@@ -253,6 +254,7 @@ function Dashboard() {
     liverScreenings: 0,
     positiveFindings: 0,
     totalReferred: 0,
+    activeTreatmentPlans: 0,
   });
   const [activities, setActivities] = useState<ScreeningActivity[]>([]);
   const [page, setPage] = useState(1);
@@ -327,6 +329,8 @@ function Dashboard() {
           statsData.positiveFindings ?? statsData.positive_findings ?? 0,
           totalReferred:
   statsData.totalReferred ?? statsData.total_referred ?? 0,
+        activeTreatmentPlans:
+          statsData.activeTreatmentPlans ?? statsData.active_treatment_plans ?? 0,
       });
     } catch (err: any) {
       console.error("Error fetching stats:", err);
@@ -748,7 +752,7 @@ function Dashboard() {
       {showStatsCards && (
         <>
       {/* Rest of the dashboard remains the same - Stats cards, Module cards, Charts, etc. */}
-      <div className="grid gap-4 sm:gap-5 mb-6 sm:mb-8 grid-cols-1 sm:grid-cols-2 xl:grid-cols-5">
+      <div className="grid gap-4 sm:gap-5 mb-6 sm:mb-8 grid-cols-1 sm:grid-cols-2 xl:grid-cols-6">
         <StatCard
           title="Total Registered Clients"
           value={stats.totalClients.toLocaleString()}
@@ -808,6 +812,18 @@ function Dashboard() {
   onClick={handleTotalReferredClick}
   clickable
 />
+
+        <StatCard
+          title="Active Treatment Plans"
+          value={stats.activeTreatmentPlans.toLocaleString()}
+          note="Click to view treatment tracking"
+          icon={
+            <HeartHandshake className="w-5 h-5 text-purple-700 dark:text-purple-100" />
+          }
+          iconWrapperClass="bg-purple-100 dark:bg-purple-700"
+          onClick={() => router.push("/ncsr/treatments")}
+          clickable
+        />
       </div>
 
       {/* Module Cards Grid */}

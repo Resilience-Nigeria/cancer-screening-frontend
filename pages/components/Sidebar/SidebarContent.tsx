@@ -39,19 +39,27 @@ export default function SidebarContent({ linkClicked }: SidebarContentProps) {
       if (!route) return false;
 
       // If route has no roles specified, it's visible to everyone
-      if (!route.roles || route.roles.length === 0) {
-        return true;
+      if (route.roles && route.roles.length > 0) {
+        if (!userRoleName) return false;
+        if (!route.roles.includes(userRoleName)) return false;
       }
 
-      // If user has no role, only show routes without role restrictions
-      if (!userRoleName) {
-        return false;
+      // Stage-gated routes (Stage 2/3/4) only show if the user's own
+      // facility is configured to support that stage. Users with no
+      // assigned facility (national-scoped roles) aren't tied to one
+      // facility's capabilities, so they always see these. Sessions
+      // cached before this field existed have no stagesSupported at
+      // all — fail open (show the item) rather than hiding it until
+      // their next login.
+      if (route.requiresStage && user?.facility && Array.isArray(user.facility.stagesSupported)) {
+        if (!user.facility.stagesSupported.includes(route.requiresStage)) {
+          return false;
+        }
       }
 
-      // Check if user's role is in the allowed roles
-      return route.roles.includes(userRoleName);
+      return true;
     });
-  }, [userRoleName]);
+  }, [userRoleName, user]);
 
   // Get role display name
   function getRoleDisplayName(): string {
