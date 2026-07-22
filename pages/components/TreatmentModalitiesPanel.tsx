@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import { Button, Input, Label, Select, Textarea } from "@roketid/windmill-react-ui";
 import {
   Loader2, Scissors, Pill, Radiation, Syringe,
-  ShieldPlus, Crosshair, HeartHandshake, Trash2, Plus,
+  ShieldPlus, Crosshair, HeartHandshake, Trash2, Plus, ChevronDown, ChevronUp,
 } from "lucide-react";
 import toast from "react-hot-toast";
 
@@ -66,6 +66,7 @@ export default function TreatmentModalitiesPanel({
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [activeModality, setActiveModality] = useState<string>("surgery");
+  const [expandedRecordId, setExpandedRecordId] = useState<number | null>(null);
 
   const [startDate, setStartDate] = useState(todayStr());
   const [completionStatus, setCompletionStatus] = useState("");
@@ -157,17 +158,61 @@ export default function TreatmentModalitiesPanel({
       {records.length > 0 && (
         <div className="mb-6 space-y-2">
           <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300">Recorded Treatments</h3>
-          {records.map((r) => (
-            <div key={r.treatmentRecordId} className="flex items-center justify-between p-4 rounded-xl bg-gray-50 dark:bg-gray-900/40 border border-gray-100 dark:border-gray-700">
-              <div>
-                <p className="text-sm font-semibold text-gray-800 dark:text-white capitalize">{r.modalityType.replace(/_/g, " ")}</p>
-                <p className="text-xs text-gray-500">{r.startDate} · {r.completionStatus || "status not set"}</p>
+          {records.map((r) => {
+            const isExpanded = expandedRecordId === r.treatmentRecordId;
+            const details = r.modalityDetails || {};
+            const detailEntries = Object.entries(details).filter(([, v]) => v !== "" && v !== null && (!Array.isArray(v) || v.length > 0));
+            return (
+              <div key={r.treatmentRecordId} className="rounded-xl bg-gray-50 dark:bg-gray-900/40 border border-gray-100 dark:border-gray-700 overflow-hidden">
+                <button
+                  onClick={() => setExpandedRecordId(isExpanded ? null : r.treatmentRecordId)}
+                  className="w-full flex items-center justify-between p-4 text-left"
+                >
+                  <div>
+                    <p className="text-sm font-semibold text-gray-800 dark:text-white capitalize">{r.modalityType.replace(/_/g, " ")}</p>
+                    <p className="text-xs text-gray-500">{r.startDate} · {r.completionStatus || "status not set"}</p>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <span className="p-2 rounded-lg text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700">
+                      {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                    </span>
+                    <span
+                      onClick={(e) => { e.stopPropagation(); deleteRecord(r.treatmentRecordId); }}
+                      className="p-2 rounded-lg text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </span>
+                  </div>
+                </button>
+                {isExpanded && (
+                  <div className="px-4 pb-4 pt-1 border-t border-gray-200 dark:border-gray-700 space-y-2">
+                    {r.completionDate && (
+                      <div className="flex justify-between text-xs"><span className="text-gray-500">Completion Date</span><span className="text-gray-800 dark:text-white font-medium">{r.completionDate}</span></div>
+                    )}
+                    {r.reasonForDiscontinuation && (
+                      <div className="flex justify-between text-xs"><span className="text-gray-500">Reason for Discontinuation</span><span className="text-gray-800 dark:text-white font-medium">{r.reasonForDiscontinuation}</span></div>
+                    )}
+                    {detailEntries.length === 0 ? (
+                      <p className="text-xs text-gray-400">No additional details recorded.</p>
+                    ) : (
+                      detailEntries.map(([key, value]) => (
+                        <div key={key} className="flex justify-between text-xs gap-4">
+                          <span className="text-gray-500 capitalize flex-shrink-0">{key.replace(/([A-Z])/g, " $1").trim()}</span>
+                          <span className="text-gray-800 dark:text-white font-medium text-right">{Array.isArray(value) ? value.join(", ") : String(value)}</span>
+                        </div>
+                      ))
+                    )}
+                    {r.notes && (
+                      <div className="pt-2 mt-2 border-t border-gray-200 dark:border-gray-700">
+                        <p className="text-xs text-gray-500 mb-1">Notes</p>
+                        <p className="text-xs text-gray-700 dark:text-gray-300">{r.notes}</p>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
-              <button onClick={() => deleteRecord(r.treatmentRecordId)} className="p-2 rounded-lg text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20">
-                <Trash2 className="w-4 h-4" />
-              </button>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
