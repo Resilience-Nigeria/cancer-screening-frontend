@@ -48,6 +48,8 @@ export default function RiskProfileModal({
     weightKg: "",
     heightCm: "",
     bmi: "",
+    physicalActivityLevel: "",
+    occupationCategory: "",
     comorbiditiesJson: [] as string[],
 
     // Smoking
@@ -85,6 +87,8 @@ export default function RiskProfileModal({
       weightKg: num(p.weightKg ?? p.weight_kg),
       heightCm: num(p.heightCm ?? p.height_cm),
       bmi: num(p.bmi),
+      physicalActivityLevel: p.physicalActivityLevel ?? p.physical_activity_level ?? "",
+      occupationCategory: p.occupationCategory ?? p.occupation_category ?? "",
       comorbiditiesJson: Array.isArray(p.comorbiditiesJson)
         ? p.comorbiditiesJson
         : Array.isArray(p.comorbidities_json)
@@ -185,6 +189,8 @@ ageAtMenopause: String(p.ageAtMenopause ?? p.age_at_menopause ?? ""),
         weightKg: form.weightKg ? parseFloat(form.weightKg) : null,
         heightCm: form.heightCm ? parseFloat(form.heightCm) : null,
         bmi: form.bmi ? parseFloat(form.bmi) : null,
+        physicalActivityLevel: form.physicalActivityLevel || null,
+        occupationCategory: form.occupationCategory || null,
 
         // smoking
         smokingStatus: form.smokingStatus || null,
@@ -280,6 +286,44 @@ ageAtMenopause: form.ageAtMenopause ? parseInt(form.ageAtMenopause) : null,
                   disabled
                   placeholder="Auto"
                 />
+              </Label>
+
+              <Label>
+                <span className="text-sm font-semibold">Physical Activity Level</span>
+                <Select
+                  className="mt-2 rounded-2xl h-12 shadow-sm"
+                  value={form.physicalActivityLevel}
+                  onChange={(e) => setField("physicalActivityLevel", e.target.value)}
+                >
+                  <option value="">Select</option>
+                  <option value="regular">Regular (5-7 times/week)</option>
+                  <option value="sometimes">Sometimes (1-4 times/week)</option>
+                  <option value="rarely">Rarely (less than 1 time/week)</option>
+                </Select>
+              </Label>
+
+              <Label>
+                <span className="text-sm font-semibold">Occupation</span>
+                <Select
+                  className="mt-2 rounded-2xl h-12 shadow-sm"
+                  value={form.occupationCategory}
+                  onChange={(e) => setField("occupationCategory", e.target.value)}
+                >
+                  <option value="">Select</option>
+                  <option value="1a">Senior political/judicial/legislative office holder, top military/paramilitary, MDA head</option>
+                  <option value="1b">Top entrepreneur/professional, top management staff, top politician, first-class monarch, media magnate</option>
+                  <option value="2a">Top civil/public servant (directorate grade), senior military/paramilitary officer, senior academician</option>
+                  <option value="2b">Other professional/manager, large-scale trader/businessman, established contractor, second-class monarch</option>
+                  <option value="3a">Senior civil/public servant (non-directorate), junior academician, junior military/paramilitary officer, senior schoolteacher</option>
+                  <option value="3b">Technologist, skilled professional, self-employed artisan, medium-scale trader/contractor, senior clergy</option>
+                  <option value="4a">Intermediate civil/public servant, executive officer, junior schoolteacher, local government legislator</option>
+                  <option value="4b">Technician, employed artisan, petty contractor, other clergy/media practitioner</option>
+                  <option value="5a">Clerical officer, assistant, attendant</option>
+                  <option value="5b">Petty trader, subsistence farmer, employed clergyman</option>
+                  <option value="6a">Unemployed</option>
+                  <option value="6b">Full-time housewife, student, or apprentice</option>
+                </Select>
+                <HelperText>Used to classify socio-economic status (upper/middle/lower class)</HelperText>
               </Label>
 
 

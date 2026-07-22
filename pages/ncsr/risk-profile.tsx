@@ -56,7 +56,17 @@ type RiskProfile = {
   weightKg?: number | string;
   heightCm?: number | string;
   bmi?: number | string;
-  
+  physicalActivityLevel?: string;
+  occupationCategory?: string;
+
+  // NICRAT Cancer Risk Stratification Model — computed by the backend
+  lifestyleRiskScore?: number;
+  hivRiskScore?: number;
+  totalCancerRiskScore?: number;
+  cancerRiskCategory?: string;
+  socioeconomicScore?: number;
+  socioeconomicClass?: string;
+
   // Infectious Disease Status - HIV now OPTIONAL
   hivStatus?: string;
   hbvStatus?: string;
@@ -103,6 +113,8 @@ export default function RiskProfilePage() {
     // Physical
     weightKg: "",
     heightCm: "",
+    physicalActivityLevel: "",
+    occupationCategory: "",
     
     // Infectious Disease - HIV OPTIONAL
     hivStatus: "",
@@ -182,7 +194,17 @@ export default function RiskProfilePage() {
           weightKg: rawRisk.weightKg ?? rawRisk.weight_kg ?? "",
           heightCm: rawRisk.heightCm ?? rawRisk.height_cm ?? "",
           bmi: rawRisk.bmi ?? "",
-          
+          physicalActivityLevel: rawRisk.physicalActivityLevel ?? rawRisk.physical_activity_level ?? "",
+          occupationCategory: rawRisk.occupationCategory ?? rawRisk.occupation_category ?? "",
+
+          // NICRAT model — computed by the backend
+          lifestyleRiskScore: rawRisk.lifestyleRiskScore ?? rawRisk.lifestyle_risk_score,
+          hivRiskScore: rawRisk.hivRiskScore ?? rawRisk.hiv_risk_score,
+          totalCancerRiskScore: rawRisk.totalCancerRiskScore ?? rawRisk.total_cancer_risk_score,
+          cancerRiskCategory: rawRisk.cancerRiskCategory ?? rawRisk.cancer_risk_category ?? "",
+          socioeconomicScore: rawRisk.socioeconomicScore ?? rawRisk.socioeconomic_score,
+          socioeconomicClass: rawRisk.socioeconomicClass ?? rawRisk.socioeconomic_class ?? "",
+
           // Infectious Disease
           hivStatus: rawRisk.hivStatus ?? rawRisk.hiv_status ?? "",
           hbvStatus: rawRisk.hbvStatus ?? rawRisk.hbv_status ?? "",
@@ -217,6 +239,8 @@ export default function RiskProfilePage() {
           
           weightKg: (profile.weightKg ?? "").toString(),
           heightCm: (profile.heightCm ?? "").toString(),
+          physicalActivityLevel: profile.physicalActivityLevel ?? "",
+          occupationCategory: profile.occupationCategory ?? "",
           
           hivStatus: profile.hivStatus ?? "",
           hbvStatus: profile.hbvStatus ?? "",
@@ -294,6 +318,8 @@ export default function RiskProfilePage() {
         // Physical
         weightKg: form.weightKg ? parseFloat(form.weightKg.toString()) : null,
         heightCm: form.heightCm ? parseFloat(form.heightCm.toString()) : null,
+        physicalActivityLevel: form.physicalActivityLevel || null,
+        occupationCategory: form.occupationCategory || null,
         
         // Infectious Disease - HIV is now OPTIONAL
         hivStatus: form.hivStatus || null,
@@ -388,6 +414,48 @@ export default function RiskProfilePage() {
 
       {!isEditMode && riskProfile ? (
         <div className="space-y-6">
+          {/* NICRAT Cancer Risk Score */}
+          {riskProfile.cancerRiskCategory && (
+            <div className={`rounded-3xl shadow-lg border overflow-hidden ${
+              riskProfile.cancerRiskCategory === "high"
+                ? "bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800"
+                : riskProfile.cancerRiskCategory === "intermediate"
+                ? "bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800"
+                : "bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800"
+            }`}>
+              <div className="px-5 py-6 sm:px-6 flex flex-wrap items-center justify-between gap-4">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                    NICRAT Cancer Risk Score
+                  </p>
+                  <p className={`text-2xl font-bold mt-1 capitalize ${
+                    riskProfile.cancerRiskCategory === "high"
+                      ? "text-red-700 dark:text-red-400"
+                      : riskProfile.cancerRiskCategory === "intermediate"
+                      ? "text-amber-700 dark:text-amber-400"
+                      : "text-green-700 dark:text-green-400"
+                  }`}>
+                    {riskProfile.cancerRiskCategory} Risk
+                  </p>
+                  <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                    Total score: {riskProfile.totalCancerRiskScore ?? "—"} / 11
+                    {" "}(Lifestyle: {riskProfile.lifestyleRiskScore ?? "—"}, HIV: {riskProfile.hivRiskScore ?? "—"})
+                  </p>
+                </div>
+                {riskProfile.socioeconomicClass && (
+                  <div className="text-right">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                      Socio-Economic Class
+                    </p>
+                    <p className="text-lg font-bold mt-1 capitalize text-gray-800 dark:text-white">
+                      {riskProfile.socioeconomicClass}
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
           {/* View Mode */}
           <div className="rounded-3xl bg-white dark:bg-gray-800 shadow-lg border border-gray-100 dark:border-gray-700 overflow-hidden">
             <div className="border-b border-gray-100 dark:border-gray-700 px-5 py-4 sm:px-6 bg-gray-50/70 dark:bg-gray-800/60 flex justify-between items-center">
@@ -414,6 +482,16 @@ export default function RiskProfilePage() {
                 <div>
                   <p className="text-sm text-gray-500 dark:text-gray-400">Smoking Status</p>
                   <p className="mt-1 font-semibold capitalize">{riskProfile.smokingStatus || "—"}</p>
+                </div>
+
+                <div>
+                  <p className="text-sm text-gray-500 dark:text-gray-400">Physical Activity Level</p>
+                  <p className="mt-1 font-semibold capitalize">{riskProfile.physicalActivityLevel || "—"}</p>
+                </div>
+
+                <div>
+                  <p className="text-sm text-gray-500 dark:text-gray-400">Occupation Category</p>
+                  <p className="mt-1 font-semibold">{riskProfile.occupationCategory?.toUpperCase() || "—"}</p>
                 </div>
 
                 {riskProfile.smokingStatus === "active_smoker" && (
@@ -739,6 +817,55 @@ export default function RiskProfilePage() {
                   onChange={(e) => setField("heightCm", e.target.value)}
                   placeholder="Enter height in cm"
                 />
+              </Label>
+            </div>
+          </div>
+
+          {/* NICRAT Risk Model — Physical Activity & Occupation */}
+          <div className="rounded-3xl bg-white dark:bg-gray-800 shadow-lg border border-gray-100 dark:border-gray-700 overflow-hidden">
+            <div className="border-b border-gray-100 dark:border-gray-700 px-5 py-4 sm:px-6 bg-gray-50/70 dark:bg-gray-800/60">
+              <SectionTitle>Lifestyle & Occupation</SectionTitle>
+              <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
+                Used to compute the NICRAT cancer risk score and socio-economic class
+              </p>
+            </div>
+
+            <div className="px-5 py-6 sm:px-6 grid gap-5 md:grid-cols-2">
+              <Label>
+                <span className="text-sm font-semibold">Physical Activity Level</span>
+                <Select
+                  className="mt-2 rounded-2xl h-12 shadow-sm"
+                  value={form.physicalActivityLevel}
+                  onChange={(e) => setField("physicalActivityLevel", e.target.value)}
+                >
+                  <option value="">Select</option>
+                  <option value="regular">Regular (5-7 times/week)</option>
+                  <option value="sometimes">Sometimes (1-4 times/week)</option>
+                  <option value="rarely">Rarely (less than 1 time/week)</option>
+                </Select>
+              </Label>
+
+              <Label>
+                <span className="text-sm font-semibold">Occupation</span>
+                <Select
+                  className="mt-2 rounded-2xl h-12 shadow-sm"
+                  value={form.occupationCategory}
+                  onChange={(e) => setField("occupationCategory", e.target.value)}
+                >
+                  <option value="">Select</option>
+                  <option value="1a">Senior political/judicial/legislative office holder, top military/paramilitary, MDA head</option>
+                  <option value="1b">Top entrepreneur/professional, top management staff, top politician, first-class monarch, media magnate</option>
+                  <option value="2a">Top civil/public servant (directorate grade), senior military/paramilitary officer, senior academician</option>
+                  <option value="2b">Other professional/manager, large-scale trader/businessman, established contractor, second-class monarch</option>
+                  <option value="3a">Senior civil/public servant (non-directorate), junior academician, junior military/paramilitary officer, senior schoolteacher</option>
+                  <option value="3b">Technologist, skilled professional, self-employed artisan, medium-scale trader/contractor, senior clergy</option>
+                  <option value="4a">Intermediate civil/public servant, executive officer, junior schoolteacher, local government legislator</option>
+                  <option value="4b">Technician, employed artisan, petty contractor, other clergy/media practitioner</option>
+                  <option value="5a">Clerical officer, assistant, attendant</option>
+                  <option value="5b">Petty trader, subsistence farmer, employed clergyman</option>
+                  <option value="6a">Unemployed</option>
+                  <option value="6b">Full-time housewife, student, or apprentice</option>
+                </Select>
               </Label>
             </div>
           </div>
