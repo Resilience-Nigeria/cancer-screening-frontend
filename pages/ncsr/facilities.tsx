@@ -23,6 +23,7 @@ import {
   CheckCircle2,
 } from "lucide-react";
 import api from "../../lib/api";
+import { lgasByState, getStateCode } from "../../lib/nigerianstates";
 import Layout from "../containers/Layout";
 
 interface Facility {
@@ -76,6 +77,42 @@ interface FormData {
   isTreatmentCenter: boolean;
 }
 
+const CODE_STOPWORDS = new Set(["of", "the", "and", "for", "a", "an"]);
+
+/**
+ * Generates a facility code from its name — initials of each
+ * significant word, e.g. "Lagos University Teaching Hospital" -> "LUTH".
+ * Falls back to the first 4 letters if the name is a single word.
+ * Appends a numeric suffix if the generated code collides with an
+ * existing facility's code.
+ */
+function generateFacilityCode(name: string, existingCodes: string[]): string {
+  const words = name
+    .trim()
+    .split(/\s+/)
+    .filter((w) => w.length > 0 && !CODE_STOPWORDS.has(w.toLowerCase()));
+
+  let base: string;
+  if (words.length > 1) {
+    base = words.map((w) => w[0]).join("").toUpperCase();
+  } else if (words.length === 1) {
+    base = words[0].substring(0, 4).toUpperCase();
+  } else {
+    return "";
+  }
+
+  const existing = new Set(existingCodes.map((c) => c.toUpperCase()));
+  if (!existing.has(base)) {
+    return base;
+  }
+
+  let suffix = 1;
+  while (existing.has(`${base}${suffix.toString().padStart(2, "0")}`)) {
+    suffix++;
+  }
+  return `${base}${suffix.toString().padStart(2, "0")}`;
+}
+
 export default function FacilitiesManagementPage() {
   const [facilities, setFacilities] = useState<Facility[]>([]);
   const [states, setStates] = useState<string[]>([]);
@@ -116,6 +153,7 @@ export default function FacilitiesManagementPage() {
     isScreeningCenter: true,
     isTreatmentCenter: false,
   });
+  const [codeManuallyEdited, setCodeManuallyEdited] = useState(false);
 
   // Fetch facilities and states on mount
   useEffect(() => {
@@ -181,6 +219,7 @@ export default function FacilitiesManagementPage() {
     setSelectedFacility(facility || null);
     
     if (mode === "add") {
+      setCodeManuallyEdited(false);
       setFormData({
         facilityName: "",
         facilityCode: "",
@@ -199,6 +238,7 @@ export default function FacilitiesManagementPage() {
         isTreatmentCenter: false,
       });
     } else if (facility) {
+      setCodeManuallyEdited(true);
       setFormData({
         facilityName: facility.facilityName,
         facilityCode: facility.facilityCode,
@@ -834,7 +874,16 @@ export default function FacilitiesManagementPage() {
                       <input
                         type="text"
                         value={formData.facilityName}
-                        onChange={(e) => setFormData({ ...formData, facilityName: e.target.value })}
+                        onChange={(e) => {
+                          const name = e.target.value;
+                          setFormData((prev) => ({
+                            ...prev,
+                            facilityName: name,
+                            facilityCode: codeManuallyEdited
+                              ? prev.facilityCode
+                              : generateFacilityCode(name, facilities.map((f) => f.facilityCode)),
+                          }));
+                        }}
                         className="w-full px-4 py-2.5 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-green-500 focus:border-transparent"
                         placeholder="Enter facility name"
                         required
@@ -848,11 +897,15 @@ export default function FacilitiesManagementPage() {
                       <input
                         type="text"
                         value={formData.facilityCode}
-                        onChange={(e) => setFormData({ ...formData, facilityCode: e.target.value })}
+                        onChange={(e) => {
+                          setCodeManuallyEdited(true);
+                          setFormData({ ...formData, facilityCode: e.target.value });
+                        }}
                         className="w-full px-4 py-2.5 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                        placeholder="e.g., LUTH001"
+                        placeholder="Auto-generated from facility name"
                         required
                       />
+                      <p className="text-xs text-gray-400 mt-1">Auto-generated from the facility name — edit if you'd prefer a different code.</p>
                     </div>
 
                     <div>
@@ -861,7 +914,7 @@ export default function FacilitiesManagementPage() {
                       </label>
                       <select
                         value={formData.facilityState}
-                        onChange={(e) => setFormData({ ...formData, facilityState: e.target.value })}
+                        onChange={(e) => setFormData({ ...formData, facilityState: e.target.value, facilityLga: "" })}
                         className="w-full px-4 py-2.5 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-green-500 focus:border-transparent"
                         required
                       >
@@ -878,14 +931,21 @@ export default function FacilitiesManagementPage() {
                       <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
                         LGA *
                       </label>
-                      <input
-                        type="text"
+                      <select
                         value={formData.facilityLga}
                         onChange={(e) => setFormData({ ...formData, facilityLga: e.target.value })}
-                        className="w-full px-4 py-2.5 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                        placeholder="Enter LGA"
+                        disabled={!formData.facilityState}
+                        className="w-full px-4 py-2.5 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-green-500 focus:border-transparent disabled:opacity-50"
                         required
-                      />
+                      >
+                        <option value="">{formData.facilityState ? "Select LGA" : "Select a state first"}</option>
+                        {formData.facilityState &&
+                          lgasByState[getStateCode(formData.facilityState)]?.map((lga) => (
+                            <option key={lga} value={lga}>
+                              {lga}
+                            </option>
+                          ))}
+                      </select>
                     </div>
 
                     <div className="md:col-span-2">
