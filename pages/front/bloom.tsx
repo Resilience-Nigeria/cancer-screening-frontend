@@ -241,15 +241,15 @@ export default function BloomPage() {
     <div className="min-h-screen bg-gradient-to-br from-green-50 to-white flex flex-col items-center justify-center p-4">
       <div className="max-w-lg w-full flex-1 flex flex-col justify-center">
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-green-100 mb-4">
+          <div >
             <img
-              src="/nicrat-logo.png"
-              alt="NICRAT"
-              className="w-10 h-10 object-contain"
+              src="/assets/img/NCSR.svg"
+              alt="NCSR Logo"
+              // className="w-10 h-10 object-contain"
               onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
             />
           </div>
-          <h1 className="text-2xl font-bold text-gray-900">NCSR Self-Assessment</h1>
+          <h1 className="text-2xl font-bold text-gray-900">Cancer Self-Assessment Portal</h1>
           <p className="mt-2 text-sm text-gray-500">
             Answer a few questions about your health to find out your risk level and get
             connected to a nearby screening centre. Takes about 5 minutes.
