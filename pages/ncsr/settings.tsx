@@ -5,6 +5,7 @@ import toast from "react-hot-toast";
 
 import Layout from "../containers/Layout";
 import PageTitle from "../components/Typography/PageTitle";
+import NotificationProvidersPanel from "../components/NotificationProvidersPanel";
 import api from "../../lib/api";
 
 type SettingRow = {
@@ -175,6 +176,12 @@ export default function SettingsPage() {
                   </div>
                 ))}
               </div>
+
+              {groupKey === "notifications" && (
+                <div className="mt-6 pt-6 border-t border-gray-100 dark:border-gray-700">
+                  <NotificationProvidersPanel />
+                </div>
+              )}
             </div>
           );
         })}
