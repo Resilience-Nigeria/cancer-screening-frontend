@@ -207,6 +207,13 @@ export default function AnalyticsPage() {
   // Stage 2 outcome distribution
   const [stage2Dist, setStage2Dist] = useState<Stage2Distribution | null>(null);
 
+  // Stage 4 treatment analytics
+  const [treatmentAnalytics, setTreatmentAnalytics] = useState<{
+    activePlans: number; closedPlans: number;
+    outcomeDistribution: Record<string, number>;
+    modalityUsage: Record<string, number>;
+  } | null>(null);
+
   // Facility performance, referral funnel, timing metrics
   const [facilityPerformance, setFacilityPerformance] = useState<FacilityPerformanceRow[]>([]);
   const [funnelStages, setFunnelStages] = useState<FunnelStage[]>([]);
@@ -239,6 +246,7 @@ export default function AnalyticsPage() {
       fetchGenderAgeComparison(),
       fetchOutcomeStatistics(),
       fetchStage2Outcomes(),
+      fetchTreatmentAnalytics(),
       fetchFacilityPerformance(),
       fetchReferralFunnel(),
       fetchTimingMetrics(),
@@ -306,6 +314,15 @@ export default function AnalyticsPage() {
       if (response.status) setStage2Dist(response.data.distribution);
     } catch (err) {
       console.error("Error fetching Stage 2 outcomes:", err);
+    }
+  }
+
+  async function fetchTreatmentAnalytics() {
+    try {
+      const { data: response } = await api.get("/analytics/treatment", { params: filterParams });
+      if (response.status) setTreatmentAnalytics(response.data);
+    } catch (err) {
+      console.error("Error fetching treatment analytics:", err);
     }
   }
 
@@ -628,6 +645,52 @@ export default function AnalyticsPage() {
           ) : (
             <div className="h-40 flex items-center justify-center text-center">
               <p className="text-sm text-gray-500 dark:text-gray-400">No Stage 2 outcomes classified yet.</p>
+            </div>
+          )}
+        </SectionCard>
+      </div>
+
+      {/* Stage 4 treatment analytics */}
+      <div className="mb-8">
+        <SectionCard title="Stage 4 (Treatment & Care) Analytics">
+          {treatmentAnalytics ? (
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <div>
+                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">
+                  Treatment Outcomes ({treatmentAnalytics.activePlans} active · {treatmentAnalytics.closedPlans} closed)
+                </p>
+                {Object.keys(treatmentAnalytics.outcomeDistribution || {}).length === 0 ? (
+                  <p className="text-sm text-gray-400">No treatment outcomes recorded yet.</p>
+                ) : (
+                  <div className="space-y-2">
+                    {Object.entries(treatmentAnalytics.outcomeDistribution).map(([key, count]) => (
+                      <div key={key} className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-900/40 rounded-xl">
+                        <span className="text-sm font-medium text-gray-700 dark:text-gray-300 capitalize">{key.replace(/_/g, " ")}</span>
+                        <span className="text-sm font-bold text-gray-800 dark:text-white">{count}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <div>
+                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Modality Usage</p>
+                {Object.keys(treatmentAnalytics.modalityUsage || {}).length === 0 ? (
+                  <p className="text-sm text-gray-400">No treatment modalities recorded yet.</p>
+                ) : (
+                  <div className="space-y-2">
+                    {Object.entries(treatmentAnalytics.modalityUsage).map(([key, count]) => (
+                      <div key={key} className="flex items-center justify-between p-3 bg-purple-50 dark:bg-purple-900/20 rounded-xl">
+                        <span className="text-sm font-medium text-purple-800 dark:text-purple-300 capitalize">{key.replace(/_/g, " ")}</span>
+                        <span className="text-sm font-bold text-purple-800 dark:text-purple-300">{count}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : (
+            <div className="h-40 flex items-center justify-center text-center">
+              <p className="text-sm text-gray-500 dark:text-gray-400">No treatment plan data available yet.</p>
             </div>
           )}
         </SectionCard>
