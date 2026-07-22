@@ -120,36 +120,32 @@ const routes: IRoute[] = [
     // Visible to all authenticated users
   },
   
-  // Admin-only routes
+  // Admin-only routes — visibility now comes from menu_visibility_rules
+  // (Settings > Menu Visibility), not hardcoded here.
   {
     path: "/ncsr/analytics",
     icon: ChartBar,
     name: "Analytics",
-    roles: ["NICRAT_SUPER_ADMIN", "NICRAT_ADMIN", "PARTNER"],
   },
   {
     path: "/ncsr/users",
     icon: UserCog,
     name: "User Management",
-    roles: ["NICRAT_SUPER_ADMIN", "NAVIGATOR", "HOSPITAL_ADMIN"], // Can create users
   },
   {
     path: "/ncsr/facilities",
     icon: Building2,
     name: "Facilities",
-    roles: ["NICRAT_SUPER_ADMIN"], // Only super admin manages facilities
   },
   {
     path: "/ncsr/roles",
     icon: Settings,
     name: "Role Data Scope",
-    roles: ["NICRAT_SUPER_ADMIN"], // Only super admin configures role scope
   },
   {
     path: "/ncsr/settings",
     icon: Settings,
     name: "Settings",
-    roles: ["NICRAT_SUPER_ADMIN"], // Super Admin only — matches SettingsController
   },
 ];
 
