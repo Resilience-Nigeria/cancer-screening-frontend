@@ -40,7 +40,7 @@ export default function SidebarContent({ linkClicked }: SidebarContentProps) {
       .then(({ data }) => {
         const rules: Record<string, string[] | null> = {};
         (data.rules || []).forEach((r: any) => {
-          rules[r.menuKey] = r.allowedRoles && r.allowedRoles.length > 0 ? r.allowedRoles : null;
+          rules[r.menuKey] = r.allowedRoles === null ? null : r.allowedRoles;
         });
         setMenuRules(rules);
       })
@@ -58,13 +58,20 @@ export default function SidebarContent({ linkClicked }: SidebarContentProps) {
     return routes.filter((route): route is IRoute => {
       if (!route) return false;
 
-      // Menu visibility is admin-configurable — a rule with allowed
-      // roles restricts the item; no rule (or an empty one) means
-      // everyone can see it. Fail open until rules have loaded, so the
-      // nav doesn't flash empty while the request is in flight.
-      const allowedRoles = route.path ? menuRules[route.path] : null;
-      if (menuRulesLoaded && allowedRoles && allowedRoles.length > 0) {
-        if (!userRoleName || !allowedRoles.includes(userRoleName)) return false;
+      // Menu visibility is admin-configurable — null means everyone can
+      // see it; an empty array means it's restricted to nobody; a
+      // populated array restricts it to those roles. Fail open until
+      // rules have loaded, so the nav doesn't flash empty while the
+      // request is in flight.
+      // Safety net: Super Admin can always reach Settings, even if a
+      // menu rule was misconfigured to exclude everyone — otherwise a
+      // mistake here could lock every admin out of the page that fixes it.
+      const isSettingsEscapeHatch = route.path === "/ncsr/settings" && userRoleName === "NICRAT_SUPER_ADMIN";
+      if (!isSettingsEscapeHatch) {
+        const allowedRoles = route.path ? menuRules[route.path] : undefined;
+        if (menuRulesLoaded && allowedRoles !== undefined && allowedRoles !== null) {
+          if (!userRoleName || !allowedRoles.includes(userRoleName)) return false;
+        }
       }
 
       // Stage-gated routes (Stage 2/3/4) only show if the user's own

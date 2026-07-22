@@ -53,13 +53,14 @@ export default function MenuVisibilityPanel() {
 
   function toggle(menuKey: string, role: string) {
     setMatrix((prev) => {
-      const current = prev[menuKey] || [];
-      // Everyone-visible (null) + toggling one role on means "restrict
-      // to just this role" — not add-to-everyone, which wouldn't do
-      // anything. Toggling from a specific set works as normal.
-      const base = current === null ? [] : current;
+      const current = prev[menuKey];
+      // Switching from "Everyone" (null) by checking a specific role
+      // means "restrict to just this role" — start from an empty set,
+      // not from every role. Toggling within an existing restricted
+      // set (including down to empty, meaning nobody) works normally.
+      const base = current === null || current === undefined ? [] : current;
       const next = base.includes(role) ? base.filter((r) => r !== role) : [...base, role];
-      return { ...prev, [menuKey]: next.length === 0 ? null : next };
+      return { ...prev, [menuKey]: next };
     });
   }
 
@@ -111,10 +112,15 @@ export default function MenuVisibilityPanel() {
           <tbody>
             {rules.map((rule) => {
               const allowed = matrix[rule.menuKey];
-              const isEveryone = !allowed || allowed.length === 0;
+              const isEveryone = allowed === null || allowed === undefined;
               return (
                 <tr key={rule.menuKey} className="border-b border-gray-50 dark:border-gray-800">
-                  <td className="py-2 pr-4 font-medium text-gray-700 dark:text-gray-300 whitespace-nowrap">{rule.menuLabel}</td>
+                  <td className="py-2 pr-4 font-medium text-gray-700 dark:text-gray-300 whitespace-nowrap">
+                    {rule.menuLabel}
+                    {!isEveryone && (allowed || []).length === 0 && (
+                      <span className="block text-xs font-normal text-amber-600">No role assigned — hidden from everyone</span>
+                    )}
+                  </td>
                   {roles.map((role) => (
                     <td key={role} className="py-2 px-2 text-center">
                       <input
