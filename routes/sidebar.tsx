@@ -20,7 +20,7 @@ interface IRoute {
   routes?: IRoute[];
   checkActive?: (pathname: string, route: IRoute) => boolean;
   exact?: boolean;
-  roles?: Array<'SUPER_ADMIN' | 'NICRAT_STAFF' | 'HOSPITAL_ADMIN' | 'DATA_CLERK' | 'PARTNER'>;
+  roles?: Array<'NICRAT_SUPER_ADMIN' | 'NICRAT_ADMIN' | 'HOSPITAL_ADMIN' | 'DATA_CLERK' | 'PARTNER'>;
 }
 
 export function routeIsActive(pathname: string, route: IRoute): boolean {
@@ -82,25 +82,32 @@ const routes: IRoute[] = [
     path: "/ncsr/analytics",
     icon: ChartBar,
     name: "Analytics",
-    roles: ["SUPER_ADMIN", "PARTNER"], // Only super admin manages facilities
+    roles: ["NICRAT_SUPER_ADMIN", "PARTNER"], // Only super admin manages facilities
   },
   {
     path: "/ncsr/users",
     icon: UserCog,
     name: "User Management",
-    roles: ["SUPER_ADMIN", "HOSPITAL_ADMIN"], // Can create users
+    roles: ["NICRAT_SUPER_ADMIN", "HOSPITAL_ADMIN"], // Can create users
   },
   {
     path: "/ncsr/facilities",
     icon: Building2,
     name: "Facilities",
-    roles: ["SUPER_ADMIN"], // Only super admin manages facilities
+    roles: ["NICRAT_SUPER_ADMIN"], // Only super admin manages facilities
   },
   {
     path: "/ncsr/settings",
     icon: Settings,
     name: "Settings",
-    roles: ["SUPER_ADMIN", "HOSPITAL_ADMIN"], // Admins can change settings
+    roles: ["NICRAT_SUPER_ADMIN", "HOSPITAL_ADMIN"], // Admins can change settings
+  },
+
+  {
+    path: "/ncsr/roles",
+    icon: UserCog,
+    name: "Roles & Permissions",
+    roles: ["NICRAT_SUPER_ADMIN"], // Admins can change settings
   },
 ];
 
