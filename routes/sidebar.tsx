@@ -22,6 +22,11 @@ interface IRoute {
   checkActive?: (pathname: string, route: IRoute) => boolean;
   exact?: boolean;
   roles?: Array<'NICRAT_SUPER_ADMIN' | 'NICRAT_ADMIN' | 'NAVIGATOR' | 'HOSPITAL_ADMIN' | 'NURSE' | 'DOCTOR' | 'PARTNER'>;
+  // Only shown if the user's own facility supports this stage (checked
+  // against facility.stagesSupported). Users with no assigned facility
+  // (national-scoped roles) always see these, since they aren't tied
+  // to one facility's configured capabilities.
+  requiresStage?: 'stage2' | 'stage3' | 'stage4';
 }
 
 export function routeIsActive(pathname: string, route: IRoute): boolean {
@@ -78,24 +83,29 @@ const routes: IRoute[] = [
     // Visible to all authenticated users
   },
   {
+    path: "/ncsr/self-assessments",
+    icon: MicroscopeIcon,
+    name: "Stage 1: Self-Assessment Records",
+    // Visible to all authenticated users — Bloom self-assessment is a
+    // public, universal tool, not gated by facility stage capability.
+  },
+  {
     path: "/ncsr/clinical-screening",
     icon: MicroscopeIcon,
     name: "Stage 2: Clinical Screening",
-    // Visible to all authenticated users
+    requiresStage: "stage2",
   },
   {
     path: "/ncsr/diagnostic-evaluation",
     icon: MicroscopeIcon,
     name: "Stage 3: Diagnostic Evaluation",
-    // Visible to all authenticated users — the page itself tells staff
-    // if their facility isn't configured for Stage 3.
+    requiresStage: "stage3",
   },
   {
     path: "/ncsr/treatment-plan",
     icon: HospitalIcon,
     name: "Stage 4: Treatment & Care",
-    // Visible to all authenticated users — the page itself tells staff
-    // if their facility isn't configured for Stage 4.
+    requiresStage: "stage4",
   },
   {
     path: "/ncsr/treatments",
