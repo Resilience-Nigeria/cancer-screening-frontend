@@ -12,6 +12,7 @@ import {
   LinkIcon,
   Activity,
   MapPinned,
+  HeartHandshake,
 } from "lucide-react";
 import { ComponentType } from "react";
 
@@ -127,6 +128,11 @@ const routes: IRoute[] = [
     path: "/ncsr/analytics",
     icon: ChartBar,
     name: "Analytics",
+  },
+  {
+    path: "/ncsr/indigency-support",
+    icon: HeartHandshake,
+    name: "Indigency Support",
   },
   {
     path: "/ncsr/users",
