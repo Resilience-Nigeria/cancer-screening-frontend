@@ -423,35 +423,61 @@ export default function RiskProfilePage() {
                 ? "bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800"
                 : "bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800"
             }`}>
-              <div className="px-5 py-6 sm:px-6 flex flex-wrap items-center justify-between gap-4">
+              <div className="px-5 py-6 sm:px-6">
+                <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                  NICRAT Cancer Risk Score
+                </p>
+                <p className={`text-2xl font-bold mt-1 capitalize ${
+                  riskProfile.cancerRiskCategory === "high"
+                    ? "text-red-700 dark:text-red-400"
+                    : riskProfile.cancerRiskCategory === "intermediate"
+                    ? "text-amber-700 dark:text-amber-400"
+                    : "text-green-700 dark:text-green-400"
+                }`}>
+                  {riskProfile.cancerRiskCategory} Risk
+                </p>
+                <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                  Total score: {riskProfile.totalCancerRiskScore ?? "—"} / 11
+                  {" "}(Lifestyle: {riskProfile.lifestyleRiskScore ?? "—"}, HIV: {riskProfile.hivRiskScore ?? "—"})
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* Socio-Economic Status */}
+          {riskProfile.socioeconomicClass && (
+            <div className="rounded-3xl bg-white dark:bg-gray-800 shadow-lg border border-gray-100 dark:border-gray-700 overflow-hidden">
+              <div className="border-b border-gray-100 dark:border-gray-700 px-5 py-4 sm:px-6 bg-gray-50/70 dark:bg-gray-800/60">
+                <SectionTitle>Socio-Economic Status</SectionTitle>
+                <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
+                  NICRAT revised scoring scheme, derived from occupation
+                </p>
+              </div>
+              <div className="px-5 py-6 sm:px-6 flex flex-wrap items-center gap-8">
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
-                    NICRAT Cancer Risk Score
+                    Occupation Category
                   </p>
-                  <p className={`text-2xl font-bold mt-1 capitalize ${
-                    riskProfile.cancerRiskCategory === "high"
-                      ? "text-red-700 dark:text-red-400"
-                      : riskProfile.cancerRiskCategory === "intermediate"
-                      ? "text-amber-700 dark:text-amber-400"
-                      : "text-green-700 dark:text-green-400"
-                  }`}>
-                    {riskProfile.cancerRiskCategory} Risk
-                  </p>
-                  <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                    Total score: {riskProfile.totalCancerRiskScore ?? "—"} / 11
-                    {" "}(Lifestyle: {riskProfile.lifestyleRiskScore ?? "—"}, HIV: {riskProfile.hivRiskScore ?? "—"})
+                  <p className="text-lg font-bold mt-1 text-gray-800 dark:text-white">
+                    {riskProfile.occupationCategory?.toUpperCase() || "—"}
                   </p>
                 </div>
-                {riskProfile.socioeconomicClass && (
-                  <div className="text-right">
-                    <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
-                      Socio-Economic Class
-                    </p>
-                    <p className="text-lg font-bold mt-1 capitalize text-gray-800 dark:text-white">
-                      {riskProfile.socioeconomicClass}
-                    </p>
-                  </div>
-                )}
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                    Score
+                  </p>
+                  <p className="text-lg font-bold mt-1 text-gray-800 dark:text-white">
+                    {riskProfile.socioeconomicScore ?? "—"} / 6
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                    Class
+                  </p>
+                  <p className="text-lg font-bold mt-1 capitalize text-green-700 dark:text-green-400">
+                    {riskProfile.socioeconomicClass}
+                  </p>
+                </div>
               </div>
             </div>
           )}
@@ -821,16 +847,16 @@ export default function RiskProfilePage() {
             </div>
           </div>
 
-          {/* NICRAT Risk Model — Physical Activity & Occupation */}
+          {/* NICRAT Risk Model — Physical Activity */}
           <div className="rounded-3xl bg-white dark:bg-gray-800 shadow-lg border border-gray-100 dark:border-gray-700 overflow-hidden">
             <div className="border-b border-gray-100 dark:border-gray-700 px-5 py-4 sm:px-6 bg-gray-50/70 dark:bg-gray-800/60">
-              <SectionTitle>Lifestyle & Occupation</SectionTitle>
+              <SectionTitle>Physical Activity</SectionTitle>
               <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
-                Used to compute the NICRAT cancer risk score and socio-economic class
+                Used to compute the NICRAT cancer risk score
               </p>
             </div>
 
-            <div className="px-5 py-6 sm:px-6 grid gap-5 md:grid-cols-2">
+            <div className="px-5 py-6 sm:px-6">
               <Label>
                 <span className="text-sm font-semibold">Physical Activity Level</span>
                 <Select
@@ -844,7 +870,19 @@ export default function RiskProfilePage() {
                   <option value="rarely">Rarely (less than 1 time/week)</option>
                 </Select>
               </Label>
+            </div>
+          </div>
 
+          {/* Socio-Economic Status */}
+          <div className="rounded-3xl bg-white dark:bg-gray-800 shadow-lg border border-gray-100 dark:border-gray-700 overflow-hidden">
+            <div className="border-b border-gray-100 dark:border-gray-700 px-5 py-4 sm:px-6 bg-gray-50/70 dark:bg-gray-800/60">
+              <SectionTitle>Socio-Economic Status</SectionTitle>
+              <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
+                NICRAT revised scoring scheme — occupation determines Upper/Middle/Lower socio-economic class
+              </p>
+            </div>
+
+            <div className="px-5 py-6 sm:px-6">
               <Label>
                 <span className="text-sm font-semibold">Occupation</span>
                 <Select

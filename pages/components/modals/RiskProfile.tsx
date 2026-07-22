@@ -301,7 +301,11 @@ ageAtMenopause: form.ageAtMenopause ? parseInt(form.ageAtMenopause) : null,
                   <option value="rarely">Rarely (less than 1 time/week)</option>
                 </Select>
               </Label>
+            </div>
 
+            <div className="pt-2 border-t border-gray-100 dark:border-gray-700">
+              <p className="text-sm font-bold text-gray-800 dark:text-white mb-1">Socio-Economic Status</p>
+              <p className="text-xs text-gray-500 mb-3">NICRAT revised scoring scheme — occupation determines Upper/Middle/Lower socio-economic class</p>
               <Label>
                 <span className="text-sm font-semibold">Occupation</span>
                 <Select
@@ -325,8 +329,9 @@ ageAtMenopause: form.ageAtMenopause ? parseInt(form.ageAtMenopause) : null,
                 </Select>
                 <HelperText>Used to classify socio-economic status (upper/middle/lower class)</HelperText>
               </Label>
+            </div>
 
-
+            <div className="grid gap-4 md:grid-cols-2">
               {cancerType === "breast" && (
   <div className="md:col-span-2 grid gap-4 md:grid-cols-2">
     <Label>
