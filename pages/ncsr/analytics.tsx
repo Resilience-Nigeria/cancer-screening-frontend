@@ -696,6 +696,22 @@ export default function AnalyticsPage() {
         </SectionCard>
       </div>
 
+      {/* Socio-economic status / indigency support */}
+      <div className="mb-8">
+        <SectionCard title="Socio-Economic Status & Indigency Support">
+          <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
+            Breakdown of client socio-economic class (NICRAT model) to help identify clients who may need
+            financial or support assistance, and whether lower socio-economic class correlates with higher
+            cancer risk in this population.
+          </p>
+          <Link href="/ncsr/indigency-support">
+            <span className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-green-700 hover:bg-green-800 text-white text-sm font-semibold cursor-pointer">
+              View Full Breakdown & Client List
+            </span>
+          </Link>
+        </SectionCard>
+      </div>
+
       {/* Facility performance leaderboard */}
       {facilityPerformance.length > 0 && (
         <div className="mb-8">
