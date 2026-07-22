@@ -84,6 +84,15 @@ export default function DiagnosticEvaluationPage() {
     fetchPendingReferrals();
   }, []);
 
+  useEffect(() => {
+    if (!router.isReady) return;
+    const qClientId = router.query.clientId;
+    if (typeof qClientId === "string" && qClientId) {
+      const qReferralId = typeof router.query.referralId === "string" ? Number(router.query.referralId) : null;
+      loadClientContext(qClientId, qReferralId);
+    }
+  }, [router.isReady]);
+
   async function fetchPendingReferrals() {
     try {
       const { data } = await api.get("/diagnostic-evaluations/pending-referrals");
