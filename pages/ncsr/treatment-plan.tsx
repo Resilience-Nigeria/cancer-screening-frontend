@@ -1,23 +1,22 @@
 import React, { useEffect, useState } from "react";
 import { useRouter } from "next/router";
-import Link from "next/link";
 import { Button, Input, Label, Select, Textarea } from "@roketid/windmill-react-ui";
 import {
   Search, Loader2, ChevronLeft, ChevronRight, CheckCircle, AlertTriangle,
-  Inbox, ClipboardList, Users, Target, Award, HeartHandshake,
+  Inbox, ClipboardList, Users, Target, Award, HeartHandshake, X,
 } from "lucide-react";
 import toast from "react-hot-toast";
 
 import Layout from "../containers/Layout";
 import PageTitle from "../components/Typography/PageTitle";
+import TreatmentModalitiesPanel from "../components/TreatmentModalitiesPanel";
 import api from "../../lib/api";
 
-const STEPS = ["lookup", "review", "decision", "staging", "mdt", "intent", "modalities", "outcome", "done"] as const;
+const STEPS = ["lookup", "review", "staging", "mdt", "intent", "modalities", "outcome", "done"] as const;
 type StepKey = typeof STEPS[number];
 const STEP_LABELS: Record<StepKey, string> = {
   lookup: "Find Client",
   review: "4.1 Review",
-  decision: "4.2 Decision",
   staging: "4.3 Staging",
   mdt: "4.4 MDT",
   intent: "4.5 Intent",
@@ -47,6 +46,7 @@ export default function TreatmentPlanPage() {
   const [stepIndex, setStepIndex] = useState(0);
   const [busy, setBusy] = useState(false);
   const currentKey = STEPS[stepIndex];
+  const [showModalitiesModal, setShowModalitiesModal] = useState(false);
 
   const [pendingEvaluations, setPendingEvaluations] = useState<any[]>([]);
   const [lookupValue, setLookupValue] = useState("");
@@ -59,8 +59,9 @@ export default function TreatmentPlanPage() {
   const [evaluation, setEvaluation] = useState<any>(null);
 
   const [planId, setPlanId] = useState<number | null>(null);
+  const [planStatus, setPlanStatus] = useState<string>("active");
+  const [treatmentRecordsCount, setTreatmentRecordsCount] = useState(0);
 
-  // 4.1 Review
   const [performanceStatusScale, setPerformanceStatusScale] = useState("");
   const [performanceStatusValue, setPerformanceStatusValue] = useState("");
   const [comorbidities, setComorbidities] = useState("");
@@ -68,15 +69,6 @@ export default function TreatmentPlanPage() {
   const [consentObtained, setConsentObtained] = useState(false);
   const [consentDate, setConsentDate] = useState(todayStr());
 
-  // 4.2 Decision
-  const [decisionPathway, setDecisionPathway] = useState("");
-  const [managementNotes, setManagementNotes] = useState("");
-  const [routineRecallDate, setRoutineRecallDate] = useState("");
-  const [procedurePerformed, setProcedurePerformed] = useState("");
-  const [procedureComplications, setProcedureComplications] = useState("");
-  const [surveillanceNotes, setSurveillanceNotes] = useState("");
-
-  // 4.3 Staging
   const [tStage, setTStage] = useState("");
   const [nStage, setNStage] = useState("");
   const [mStage, setMStage] = useState("");
@@ -85,16 +77,13 @@ export default function TreatmentPlanPage() {
   const [tumourGrade, setTumourGrade] = useState("");
   const [biomarkers, setBiomarkers] = useState("");
 
-  // 4.4 MDT
   const [mdtParticipants, setMdtParticipants] = useState<string[]>([]);
   const [mdtDate, setMdtDate] = useState(todayStr());
   const [mdtDecisionNotes, setMdtDecisionNotes] = useState("");
   const [clinicalTrialEligible, setClinicalTrialEligible] = useState(false);
 
-  // 4.5 Intent
   const [treatmentIntent, setTreatmentIntent] = useState("");
 
-  // 4.8-4.9 Outcome
   const [treatmentOutcome, setTreatmentOutcome] = useState("");
   const [outcomeDate, setOutcomeDate] = useState(todayStr());
   const [outcomeNotes, setOutcomeNotes] = useState("");
@@ -123,6 +112,34 @@ export default function TreatmentPlanPage() {
     }
   }
 
+  function applyExistingPlan(plan: any) {
+    setPlanId(plan.treatmentPlanId);
+    setPlanStatus(plan.status);
+    setPerformanceStatusScale(plan.performanceStatusScale || "");
+    setPerformanceStatusValue(plan.performanceStatusValue || "");
+    setComorbidities(plan.comorbidities || "");
+    setPatientPreferencesNotes(plan.patientPreferencesNotes || "");
+    setConsentObtained(!!plan.consentObtained);
+    setConsentDate(plan.consentDate || todayStr());
+    setTStage(plan.tStage || "");
+    setNStage(plan.nStage || "");
+    setMStage(plan.mStage || "");
+    setClinicalStage(plan.clinicalStage || "");
+    setHistologicalType(plan.histologicalType || "");
+    setTumourGrade(plan.tumourGrade || "");
+    setBiomarkers(Array.isArray(plan.biomarkers) ? plan.biomarkers.join(", ") : "");
+    setMdtParticipants(plan.mdtParticipants || []);
+    setMdtDate(plan.mdtDate || todayStr());
+    setMdtDecisionNotes(plan.mdtDecisionNotes || "");
+    setClinicalTrialEligible(!!plan.clinicalTrialEligible);
+    setTreatmentIntent(plan.treatmentIntent || "");
+    setTreatmentOutcome(plan.treatmentOutcome || "");
+    setOutcomeDate(plan.outcomeDate || todayStr());
+    setOutcomeNotes(plan.outcomeNotes || "");
+    setSurvivorshipItems(Array.isArray(plan.survivorshipPlan) ? plan.survivorshipPlan : []);
+    setTreatmentRecordsCount(plan.treatmentRecords?.length || 0);
+  }
+
   async function loadClientContext(cId: string, evalId: number | null) {
     setBusy(true);
     try {
@@ -132,6 +149,14 @@ export default function TreatmentPlanPage() {
       setEvaluation(data.evaluation);
       setClientId(data.client?.clientId ?? cId);
       setEvaluationId(evalId ?? data.evaluation?.evaluationId ?? null);
+
+      if (data.existingPlan) {
+        applyExistingPlan(data.existingPlan);
+        toast.success("Resuming existing treatment plan — your previous entries are shown below.");
+      } else {
+        setPlanId(null);
+      }
+
       goTo("review");
     } catch (err: any) {
       toast.error(err?.response?.data?.message ?? "Could not find this client.");
@@ -173,34 +198,6 @@ export default function TreatmentPlanPage() {
       next();
     } catch (err: any) {
       toast.error(err?.response?.data?.message ?? "Could not save.");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function submitDecision() {
-    if (!planId || !decisionPathway) {
-      toast.error("Please select a decision pathway.");
-      return;
-    }
-    setBusy(true);
-    try {
-      await api.post(`/treatment-plans/${planId}/decision`, {
-        decisionPathway,
-        managementNotes,
-        routineRecallDate: routineRecallDate || null,
-        procedurePerformed,
-        procedureComplications,
-        surveillanceNotes,
-      });
-      if (decisionPathway === "cancer_confirmed") {
-        next();
-      } else {
-        goTo("done");
-      }
-      toast.success("Clinical decision recorded.");
-    } catch (err: any) {
-      toast.error(err?.response?.data?.message ?? "Could not save the decision.");
     } finally {
       setBusy(false);
     }
@@ -323,10 +320,10 @@ export default function TreatmentPlanPage() {
           <div className="space-y-6">
             <div>
               <h3 className="text-lg font-semibold text-gray-800 dark:text-white mb-3 flex items-center gap-2">
-                <Inbox className="w-5 h-5 text-green-700" /> Completed Evaluations Awaiting Treatment Decision
+                <Inbox className="w-5 h-5 text-green-700" /> Cancer-Confirmed Cases Awaiting Treatment
               </h3>
               {pendingEvaluations.length === 0 ? (
-                <p className="text-sm text-gray-400">No completed evaluations awaiting a treatment plan.</p>
+                <p className="text-sm text-gray-400">No cancer-confirmed cases awaiting a treatment plan.</p>
               ) : (
                 <div className="space-y-2">
                   {pendingEvaluations.map((e) => (
@@ -337,7 +334,7 @@ export default function TreatmentPlanPage() {
                     >
                       <p className="text-sm font-semibold text-gray-800 dark:text-white">{e.client?.fullName}</p>
                       <p className="text-xs text-gray-500 mt-0.5">
-                        {e.client?.clientId} · {e.suspectedCancerType} · Pathology: {e.histopathologyResult?.replace(/_/g, " ")} on {e.pathologyDate}
+                        {e.client?.clientId} · {e.suspectedCancerType} · Confirmed on {e.pathologyDate}
                       </p>
                     </button>
                   ))}
@@ -347,6 +344,9 @@ export default function TreatmentPlanPage() {
 
             <div className="pt-4 border-t border-gray-100 dark:border-gray-700">
               <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">Or find a client directly</h3>
+              <p className="text-xs text-gray-400 mb-3">
+                If this client already has a treatment plan, it will open with everything you'd already entered.
+              </p>
               <div className="flex gap-3">
                 <Input
                   className="flex-1 rounded-2xl h-12"
@@ -369,9 +369,16 @@ export default function TreatmentPlanPage() {
             </h3>
 
             {clientInfo && (
-              <div className="rounded-2xl bg-gray-50 dark:bg-gray-900/40 p-4">
-                <p className="text-sm font-bold text-gray-800 dark:text-white">{clientInfo.fullName}</p>
-                <p className="text-xs text-gray-500">{clientInfo.clientId} · {clientInfo.age} yrs · {clientInfo.gender}</p>
+              <div className="rounded-2xl bg-gray-50 dark:bg-gray-900/40 p-4 flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-bold text-gray-800 dark:text-white">{clientInfo.fullName}</p>
+                  <p className="text-xs text-gray-500">{clientInfo.clientId} · {clientInfo.age} yrs · {clientInfo.gender}</p>
+                </div>
+                {planId && (
+                  <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-blue-50 text-blue-700">
+                    Resuming plan #{planId} ({planStatus})
+                  </span>
+                )}
               </div>
             )}
 
@@ -380,6 +387,7 @@ export default function TreatmentPlanPage() {
                 <p className="text-xs font-semibold text-amber-700 dark:text-amber-400 uppercase tracking-wide">Stage 3 Findings on File</p>
                 <p className="text-sm text-gray-700 dark:text-gray-300">
                   Suspected: {evaluation.suspectedCancerType} · Histopathology: <span className="font-semibold capitalize">{evaluation.histopathologyResult?.replace(/_/g, " ")}</span>
+                  {evaluation.decisionPathway && <> · Decision: <span className="font-semibold capitalize">{evaluation.decisionPathway.replace(/_/g, " ")}</span></>}
                 </p>
                 {evaluation.pathologyNotes && <p className="text-sm text-gray-600 dark:text-gray-400">{evaluation.pathologyNotes}</p>}
               </div>
@@ -425,61 +433,6 @@ export default function TreatmentPlanPage() {
                 <Input type="date" className="rounded-xl h-10" value={consentDate} onChange={(e) => setConsentDate(e.target.value)} />
               )}
             </div>
-          </div>
-        )}
-
-        {currentKey === "decision" && (
-          <div className="space-y-5">
-            <h3 className="text-lg font-semibold text-gray-800 dark:text-white">4.2 Final Clinical Decision</h3>
-            <div className="grid grid-cols-1 gap-3">
-              {[
-                { value: "no_cancer", label: "A. No Cancer Detected", desc: "Benign, normal, infection, inflammatory, fibroadenoma, BPE, benign cervical changes" },
-                { value: "pre_cancerous", label: "B. Pre-cancerous Disease", desc: "CIN, adenomatous polyps, oral leukoplakia with dysplasia, Barrett's with dysplasia" },
-                { value: "cancer_confirmed", label: "C. Cancer Confirmed", desc: "Histopathology confirms malignancy — proceeds to staging, MDT, and treatment" },
-              ].map((opt) => (
-                <button
-                  key={opt.value}
-                  onClick={() => setDecisionPathway(opt.value)}
-                  className={`text-left p-4 rounded-xl border-2 transition-colors ${
-                    decisionPathway === opt.value ? "border-green-600 bg-green-50 dark:bg-green-900/20" : "border-gray-200 dark:border-gray-700"
-                  }`}
-                >
-                  <p className="text-sm font-semibold text-gray-800 dark:text-white">{opt.label}</p>
-                  <p className="text-xs text-gray-500 mt-1">{opt.desc}</p>
-                </button>
-              ))}
-            </div>
-
-            {decisionPathway === "no_cancer" && (
-              <div className="space-y-3 pt-2">
-                <Label>
-                  <span className="text-sm font-semibold">Routine Screening Recall Date</span>
-                  <Input type="date" className="mt-2 rounded-2xl h-12" value={routineRecallDate} onChange={(e) => setRoutineRecallDate(e.target.value)} />
-                </Label>
-              </div>
-            )}
-
-            {decisionPathway === "pre_cancerous" && (
-              <div className="space-y-3 pt-2">
-                <Label>
-                  <span className="text-sm font-semibold">Procedure Performed</span>
-                  <Input className="mt-2 rounded-2xl h-12" value={procedurePerformed} onChange={(e) => setProcedurePerformed(e.target.value)} placeholder="Cryotherapy, LEEP, polypectomy, etc." />
-                </Label>
-                <Label>
-                  <span className="text-sm font-semibold">Complications</span>
-                  <Textarea className="mt-2 rounded-2xl" rows={2} value={procedureComplications} onChange={(e) => setProcedureComplications(e.target.value)} />
-                </Label>
-                <Label>
-                  <span className="text-sm font-semibold">Surveillance Plan</span>
-                  <Textarea className="mt-2 rounded-2xl" rows={2} value={surveillanceNotes} onChange={(e) => setSurveillanceNotes(e.target.value)} placeholder="Repeat HPV test, VIA, colonoscopy, clinical review..." />
-                </Label>
-              </div>
-            )}
-
-            <Label>
-              <span className="text-sm font-semibold">Management Notes</span>
-              <Textarea className="mt-2 rounded-2xl" rows={3} value={managementNotes} onChange={(e) => setManagementNotes(e.target.value)} />
-            </Label>
           </div>
         )}
 
@@ -592,15 +545,14 @@ export default function TreatmentPlanPage() {
             <h3 className="text-lg font-semibold text-gray-800 dark:text-white">4.6 Treatment Modalities</h3>
             <p className="text-sm text-gray-500 max-w-md mx-auto">
               Record each treatment a patient receives (Surgery, Chemotherapy, Radiotherapy, Hormonal Therapy,
-              Immunotherapy, Targeted Therapy, Palliative Care) on its own dedicated screen — a patient may have
-              more than one.
+              Immunotherapy, Targeted Therapy, Palliative Care) — a patient may have more than one.
             </p>
-            <Link href={`/ncsr/treatment-modalities?planId=${planId}`}>
-              <Button className="h-12 px-6 rounded-2xl bg-green-700 border-green-700 hover:bg-green-800">
-                Go to Treatment Modalities
-              </Button>
-            </Link>
-            <p className="text-xs text-gray-400">You can return here afterward to record the outcome.</p>
+            {treatmentRecordsCount > 0 && (
+              <p className="text-sm font-semibold text-green-700">{treatmentRecordsCount} treatment record{treatmentRecordsCount === 1 ? "" : "s"} saved so far.</p>
+            )}
+            <Button onClick={() => setShowModalitiesModal(true)} className="h-12 px-6 rounded-2xl bg-green-700 border-green-700 hover:bg-green-800">
+              Manage Treatment Modalities
+            </Button>
           </div>
         )}
 
@@ -658,9 +610,7 @@ export default function TreatmentPlanPage() {
         {currentKey === "done" && (
           <div className="text-center py-10 space-y-3">
             <CheckCircle className="w-14 h-14 text-green-600 mx-auto" />
-            <h3 className="text-xl font-bold text-gray-800 dark:text-white">
-              {decisionPathway === "no_cancer" ? "Case closed — no cancer detected" : "Treatment plan complete"}
-            </h3>
+            <h3 className="text-xl font-bold text-gray-800 dark:text-white">Treatment plan complete</h3>
             {planId && (
               <Button
                 onClick={() => router.push(`/ncsr/follow-up-schedules`)}
@@ -680,11 +630,6 @@ export default function TreatmentPlanPage() {
             {currentKey === "review" && (
               <Button onClick={() => (planId ? saveReview() : startPlan())} disabled={busy} className="h-11 px-5 rounded-2xl bg-green-700 border-green-700 hover:bg-green-800">
                 {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <>Continue <ChevronRight className="w-4 h-4 ml-1" /></>}
-              </Button>
-            )}
-            {currentKey === "decision" && (
-              <Button onClick={submitDecision} disabled={busy} className="h-11 px-5 rounded-2xl bg-green-700 border-green-700 hover:bg-green-800">
-                {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : "Save Decision"}
               </Button>
             )}
             {currentKey === "staging" && (
@@ -721,6 +666,31 @@ export default function TreatmentPlanPage() {
           </div>
         )}
       </div>
+
+      {showModalitiesModal && planId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="max-w-2xl w-full max-h-[90vh] overflow-y-auto bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-bold text-gray-800 dark:text-white">4.6 Treatment Modalities</h3>
+              <button
+                onClick={() => setShowModalitiesModal(false)}
+                className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700"
+              >
+                <X className="w-4 h-4 text-gray-500" />
+              </button>
+            </div>
+            <TreatmentModalitiesPanel
+              planId={planId}
+              onRecordsChange={(records) => setTreatmentRecordsCount(records.length)}
+            />
+            <div className="flex justify-end pt-4 mt-4 border-t border-gray-100 dark:border-gray-700">
+              <Button onClick={() => setShowModalitiesModal(false)} className="h-11 px-5 rounded-2xl bg-green-700 border-green-700 hover:bg-green-800">
+                Done — Return to Treatment Plan
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </Layout>
   );
 }
