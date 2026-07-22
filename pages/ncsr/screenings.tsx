@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { useRouter } from "next/router";
+import Link from "next/link";
 import {
   Button,
   Pagination,
@@ -40,6 +41,8 @@ type Visit = {
   facility?: string;
   screeningCount: number;
   screenings: ScreeningResult[];
+  stage3Referral?: { referralId: number; status: string } | null;
+  stage3Evaluation?: { evaluationId: number; status: string; decisionPathway: string | null } | null;
 };
 
 function formatDate(value?: string) {
@@ -155,6 +158,8 @@ export default function ScreeningsPage() {
           facility: item.facility ?? item.facilityName,
           screeningCount: item.screeningCount ?? screenings.length,
           screenings,
+          stage3Referral: item.stage3Referral ?? null,
+          stage3Evaluation: item.stage3Evaluation ?? null,
         };
       });
 
@@ -395,6 +400,16 @@ export default function ScreeningsPage() {
                     </div>
                   )}
 
+                  {(visit.stage3Referral || visit.stage3Evaluation) && (
+                    <div className="mb-3">
+                      <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-teal-50 text-teal-700">
+                        {visit.stage3Evaluation
+                          ? `Stage 3: ${(visit.stage3Evaluation.decisionPathway || visit.stage3Evaluation.status).replace(/_/g, " ")}`
+                          : `Stage 3: ${visit.stage3Referral?.status}`}
+                      </span>
+                    </div>
+                  )}
+
                   <div className="space-y-2 text-sm mb-4">
                     <div className="flex items-center gap-2 text-gray-600 dark:text-gray-300">
                       <Calendar className="w-4 h-4" />
@@ -418,6 +433,13 @@ export default function ScreeningsPage() {
                       View Details
                     </span>
                   </Button>
+                  {visit.stage3Evaluation && (
+                    <Link href={`/ncsr/diagnostic-evaluation?clientId=${visit.clientId}`}>
+                      <span className="mt-2 block text-center text-xs font-medium text-teal-700 dark:text-teal-400 hover:underline cursor-pointer">
+                        View Stage 3 Evaluation
+                      </span>
+                    </Link>
+                  )}
                 </div>
               ))}
             </div>
@@ -477,6 +499,13 @@ export default function ScreeningsPage() {
                             View Details
                           </span>
                         </Button>
+                        {visit.stage3Evaluation && (
+                          <Link href={`/ncsr/diagnostic-evaluation?clientId=${visit.clientId}`}>
+                            <span className="block mt-2 text-xs font-medium text-teal-700 dark:text-teal-400 hover:underline cursor-pointer">
+                              Stage 3 Evaluation
+                            </span>
+                          </Link>
+                        )}
                       </td>
                     </tr>
                   ))}

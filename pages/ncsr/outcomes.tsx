@@ -49,6 +49,21 @@ type Outcome = {
   // Follow-up
   followUpEstablished?: string;
   nextFollowUpDate?: string;
+
+  // Stage 3/4 status
+  stage3Evaluation?: {
+    evaluationId: number;
+    status: string;
+    suspectedCancerType: string;
+    histopathologyResult: string | null;
+    decisionPathway: string | null;
+  } | null;
+  stage4TreatmentPlan?: {
+    treatmentPlanId: number;
+    status: string;
+    treatmentIntent: string | null;
+    treatmentOutcome: string | null;
+  } | null;
 };
 
 export default function OutcomesPage() {
@@ -96,6 +111,8 @@ export default function OutcomesPage() {
         
         followUpEstablished: item.followUpEstablished ?? item.follow_up_established,
         nextFollowUpDate: item.nextFollowUpDate ?? item.next_follow_up_date,
+        stage3Evaluation: item.stage3Evaluation ?? null,
+        stage4TreatmentPlan: item.stage4TreatmentPlan ?? null,
       }));
 
       setOutcomes(mappedOutcomes);
@@ -317,6 +334,33 @@ export default function OutcomesPage() {
                       {outcome.followUpEstablished === "yes" && (
                         <Badge type="primary">Follow-up Established</Badge>
                       )}
+                      {outcome.stage3Evaluation && (
+                        <Badge type={outcome.stage3Evaluation.status === "completed" ? "success" : "neutral"}>
+                          Stage 3: {outcome.stage3Evaluation.decisionPathway
+                            ? outcome.stage3Evaluation.decisionPathway.replace(/_/g, " ")
+                            : outcome.stage3Evaluation.status.replace(/_/g, " ")}
+                        </Badge>
+                      )}
+                      {outcome.stage4TreatmentPlan && (
+                        <Badge type={outcome.stage4TreatmentPlan.status === "closed" ? "success" : "primary"}>
+                          Stage 4: {outcome.stage4TreatmentPlan.treatmentOutcome
+                            ? outcome.stage4TreatmentPlan.treatmentOutcome.replace(/_/g, " ")
+                            : outcome.stage4TreatmentPlan.status}
+                        </Badge>
+                      )}
+                    </div>
+
+                    <div className="flex flex-wrap gap-2 mb-4">
+                      {outcome.stage3Evaluation && (
+                        <Link href={`/ncsr/diagnostic-evaluation?clientId=${outcome.clientId}`}>
+                          <span className="text-xs font-medium text-teal-700 dark:text-teal-400 hover:underline cursor-pointer">View Stage 3 Evaluation</span>
+                        </Link>
+                      )}
+                      {outcome.stage4TreatmentPlan && (
+                        <Link href={`/ncsr/treatment-plan?clientId=${outcome.clientId}`}>
+                          <span className="text-xs font-medium text-purple-700 dark:text-purple-400 hover:underline cursor-pointer">View Stage 4 Treatment Plan</span>
+                        </Link>
+                      )}
                     </div>
 
                     <Link href={`/ncsr/client-details?clientId=${outcome.clientId}`}>
@@ -429,6 +473,18 @@ export default function OutcomesPage() {
                               </span>
                             </Button>
                           </Link>
+                          <div className="flex flex-col gap-1 mt-2">
+                            {outcome.stage3Evaluation && (
+                              <Link href={`/ncsr/diagnostic-evaluation?clientId=${outcome.clientId}`}>
+                                <span className="text-xs font-medium text-teal-700 dark:text-teal-400 hover:underline cursor-pointer">Stage 3 Evaluation</span>
+                              </Link>
+                            )}
+                            {outcome.stage4TreatmentPlan && (
+                              <Link href={`/ncsr/treatment-plan?clientId=${outcome.clientId}`}>
+                                <span className="text-xs font-medium text-purple-700 dark:text-purple-400 hover:underline cursor-pointer">Stage 4 Treatment Plan</span>
+                              </Link>
+                            )}
+                          </div>
                         </td>
                       </tr>
                     );

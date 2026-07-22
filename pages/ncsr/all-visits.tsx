@@ -37,6 +37,8 @@ type Visit = {
   colorectalScreening?: any;
   liverScreening?: any;
   prostateScreening?: any;
+  stage3Referral?: { referralId: number; status: string } | null;
+  stage3Evaluation?: { evaluationId: number; status: string; decisionPathway: string | null } | null;
 };
 
 type VisitsResponse = {
@@ -116,6 +118,8 @@ export default function VisitsIndexPage() {
         liverScreening: visit.liverScreening ?? visit.liver_screening ?? null,
         prostateScreening:
           visit.prostateScreening ?? visit.prostate_screening ?? null,
+        stage3Referral: visit.stage3Referral ?? null,
+        stage3Evaluation: visit.stage3Evaluation ?? null,
       }));
 
       setVisits(mappedVisits);
@@ -299,9 +303,19 @@ export default function VisitsIndexPage() {
                   <FileText className="w-4 h-4 mt-0.5 shrink-0" />
                   <span>{visit.notes || "No notes added"}</span>
                 </div>
+
+                {(visit.stage3Referral || visit.stage3Evaluation) && (
+                  <div className="flex items-start gap-2">
+                    <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-teal-50 text-teal-700">
+                      {visit.stage3Evaluation
+                        ? `Stage 3: ${(visit.stage3Evaluation.decisionPathway || visit.stage3Evaluation.status).replace(/_/g, " ")}`
+                        : `Stage 3: ${visit.stage3Referral?.status}`}
+                    </span>
+                  </div>
+                )}
               </div>
 
-              <div className="mt-5">
+              <div className="mt-5 space-y-2">
                 <Link href={`/ncsr/visit-details?visitId=${visit.visitId}`}>
                   <Button className="rounded-xl bg-green-700 border-green-700 hover:bg-green-800 hover:border-green-800">
                     <span className="inline-flex items-center gap-2">
@@ -310,6 +324,13 @@ export default function VisitsIndexPage() {
                     </span>
                   </Button>
                 </Link>
+                {visit.stage3Evaluation && (
+                  <Link href={`/ncsr/diagnostic-evaluation?clientId=${visit.client?.clientId}`}>
+                    <span className="block text-xs font-medium text-teal-700 dark:text-teal-400 hover:underline cursor-pointer">
+                      View Stage 3 Evaluation
+                    </span>
+                  </Link>
+                )}
               </div>
             </div>
           ))
@@ -446,6 +467,13 @@ export default function VisitsIndexPage() {
                           </span>
                         </Button>
                       </Link>
+                      {visit.stage3Evaluation && (
+                        <Link href={`/ncsr/diagnostic-evaluation?clientId=${visit.client?.clientId}`}>
+                          <span className="block mt-2 text-xs font-medium text-teal-700 dark:text-teal-400 hover:underline cursor-pointer">
+                            Stage 3 Evaluation
+                          </span>
+                        </Link>
+                      )}
                     </td>
                   </tr>
                 ))
