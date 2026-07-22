@@ -39,6 +39,7 @@ import {
   StethoscopeIcon,
   ClipboardCheck,
   Microscope,
+  UserPlus,
 } from "lucide-react";
 
 type ScreeningActivity = {
@@ -225,6 +226,18 @@ function Dashboard() {
   // hardcoded role list, so this stays correct if scope is reconfigured
   // via the Roles admin page without needing a frontend redeploy.
   const hasNationalAccess = currentUser?.hasNationalAccess ?? ['NICRAT_SUPER_ADMIN', 'NICRAT_ADMIN', 'PARTNER'].includes(userRole);
+
+  // Dashboard layout mode — Feeder-level facility_only users get pure
+  // action cards instead of stats (front-line, walk-in clinics mostly
+  // need to DO things, not analyze data). Anyone with broader scope
+  // (state/hub_hierarchy/subhub_hierarchy) or national access keeps the
+  // stats dashboard unchanged. facility_only users at a Hub/SubHub get
+  // both stats and action cards.
+  const facilityLevel = currentUser?.facility?.facilityLevel;
+  const dataScopeType = currentUser?.dataScopeType;
+  const isFeederOnlyUser = !hasNationalAccess && dataScopeType === 'facility_only' && facilityLevel === 'feeder';
+  const showActionCards = !hasNationalAccess;
+  const showStatsCards = !isFeederOnlyUser;
 
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState<DashboardStats>({
@@ -685,6 +698,47 @@ function Dashboard() {
      
       </div>
 
+      {/* Quick action cards — shown for any non-national-scoped user;
+          for Feeder-only facility_only users these REPLACE the stats
+          grid below rather than sitting alongside it. */}
+      {showActionCards && (
+        <div className="mb-6 sm:mb-8">
+          {isFeederOnlyUser && <PageTitle>Quick Actions</PageTitle>}
+          <div className="grid gap-4 sm:gap-5 mt-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
+            <Link href="/ncsr/clinical-screening?new=1">
+              <div className="cursor-pointer rounded-2xl bg-green-700 hover:bg-green-800 transition-colors p-6 text-white shadow-sm h-full">
+                <UserPlus className="w-6 h-6 mb-3" />
+                <p className="font-semibold">Register & Screen New Client</p>
+                <p className="text-xs text-green-100 mt-1">Start Stage 2 biodata + screening</p>
+              </div>
+            </Link>
+            <Link href="/ncsr/clinical-screening">
+              <div className="cursor-pointer rounded-2xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-750 transition-colors p-6 shadow-sm h-full">
+                <ClipboardCheck className="w-6 h-6 mb-3 text-green-700" />
+                <p className="font-semibold text-gray-800 dark:text-white">Stage 2: Clinical Screening</p>
+                <p className="text-xs text-gray-500 mt-1">Find an existing client to screen</p>
+              </div>
+            </Link>
+            <Link href="/ncsr/diagnostic-evaluation">
+              <div className="cursor-pointer rounded-2xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-750 transition-colors p-6 shadow-sm h-full">
+                <Microscope className="w-6 h-6 mb-3 text-teal-700" />
+                <p className="font-semibold text-gray-800 dark:text-white">Stage 3: Diagnostic Evaluation</p>
+                <p className="text-xs text-gray-500 mt-1">For facilities configured for Stage 3</p>
+              </div>
+            </Link>
+            <Link href="/ncsr/referred">
+              <div className="cursor-pointer rounded-2xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-750 transition-colors p-6 shadow-sm h-full">
+                <ArrowUpRight className="w-6 h-6 mb-3 text-blue-700" />
+                <p className="font-semibold text-gray-800 dark:text-white">Linked Clients</p>
+                <p className="text-xs text-gray-500 mt-1">Clients referred to your facility</p>
+              </div>
+            </Link>
+          </div>
+        </div>
+      )}
+
+      {showStatsCards && (
+        <>
       {/* Rest of the dashboard remains the same - Stats cards, Module cards, Charts, etc. */}
       <div className="grid gap-4 sm:gap-5 mb-6 sm:mb-8 grid-cols-1 sm:grid-cols-2 xl:grid-cols-5">
         <StatCard
@@ -794,6 +848,8 @@ function Dashboard() {
           onClick={handlePositiveFindingsClick}
         />
       </div>
+        </>
+      )}
 
       {/* Recent Activity section - same as before */}
       <div className="mb-6 sm:mb-8">

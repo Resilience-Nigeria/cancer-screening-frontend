@@ -20,7 +20,7 @@ interface IRoute {
   routes?: IRoute[];
   checkActive?: (pathname: string, route: IRoute) => boolean;
   exact?: boolean;
-  roles?: Array<'NICRAT_SUPER_ADMIN' | 'NICRAT_ADMIN' | 'HOSPITAL_ADMIN' | 'DATA_CLERK' | 'PARTNER'>;
+  roles?: Array<'NICRAT_SUPER_ADMIN' | 'NICRAT_ADMIN' | 'NAVIGATOR' | 'HOSPITAL_ADMIN' | 'NURSE' | 'DOCTOR' | 'PARTNER'>;
 }
 
 export function routeIsActive(pathname: string, route: IRoute): boolean {
@@ -73,8 +73,21 @@ const routes: IRoute[] = [
   {
     path: "/ncsr/referred",
     icon: LinkIcon,
-    name: "Linked patients",
+    name: "Linked Clients",
     // Visible to all authenticated users
+  },
+  {
+    path: "/ncsr/clinical-screening",
+    icon: MicroscopeIcon,
+    name: "Stage 2: Clinical Screening",
+    // Visible to all authenticated users
+  },
+  {
+    path: "/ncsr/diagnostic-evaluation",
+    icon: MicroscopeIcon,
+    name: "Stage 3: Diagnostic Evaluation",
+    // Visible to all authenticated users — the page itself tells staff
+    // if their facility isn't configured for Stage 3.
   },
   
   // Admin-only routes
@@ -82,13 +95,13 @@ const routes: IRoute[] = [
     path: "/ncsr/analytics",
     icon: ChartBar,
     name: "Analytics",
-    roles: ["NICRAT_SUPER_ADMIN", "PARTNER"], // Only super admin manages facilities
+    roles: ["NICRAT_SUPER_ADMIN", "NICRAT_ADMIN", "PARTNER"],
   },
   {
     path: "/ncsr/users",
     icon: UserCog,
     name: "User Management",
-    roles: ["NICRAT_SUPER_ADMIN", "HOSPITAL_ADMIN"], // Can create users
+    roles: ["NICRAT_SUPER_ADMIN", "NAVIGATOR", "HOSPITAL_ADMIN"], // Can create users
   },
   {
     path: "/ncsr/facilities",
@@ -97,17 +110,16 @@ const routes: IRoute[] = [
     roles: ["NICRAT_SUPER_ADMIN"], // Only super admin manages facilities
   },
   {
+    path: "/ncsr/roles",
+    icon: Settings,
+    name: "Role Data Scope",
+    roles: ["NICRAT_SUPER_ADMIN"], // Only super admin configures role scope
+  },
+  {
     path: "/ncsr/settings",
     icon: Settings,
     name: "Settings",
-    roles: ["NICRAT_SUPER_ADMIN", "HOSPITAL_ADMIN"], // Admins can change settings
-  },
-
-  {
-    path: "/ncsr/roles",
-    icon: UserCog,
-    name: "Roles & Permissions",
-    roles: ["NICRAT_SUPER_ADMIN"], // Admins can change settings
+    roles: ["NICRAT_SUPER_ADMIN", "NAVIGATOR", "HOSPITAL_ADMIN"], // Admins can change settings
   },
 ];
 
