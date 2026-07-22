@@ -239,6 +239,15 @@ function Dashboard() {
   const dataScopeType = currentUser?.dataScopeType;
   const isFeederOnlyUser = !hasNationalAccess && dataScopeType === 'facility_only' && facilityLevel === 'feeder';
   const showActionCards = !hasNationalAccess;
+
+  // Stage 2/3/4 buttons and cards only show if the user's own facility
+  // supports that stage. National-scoped users (no assigned facility)
+  // and cached sessions predating stagesSupported always see them.
+  function facilitySupportsStage(stage: string): boolean {
+    const facilityStages = currentUser?.facility?.stagesSupported;
+    if (!currentUser?.facility || !Array.isArray(facilityStages)) return true;
+    return facilityStages.includes(stage);
+  }
   const showStatsCards = !isFeederOnlyUser;
 
   const [loading, setLoading] = useState(true);
@@ -591,6 +600,7 @@ function Dashboard() {
                           </Button>
                         </Link>
 
+  {facilitySupportsStage("stage2") && (
   <Link
                           href={`/ncsr/clinical-screening`}
                         >
@@ -601,7 +611,9 @@ function Dashboard() {
                             </span>
                           </Button>
                         </Link>
+  )}
 
+  {facilitySupportsStage("stage3") && (
   <Link
                           href={`/ncsr/diagnostic-evaluation`}
                         >
@@ -612,6 +624,7 @@ function Dashboard() {
                             </span>
                           </Button>
                         </Link>
+  )}
 
 </div>
 
@@ -710,6 +723,7 @@ function Dashboard() {
         <div className="mb-6 sm:mb-8">
           {isFeederOnlyUser && <PageTitle>Quick Actions</PageTitle>}
           <div className="grid gap-4 sm:gap-5 mt-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-5">
+            {facilitySupportsStage("stage2") && (
             <Link href="/ncsr/clinical-screening?new=1">
               <div className="cursor-pointer rounded-2xl bg-green-700 hover:bg-green-800 transition-colors p-6 text-white shadow-sm h-full">
                 <UserPlus className="w-6 h-6 mb-3" />
@@ -717,6 +731,8 @@ function Dashboard() {
                 <p className="text-xs text-green-100 mt-1">Start Stage 2 biodata + screening</p>
               </div>
             </Link>
+            )}
+            {facilitySupportsStage("stage2") && (
             <Link href="/ncsr/clinical-screening">
               <div className="cursor-pointer rounded-2xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-750 transition-colors p-6 shadow-sm h-full">
                 <ClipboardCheck className="w-6 h-6 mb-3 text-green-700" />
@@ -724,6 +740,8 @@ function Dashboard() {
                 <p className="text-xs text-gray-500 mt-1">Find an existing client to screen</p>
               </div>
             </Link>
+            )}
+            {facilitySupportsStage("stage3") && (
             <Link href="/ncsr/diagnostic-evaluation">
               <div className="cursor-pointer rounded-2xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-750 transition-colors p-6 shadow-sm h-full">
                 <Microscope className="w-6 h-6 mb-3 text-teal-700" />
@@ -731,6 +749,8 @@ function Dashboard() {
                 <p className="text-xs text-gray-500 mt-1">For facilities configured for Stage 3</p>
               </div>
             </Link>
+            )}
+            {facilitySupportsStage("stage4") && (
             <Link href="/ncsr/treatment-plan">
               <div className="cursor-pointer rounded-2xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-750 transition-colors p-6 shadow-sm h-full">
                 <HeartHandshake className="w-6 h-6 mb-3 text-purple-700" />
@@ -738,6 +758,7 @@ function Dashboard() {
                 <p className="text-xs text-gray-500 mt-1">For facilities configured for Stage 4</p>
               </div>
             </Link>
+            )}
             <Link href="/ncsr/referred">
               <div className="cursor-pointer rounded-2xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-750 transition-colors p-6 shadow-sm h-full">
                 <ArrowUpRight className="w-6 h-6 mb-3 text-blue-700" />
