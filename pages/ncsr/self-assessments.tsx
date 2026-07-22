@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
-import { Loader2, ClipboardList, Search } from "lucide-react";
+import { useRouter } from "next/router";
+import { Loader2, ClipboardList, Search, ArrowRight } from "lucide-react";
 import toast from "react-hot-toast";
 
 import Layout from "../containers/Layout";
@@ -22,6 +23,7 @@ function fmtDate(v: string | null) {
 }
 
 export default function SelfAssessmentsPage() {
+  const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [assessments, setAssessments] = useState<any[]>([]);
   const [searchInput, setSearchInput] = useState("");
@@ -98,9 +100,21 @@ export default function SelfAssessmentsPage() {
                   Suggested screening: {a.suggestedCancerTypesJson.join(", ")}
                 </p>
               )}
-              {a.client?.clientId && (
-                <p className="text-xs text-blue-600 mt-2">Linked to client {a.client.clientId}</p>
-              )}
+              <div className="flex items-center justify-between flex-wrap gap-3 mt-3 pt-3 border-t border-gray-100 dark:border-gray-700">
+                {a.client?.clientId ? (
+                  <p className="text-xs text-blue-600">Linked to client {a.client.clientId}</p>
+                ) : (
+                  <p className="text-xs text-gray-400">Not yet registered as a client</p>
+                )}
+                {a.registration?.phoneNumber && (
+                  <button
+                    onClick={() => router.push(`/ncsr/clinical-screening?search=${encodeURIComponent(a.client?.clientId || a.registration.phoneNumber)}`)}
+                    className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-green-700 hover:bg-green-800 text-white text-xs font-semibold transition-colors"
+                  >
+                    Start Stage 2 Screening <ArrowRight className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
             </div>
           ))}
         </div>

@@ -247,12 +247,24 @@ export default function ClinicalScreeningPage() {
     }
   }, [router.isReady, router.query.new]);
 
+  // Deep-link support (e.g. from the Stage 1 self-assessment records
+  // page) — pre-fill and auto-run the lookup by phone number.
+  useEffect(() => {
+    if (!router.isReady) return;
+    const qSearch = router.query.search;
+    if (typeof qSearch === "string" && qSearch) {
+      setLookupValue(qSearch);
+      handleLookup(qSearch);
+    }
+  }, [router.isReady]);
+
   // ── Lookup ───────────────────────────────────────────────────────────
-  async function handleLookup() {
-    if (!lookupValue.trim()) return;
+  async function handleLookup(overrideValue?: string) {
+    const value = overrideValue ?? lookupValue;
+    if (!value.trim()) return;
     setBusy(true);
     try {
-      const { data } = await api.get(`/clients/search/details`, { params: { search: lookupValue.trim() } });
+      const { data } = await api.get(`/clients/search/details`, { params: { search: value.trim() } });
       const found = data?.client;
       if (found) {
         setClientId(found.clientId);
@@ -280,7 +292,7 @@ export default function ClinicalScreeningPage() {
         // self-assessment. Bloom only ever creates an AwarenessRegistration,
         // never a Client, so this is a separate lookup by phone number.
         try {
-          const { data: bloomData } = await api.get(`/awareness/lookup`, { params: { phone: lookupValue.trim() } });
+          const { data: bloomData } = await api.get(`/awareness/lookup`, { params: { phone: value.trim() } });
           if (bloomData?.registration) {
             const reg = bloomData.registration;
             setBiodata((p) => ({
