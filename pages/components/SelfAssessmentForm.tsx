@@ -17,6 +17,7 @@ export type AssessmentResult = {
     facilityAddress?: string;
     navigatorName?: string;
     navigatorPhone?: string;
+    clinicHoursDisplay?: string;
   } | null;
 };
 

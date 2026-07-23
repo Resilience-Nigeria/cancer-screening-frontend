@@ -79,6 +79,9 @@ function ResultsScreen({ name, result }: { name: string; result: AssessmentResul
             {result.facility.facilityAddress && (
               <p className="text-sm text-gray-500">{result.facility.facilityAddress}</p>
             )}
+            {result.facility.clinicHoursDisplay && (
+              <p className="text-sm text-gray-500">🕐 {result.facility.clinicHoursDisplay}</p>
+            )}
             {result.facility.navigatorName && (
               <div className="pt-3 border-t border-gray-100">
                 <p className="text-xs text-gray-400 mb-1">Your Contact Person</p>
