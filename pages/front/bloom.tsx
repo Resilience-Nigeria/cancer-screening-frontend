@@ -365,22 +365,31 @@ export default function BloomPage() {
               )}
             </Label>
 
-            {availableAreas.length > 0 && (
+            {(form.stateOfResidence && form.lgaOfResidence) && (
               <Label className="col-span-2">
                 <span className="text-sm font-semibold">
                   Area / District{" "}
                   <span className="text-gray-400 font-normal">(helps us find the closest centre)</span>
                 </span>
-                <Select
-                  className="mt-2 rounded-2xl h-12"
-                  value={form.areaOfResidence}
-                  onChange={(e) => setField("areaOfResidence", e.target.value)}
-                >
-                  <option value="">Select your area</option>
-                  {availableAreas.map((a) => (
-                    <option key={a} value={a}>{a}</option>
-                  ))}
-                </Select>
+                {availableAreas.length > 0 ? (
+                  <Select
+                    className="mt-2 rounded-2xl h-12"
+                    value={form.areaOfResidence}
+                    onChange={(e) => setField("areaOfResidence", e.target.value)}
+                  >
+                    <option value="">Select your area</option>
+                    {availableAreas.map((a) => (
+                      <option key={a} value={a}>{a}</option>
+                    ))}
+                  </Select>
+                ) : (
+                  <Input
+                    className="mt-2 rounded-2xl h-12"
+                    value={form.areaOfResidence}
+                    onChange={(e) => setField("areaOfResidence", e.target.value)}
+                    placeholder="Type your area, ward, or district"
+                  />
+                )}
               </Label>
             )}
           </div>
