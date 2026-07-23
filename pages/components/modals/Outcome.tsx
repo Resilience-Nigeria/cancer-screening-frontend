@@ -48,7 +48,6 @@ export default function OutcomeModal({
   const [form, setForm] = useState({
     preScreeningCounselingDate: "",
     preScreeningCounselor: "",
-    preScreeningConsent: "",
 
     screeningResult: "",
     screeningDate: today(),
@@ -97,8 +96,6 @@ export default function OutcomeModal({
       ),
       preScreeningCounselor:
         o.preScreeningCounselor ?? o.pre_screening_counselor ?? "",
-      preScreeningConsent:
-        o.preScreeningConsent ?? o.pre_screening_consent ?? "",
 
       screeningResult: o.screeningResult ?? o.screening_result ?? "",
       screeningDate:
@@ -275,19 +272,6 @@ export default function OutcomeModal({
                   onChange={(e) => setField("preScreeningCounselor", e.target.value)}
                   placeholder="Enter counselor name"
                 />
-              </Label>
-
-              <Label className="md:col-span-2">
-                <span className="text-sm font-semibold">Consent Obtained</span>
-                <Select
-                  className="mt-2 rounded-2xl h-12 shadow-sm"
-                  value={form.preScreeningConsent}
-                  onChange={(e) => setField("preScreeningConsent", e.target.value)}
-                >
-                  <option value="">Select</option>
-                  <option value="yes">Yes</option>
-                  <option value="no">No</option>
-                </Select>
               </Label>
             </div>
           </div>
