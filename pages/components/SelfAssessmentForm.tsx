@@ -21,12 +21,9 @@ export type AssessmentResult = {
 };
 
 type FamilyHistoryEntry = { cancerType: string; relation: string; ageAtDiagnosis: string };
-type ScreeningEntry = { type: string; date: string; result: string };
 
 type Answers = {
   age: string;
-  heightCm: string;
-  weightKg: string;
 
   smoker: string;
   cigarettesPerDay: string;
@@ -54,15 +51,11 @@ type Answers = {
   bloodInSemen: string;
 
   infections: string[];
-  previousScreenings: ScreeningEntry[];
   exposures: string[];
-  geneticSyndromes: string[];
 };
 
 const emptyAnswers: Answers = {
   age: "",
-  heightCm: "",
-  weightKg: "",
   smoker: "",
   cigarettesPerDay: "",
   smokingYears: "",
@@ -85,9 +78,7 @@ const emptyAnswers: Answers = {
   nocturia: "",
   bloodInSemen: "",
   infections: [],
-  previousScreenings: [],
   exposures: [],
-  geneticSyndromes: [],
 };
 
 const SYMPTOM_GROUPS: { title: string; items: { key: string; label: string }[] }[] = [
@@ -179,18 +170,6 @@ const EXPOSURE_ITEMS = [
   { key: "pesticides", label: "Agricultural pesticides" },
 ];
 
-const GENETIC_ITEMS = [
-  { key: "brca", label: "BRCA mutation" },
-  { key: "lynch", label: "Lynch Syndrome" },
-  { key: "fap", label: "Familial adenomatous polyposis" },
-  { key: "other", label: "Other hereditary cancer syndrome" },
-];
-
-const SCREENING_TYPES = [
-  "Mammogram", "Clinical breast examination", "Pap smear", "HPV DNA test",
-  "PSA test", "Colonoscopy", "FIT stool test", "Oral cancer screening",
-];
-
 function toggleInArray(arr: string[], key: string): string[] {
   return arr.includes(key) ? arr.filter((k) => k !== key) : [...arr, key];
 }
@@ -258,7 +237,7 @@ export default function SelfAssessmentForm({
   const steps = useMemo(() => {
     const base = ["basics", "symptoms", "lifestyle", "medical", "family"];
     const genderStep = gender === "female" ? "womens" : "mens";
-    return [...base, genderStep, "infection", "screening", "exposure", "genetic", "review"];
+    return [...base, genderStep, "infection", "exposure", "review"];
   }, [gender]);
 
   const currentKey = steps[stepIndex];
@@ -293,20 +272,6 @@ export default function SelfAssessmentForm({
     set("familyHistory", answers.familyHistory.filter((_, i) => i !== idx));
   }
 
-  function addScreening() {
-    set("previousScreenings", [...answers.previousScreenings, { type: "", date: "", result: "" }]);
-  }
-
-  function updateScreening(idx: number, patch: Partial<ScreeningEntry>) {
-    const next = [...answers.previousScreenings];
-    next[idx] = { ...next[idx], ...patch };
-    set("previousScreenings", next);
-  }
-
-  function removeScreening(idx: number) {
-    set("previousScreenings", answers.previousScreenings.filter((_, i) => i !== idx));
-  }
-
   async function submit() {
     setSubmitting(true);
     setError("");
@@ -315,8 +280,6 @@ export default function SelfAssessmentForm({
         registrationId,
         answers: {
           age: answers.age ? parseInt(answers.age) : null,
-          heightCm: answers.heightCm ? parseFloat(answers.heightCm) : null,
-          weightKg: answers.weightKg ? parseFloat(answers.weightKg) : null,
           smoker: answers.smoker || null,
           cigarettesPerDay: answers.cigarettesPerDay ? parseInt(answers.cigarettesPerDay) : null,
           smokingYears: answers.smokingYears ? parseInt(answers.smokingYears) : null,
@@ -345,9 +308,7 @@ export default function SelfAssessmentForm({
           nocturia: answers.nocturia ? answers.nocturia === "yes" : null,
           bloodInSemen: answers.bloodInSemen ? answers.bloodInSemen === "yes" : null,
           infections: answers.infections,
-          previousScreenings: answers.previousScreenings.filter((s) => s.type),
           exposures: answers.exposures,
-          geneticSyndromes: answers.geneticSyndromes,
         },
       };
 
@@ -386,7 +347,7 @@ export default function SelfAssessmentForm({
           {currentKey === "basics" && (
             <StepShell title="A little about you" subtitle="This helps us tailor your assessment.">
               <Label>
-                <span className="text-sm font-semibold">Age <span className="text-red-500">*</span></span>
+                <span className="text-sm font-semibold">How old are you? <span className="text-red-500">*</span></span>
                 <Input
                   type="number"
                   min={1}
@@ -397,28 +358,6 @@ export default function SelfAssessmentForm({
                   placeholder="Your age in years"
                 />
               </Label>
-              <div className="grid grid-cols-2 gap-4">
-                <Label>
-                  <span className="text-sm font-semibold">Height (cm)</span>
-                  <Input
-                    type="number"
-                    className="mt-2 rounded-2xl h-12"
-                    value={answers.heightCm}
-                    onChange={(e) => set("heightCm", e.target.value)}
-                    placeholder="e.g. 165"
-                  />
-                </Label>
-                <Label>
-                  <span className="text-sm font-semibold">Weight (kg)</span>
-                  <Input
-                    type="number"
-                    className="mt-2 rounded-2xl h-12"
-                    value={answers.weightKg}
-                    onChange={(e) => set("weightKg", e.target.value)}
-                    placeholder="e.g. 70"
-                  />
-                </Label>
-              </div>
             </StepShell>
           )}
 
@@ -450,22 +389,22 @@ export default function SelfAssessmentForm({
           {currentKey === "lifestyle" && (
             <StepShell title="Lifestyle">
               <Label>
-                <span className="text-sm font-semibold">Smoking status</span>
+                <span className="text-sm font-semibold">Do you smoke?</span>
                 <Select
                   className="mt-2 rounded-2xl h-12"
                   value={answers.smoker}
                   onChange={(e) => set("smoker", e.target.value)}
                 >
                   <option value="">Select</option>
-                  <option value="never">Never smoked</option>
-                  <option value="former">Former smoker</option>
-                  <option value="current">Current smoker</option>
+                  <option value="never">I've never smoked</option>
+                  <option value="former">I used to smoke</option>
+                  <option value="current">Yes, I currently smoke</option>
                 </Select>
               </Label>
               {answers.smoker === "current" && (
                 <div className="grid grid-cols-2 gap-4">
                   <Label>
-                    <span className="text-sm font-semibold">Cigarettes/day</span>
+                    <span className="text-sm font-semibold">How many cigarettes a day?</span>
                     <Input
                       type="number"
                       className="mt-2 rounded-2xl h-12"
@@ -474,7 +413,7 @@ export default function SelfAssessmentForm({
                     />
                   </Label>
                   <Label>
-                    <span className="text-sm font-semibold">Years smoking</span>
+                    <span className="text-sm font-semibold">For how many years?</span>
                     <Input
                       type="number"
                       className="mt-2 rounded-2xl h-12"
@@ -485,21 +424,21 @@ export default function SelfAssessmentForm({
                 </div>
               )}
               <Label>
-                <span className="text-sm font-semibold">Alcohol use</span>
+                <span className="text-sm font-semibold">Do you drink alcohol?</span>
                 <Select
                   className="mt-2 rounded-2xl h-12"
                   value={answers.alcohol}
                   onChange={(e) => set("alcohol", e.target.value)}
                 >
                   <option value="">Select</option>
-                  <option value="none">None</option>
-                  <option value="occasional">Occasional</option>
-                  <option value="regular">Regular</option>
-                  <option value="heavy">Heavy</option>
+                  <option value="none">No, I don't drink</option>
+                  <option value="occasional">Occasionally</option>
+                  <option value="regular">Regularly</option>
+                  <option value="heavy">Frequently / heavily</option>
                 </Select>
               </Label>
               <Label>
-                <span className="text-sm font-semibold">Exercise days per week</span>
+                <span className="text-sm font-semibold">How many days a week do you exercise?</span>
                 <Input
                   type="number"
                   min={0}
@@ -760,53 +699,6 @@ export default function SelfAssessmentForm({
             </StepShell>
           )}
 
-          {currentKey === "screening" && (
-            <StepShell title="Previous screening" subtitle="Have you had any of these before? (optional)">
-              {answers.previousScreenings.map((s, idx) => (
-                <div key={idx} className="rounded-2xl border border-gray-100 bg-gray-50 p-4 space-y-3">
-                  <Select
-                    className="rounded-xl h-11 w-full"
-                    value={s.type}
-                    onChange={(e) => updateScreening(idx, { type: e.target.value })}
-                  >
-                    <option value="">Screening type</option>
-                    {SCREENING_TYPES.map((t) => (
-                      <option key={t} value={t}>{t}</option>
-                    ))}
-                  </Select>
-                  <div className="flex items-center gap-3">
-                    <Input
-                      type="date"
-                      className="rounded-xl h-11 flex-1"
-                      value={s.date}
-                      onChange={(e) => updateScreening(idx, { date: e.target.value })}
-                    />
-                    <Input
-                      className="rounded-xl h-11 flex-1"
-                      placeholder="Result (if known)"
-                      value={s.result}
-                      onChange={(e) => updateScreening(idx, { result: e.target.value })}
-                    />
-                    <button
-                      type="button"
-                      onClick={() => removeScreening(idx)}
-                      className="p-2 rounded-lg text-red-500 hover:bg-red-50 shrink-0"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
-                </div>
-              ))}
-              <button
-                type="button"
-                onClick={addScreening}
-                className="inline-flex items-center gap-1.5 text-sm font-semibold text-green-700 hover:text-green-800"
-              >
-                <Plus className="w-4 h-4" /> Add a previous screening
-              </button>
-            </StepShell>
-          )}
-
           {currentKey === "exposure" && (
             <StepShell title="Environmental exposure" subtitle="Have you ever worked around any of these?">
               {EXPOSURE_ITEMS.map((item) => (
@@ -815,19 +707,6 @@ export default function SelfAssessmentForm({
                   label={item.label}
                   checked={answers.exposures.includes(item.key)}
                   onChange={() => set("exposures", toggleInArray(answers.exposures, item.key))}
-                />
-              ))}
-            </StepShell>
-          )}
-
-          {currentKey === "genetic" && (
-            <StepShell title="Genetic risk" subtitle="Has anyone in your family been told they have any of these?">
-              {GENETIC_ITEMS.map((item) => (
-                <Checkbox
-                  key={item.key}
-                  label={item.label}
-                  checked={answers.geneticSyndromes.includes(item.key)}
-                  onChange={() => set("geneticSyndromes", toggleInArray(answers.geneticSyndromes, item.key))}
                 />
               ))}
             </StepShell>
