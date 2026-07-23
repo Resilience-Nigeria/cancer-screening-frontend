@@ -260,8 +260,13 @@ export default function ClinicalScreeningPage() {
 
   // ── Lookup ───────────────────────────────────────────────────────────
   async function handleLookup(overrideValue?: string) {
-    const value = overrideValue ?? lookupValue;
-    if (!value.trim()) return;
+    // const value = overrideValue ?? lookupValue;
+    // if (!value.trim()) return;
+    const value = (overrideValue ?? lookupValue ?? "").toString().trim();
+  if (!value) {
+    toast.error("Please enter a phone number or Client ID to search.");
+    return;
+  }
     setBusy(true);
     try {
       const { data } = await api.get(`/clients/search/details`, { params: { search: value.trim() } });
@@ -672,14 +677,17 @@ export default function ClinicalScreeningPage() {
               self-assessment. If nothing matches, you'll continue as a new registration.
             </p>
             <div className="flex gap-2">
+            
+
               <Input
-                className="rounded-2xl h-12 flex-1"
-                placeholder="Phone number or Client ID"
-                value={lookupValue}
-                onChange={(e) => setLookupValue(e.target.value)}
-              />
+  className="rounded-2xl h-12 flex-1"
+  placeholder="Phone number or Client ID"
+  value={lookupValue}
+  onChange={(e) => setLookupValue(e.target.value || "")}
+/>
               <Button
-                onClick={handleLookup}
+                // onClick={handleLookup}
+                onClick={() => handleLookup(lookupValue)}
                 disabled={busy}
                 className="h-12 px-5 rounded-2xl bg-green-700 border-green-700 hover:bg-green-800"
               >

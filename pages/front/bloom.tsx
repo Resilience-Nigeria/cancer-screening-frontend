@@ -136,6 +136,7 @@ export default function BloomPage() {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [availableAreas, setAvailableAreas] = useState<string[]>([]);
   const [assessmentResult, setAssessmentResult] = useState<AssessmentResult | null>(null);
+  const [consentChecked, setConsentChecked] = useState(false);
 
   function setField(name: string, value: string) {
     setForm((prev) => {
@@ -153,6 +154,7 @@ export default function BloomPage() {
     if (!form.phoneNumber.trim()) e.phoneNumber = "Phone number is required.";
     if (!form.stateOfResidence) e.stateOfResidence = "Please select your state.";
     if (!form.lgaOfResidence) e.lgaOfResidence = "Please select your LGA.";
+    if (!consentChecked) e.consent = "You must agree to the terms to proceed.";
     return e;
   }
 
@@ -241,11 +243,10 @@ export default function BloomPage() {
     <div className="min-h-screen bg-gradient-to-br from-green-50 to-white flex flex-col items-center justify-center p-4">
       <div className="max-w-lg w-full flex-1 flex flex-col justify-center">
         <div className="text-center mb-8">
-          <div >
+          <div>
             <img
               src="/assets/img/NCSR.svg"
               alt="NCSR Logo"
-              // className="w-10 h-10 object-contain"
               onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
             />
           </div>
@@ -260,6 +261,39 @@ export default function BloomPage() {
           onSubmit={handleSubmit}
           className="bg-white rounded-3xl shadow-lg border border-gray-100 p-6 space-y-5"
         >
+          {/* Consent Section */}
+          <div className="bg-blue-50 border border-blue-200 rounded-2xl p-4 space-y-3">
+            <h2 className="text-sm font-bold text-blue-900">Consent to Collect and Use Your Information</h2>
+            <p className="text-sm text-gray-700 leading-relaxed">
+              Before you begin, please confirm that you agree to provide information for this
+              cancer screening assessment. Your information will be used to assess your screening
+              needs, support referrals, and improve the delivery of cancer screening services.
+              Your information will be handled securely and will only be accessed by authorized
+              personnel. Completing this assessment does not provide a confirmed diagnosis. You
+              may be contacted or referred for further assessment based on your responses.
+            </p>
+            <label className="flex items-start gap-3 cursor-pointer pt-1">
+              <input
+                type="checkbox"
+                checked={consentChecked}
+                onChange={(e) => {
+                  setConsentChecked(e.target.checked);
+                  if (e.target.checked) {
+                    setErrors((prev) => ({ ...prev, consent: "" }));
+                  }
+                }}
+                className="mt-1 w-4 h-4 text-green-700 border-gray-300 rounded focus:ring-green-500"
+              />
+              <span className="text-sm text-gray-700">
+                I have read and understood the information above, and I agree to the collection
+                and use of my information for this purpose.
+              </span>
+            </label>
+            {errors.consent && (
+              <span className="text-xs text-red-500 block">{errors.consent}</span>
+            )}
+          </div>
+
           <Label>
             <span className="text-sm font-semibold">
               Full Name <span className="text-red-500">*</span>
@@ -387,8 +421,12 @@ export default function BloomPage() {
 
           <Button
             type="submit"
-            disabled={submitting}
-            className="w-full h-12 rounded-2xl bg-green-700 border-green-700 hover:bg-green-800 text-base font-semibold mt-2"
+            disabled={submitting || !consentChecked}
+            className={`w-full h-12 rounded-2xl text-base font-semibold mt-2 ${
+              !consentChecked
+                ? "bg-gray-400 border-gray-400 cursor-not-allowed"
+                : "bg-green-700 border-green-700 hover:bg-green-800"
+            }`}
           >
             {submitting ? (
               <span className="inline-flex items-center gap-2">
