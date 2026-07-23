@@ -1,7 +1,7 @@
 // components/OtpVerificationStep.tsx
 import React, { useState, useRef, useEffect } from "react";
 import { Button } from "@roketid/windmill-react-ui";
-import { Loader2, ShieldCheck, RefreshCw, CheckCircle } from "lucide-react";
+import { Loader2, ShieldCheck, RefreshCw, CheckCircle, Mail, MessageCircle, Smartphone } from "lucide-react";
 import api from "@/lib/api";
 
 type Props = {
@@ -18,8 +18,8 @@ export default function OtpVerificationStep({
   maskedPhone,
   registrationId,
   onVerified,
-    email,
-    name,
+  email,
+  name,
 }: Props) {
   const [otp, setOtp] = useState<string[]>(["", "", "", "", "", ""]);
   const [verifying, setVerifying] = useState(false);
@@ -100,8 +100,8 @@ export default function OtpVerificationStep({
       await api.post("/otp/resend", {
         phoneNumber,
         registrationId,
-        email: email ?? null,   // 👈 add
-        name: name ?? null,     // 👈 add
+        email: email ?? null,
+        name: name ?? null,
       });
       setCountdown(60);
       setCanResend(false);
@@ -114,6 +114,23 @@ export default function OtpVerificationStep({
     }
   }
 
+  // Determine which channels are available
+  const hasEmail = !!email;
+  const hasWhatsApp = true; // Assuming WhatsApp is always available
+  const hasSMS = true; // Assuming SMS is always available
+
+  const channels = [];
+  if (hasEmail) channels.push({ icon: Mail, label: "Email" });
+  if (hasWhatsApp) channels.push({ icon: MessageCircle, label: "WhatsApp" });
+  if (hasSMS) channels.push({ icon: Smartphone, label: "SMS" });
+
+  // Format the delivery channels message
+  const channelList = channels.map(c => c.label).join(", ");
+  const lastChannel = channels.length > 1 ? channels[channels.length - 1].label : "";
+  const channelMessage = channels.length > 1 
+    ? `${channels.slice(0, -1).map(c => c.label).join(", ")} or ${lastChannel}`
+    : channelList;
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-green-50 to-white flex items-center justify-center p-4">
       <div className="max-w-md w-full">
@@ -125,9 +142,22 @@ export default function OtpVerificationStep({
           </div>
           <h1 className="text-2xl font-bold text-gray-900">Verify your number</h1>
           <p className="mt-2 text-sm text-gray-500">
-            We sent a 6-digit code via WhatsApp to
+            We sent a 6-digit verification code via
           </p>
-          <p className="mt-1 font-semibold text-gray-800 text-base">{maskedPhone}</p>
+          <div className="mt-2 flex items-center justify-center gap-2 flex-wrap">
+            {channels.map((channel, index) => (
+              <span key={index} className="inline-flex items-center gap-1.5 px-3 py-1 bg-gray-100 rounded-full text-xs font-medium text-gray-700">
+                <channel.icon className="w-3.5 h-3.5" />
+                {channel.label}
+              </span>
+            ))}
+          </div>
+          <p className="mt-3 text-sm text-gray-500">
+            to {email ? `your email (${email}) and phone` : 'your phone'}
+          </p>
+          <p className="mt-1 font-semibold text-gray-800 text-base">
+            {email ? `${email} • ${maskedPhone}` : maskedPhone}
+          </p>
         </div>
 
         {/* OTP Card */}
@@ -214,10 +244,41 @@ export default function OtpVerificationStep({
             )}
           </div>
 
-          <p className="text-center text-xs text-gray-400">
-            Didn't get the code? Check your WhatsApp messages.
-            Make sure your number is correct.
-          </p>
+          {/* Updated help text */}
+          <div className="space-y-2">
+            <p className="text-center text-xs text-gray-400">
+              Didn't get the code? Check your {channelMessage} messages.
+              Make sure your contact details are correct.
+            </p>
+            {hasEmail && (
+              <div className="flex items-center justify-center gap-1 text-xs text-gray-400">
+                <Mail className="w-3 h-3" />
+                <span>Check your email spam folder if you don't see it in your inbox</span>
+              </div>
+            )}
+          </div>
+
+          {/* Channel icons for visual reference */}
+          <div className="flex justify-center gap-4 pt-2 border-t border-gray-100">
+            {hasWhatsApp && (
+              <div className="flex items-center gap-1.5 text-xs text-gray-500">
+                <MessageCircle className="w-4 h-4 text-green-600" />
+                <span>WhatsApp</span>
+              </div>
+            )}
+            {hasSMS && (
+              <div className="flex items-center gap-1.5 text-xs text-gray-500">
+                <Smartphone className="w-4 h-4 text-blue-500" />
+                <span>SMS</span>
+              </div>
+            )}
+            {hasEmail && (
+              <div className="flex items-center gap-1.5 text-xs text-gray-500">
+                <Mail className="w-4 h-4 text-red-500" />
+                <span>Email</span>
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>

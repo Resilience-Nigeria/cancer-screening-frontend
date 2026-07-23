@@ -1,7 +1,7 @@
 "use client";
 import React, { useEffect, useState } from "react";
 import { Button, Input, Label, Select } from "@roketid/windmill-react-ui";
-import { AlertTriangle, CheckCircle, Loader2 } from "lucide-react";
+import { AlertTriangle, CheckCircle, Loader2, X, Minimize2, Maximize2, Info } from "lucide-react";
 import { nigerianStates, lgasByState, getStateCode } from "../../lib/nigerianstates";
 import api from "@/lib/api";
 import OtpVerificationStep from "../components/OtpVerificationService";
@@ -114,6 +114,143 @@ function ResultsScreen({ name, result }: { name: string; result: AssessmentResul
   );
 }
 
+// Info Popup Component
+function InfoPopup({ isOpen, onClose, isMinimized, onToggleMinimize }: { 
+  isOpen: boolean; 
+  onClose: () => void; 
+  isMinimized: boolean;
+  onToggleMinimize: () => void;
+}) {
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+      <div className={`bg-white rounded-2xl shadow-2xl w-full max-w-2xl transition-all duration-300 ${
+        isMinimized ? 'h-auto max-h-16' : 'max-h-[90vh]'
+      }`}>
+        {/* Header */}
+        <div className="flex items-center justify-between p-4 border-b border-gray-100">
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-green-100 rounded-full">
+              <Info className="w-5 h-5 text-green-700" />
+            </div>
+            <h2 className="text-lg font-bold text-gray-900">About This Program</h2>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={onToggleMinimize}
+              className="p-1.5 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
+              aria-label={isMinimized ? "Maximize" : "Minimize"}
+            >
+              {isMinimized ? <Maximize2 className="w-4 h-4" /> : <Minimize2 className="w-4 h-4" />}
+            </button>
+            <button
+              onClick={onClose}
+              className="p-1.5 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
+              aria-label="Close"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+
+        {/* Content */}
+        {!isMinimized && (
+          <div className="p-6 overflow-y-auto max-h-[calc(90vh-80px)]">
+            <div className="space-y-6">
+              {/* Program Overview */}
+              <div>
+                <h3 className="text-sm font-semibold text-green-700 uppercase tracking-wide mb-2">Program Overview</h3>
+                <p className="text-sm text-gray-600 leading-relaxed">
+                  The Cancer Self-Assessment Portal is a free, confidential initiative by the <b>National Institute for Cancer Research and Treatment</b>. It is
+                  designed to help you understand your personal cancer risk factors and connect you with 
+                  appropriate screening services. This program is part of Nigeria's commitment to early 
+                  cancer detection and prevention.
+                </p>
+              </div>
+
+              {/* What to Expect */}
+              <div>
+                <h3 className="text-sm font-semibold text-green-700 uppercase tracking-wide mb-2">What to Expect</h3>
+                <ul className="space-y-2 text-sm text-gray-600">
+                  <li className="flex items-start gap-2">
+                    <span className="text-green-600 font-bold">•</span>
+                    <span>A brief assessment of your personal and family health history</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <span className="text-green-600 font-bold">•</span>
+                    <span>Confidential risk analysis based on evidence-based guidelines</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <span className="text-green-600 font-bold">•</span>
+                    <span>Referral to your nearest screening center if needed</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <span className="text-green-600 font-bold">•</span>
+                    <span>Follow-up support from our patient navigators</span>
+                  </li>
+                </ul>
+              </div>
+
+              {/* How It Works */}
+              <div>
+                <h3 className="text-sm font-semibold text-green-700 uppercase tracking-wide mb-2">How It Works</h3>
+                <ol className="space-y-2 text-sm text-gray-600 list-decimal list-inside">
+                  <li>Fill in your personal information (name, contact details, location)</li>
+                  <li>Review and accept the consent agreement</li>
+                  <li>Complete the health assessment questionnaire (about 5 minutes)</li>
+                  <li>Receive your personalized risk assessment result</li>
+                  <li>Get connected to a nearby screening center if recommended</li>
+                </ol>
+              </div>
+
+              {/* Privacy & Security */}
+              <div>
+                <h3 className="text-sm font-semibold text-green-700 uppercase tracking-wide mb-2">Privacy & Security</h3>
+                <p className="text-sm text-gray-600 leading-relaxed">
+                  Your privacy is our priority. All information you provide is encrypted and stored securely. 
+                  Data is only accessible to authorized healthcare personnel and used solely for the purpose 
+                  of cancer screening coordination. You can withdraw your consent at any time.
+                </p>
+              </div>
+
+              {/* Need Help? */}
+              <div className="bg-green-50 rounded-xl p-4">
+                <h3 className="text-sm font-semibold text-green-800 mb-2">Need Help?</h3>
+                <p className="text-sm text-gray-600">
+                  If you have questions or need assistance with the assessment:
+                </p>
+                <div className="mt-2 text-sm">
+                  <p className="text-gray-700">
+                    <span className="font-medium">Call:</span>{' '}
+                    <a href="tel:08001234567" className="text-green-700 hover:underline">0800-123-4567</a>
+                  </p>
+                  <p className="text-gray-700">
+                    <span className="font-medium">Email:</span>{' '}
+                    <a href="mailto:support@resilienceng.org" className="text-green-700 hover:underline">
+                      support@ncsr.gov.ng
+                    </a>
+                  </p>
+                </div>
+              </div>
+
+              {/* Close Button */}
+              <div className="pt-2">
+                <button
+                  onClick={onClose}
+                  className="w-full py-3 bg-green-700 text-white font-semibold rounded-xl hover:bg-green-800 transition-colors"
+                >
+                  Got it, let's begin!
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function BloomPage() {
   const [form, setForm] = useState({
     fullName: "",
@@ -137,6 +274,8 @@ export default function BloomPage() {
   const [availableAreas, setAvailableAreas] = useState<string[]>([]);
   const [assessmentResult, setAssessmentResult] = useState<AssessmentResult | null>(null);
   const [consentChecked, setConsentChecked] = useState(false);
+  const [showInfoPopup, setShowInfoPopup] = useState(true);
+  const [isPopupMinimized, setIsPopupMinimized] = useState(false);
 
   function setField(name: string, value: string) {
     setForm((prev) => {
@@ -240,214 +379,235 @@ export default function BloomPage() {
 
   // ── Default: biodata registration form ──────────────────────────────────
   return (
-    <div className="min-h-screen bg-gradient-to-br from-green-50 to-white flex flex-col items-center justify-center p-4">
-      <div className="max-w-lg w-full flex-1 flex flex-col justify-center">
-        <div className="text-center mb-8">
-          <div>
-            <img
-              src="/assets/img/NCSR.svg"
-              alt="NCSR Logo"
-              onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
-            />
-          </div>
-          <h1 className="text-2xl font-bold text-gray-900">Cancer Self-Assessment Portal</h1>
-          <p className="mt-2 text-sm text-gray-500">
-            Answer a few questions about your health to find out your risk level and get
-            connected to a nearby screening centre. Takes about 5 minutes.
-          </p>
-        </div>
+    <>
+      {/* Info Popup */}
+      <InfoPopup 
+        isOpen={showInfoPopup}
+        onClose={() => setShowInfoPopup(false)}
+        isMinimized={isPopupMinimized}
+        onToggleMinimize={() => setIsPopupMinimized(!isPopupMinimized)}
+      />
 
-        <form
-          onSubmit={handleSubmit}
-          className="bg-white rounded-3xl shadow-lg border border-gray-100 p-6 space-y-5"
-        >
-          {/* Consent Section */}
-          <div className="bg-blue-50 border border-blue-200 rounded-2xl p-4 space-y-3">
-            <h2 className="text-sm font-bold text-blue-900">Consent to Collect and Use Your Information</h2>
-            <p className="text-sm text-gray-700 leading-relaxed">
-              Before you begin, please confirm that you agree to provide information for this
-              cancer screening assessment. Your information will be used to assess your screening
-              needs, support referrals, and improve the delivery of cancer screening services.
-              Your information will be handled securely and will only be accessed by authorized
-              personnel. Completing this assessment does not provide a confirmed diagnosis. You
-              may be contacted or referred for further assessment based on your responses.
-            </p>
-            <label className="flex items-start gap-3 cursor-pointer pt-1">
-              <input
-                type="checkbox"
-                checked={consentChecked}
-                onChange={(e) => {
-                  setConsentChecked(e.target.checked);
-                  if (e.target.checked) {
-                    setErrors((prev) => ({ ...prev, consent: "" }));
-                  }
-                }}
-                className="mt-1 w-4 h-4 text-green-700 border-gray-300 rounded focus:ring-green-500"
+      <div className="min-h-screen bg-gradient-to-br from-green-50 to-white flex flex-col items-center justify-center p-4">
+        <div className="max-w-lg w-full flex-1 flex flex-col justify-center">
+          <div className="text-center mb-8">
+            <div>
+              <img
+                src="/assets/img/NCSR.svg"
+                alt="NCSR Logo"
+                onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
               />
-              <span className="text-sm text-gray-700">
-                I have read and understood the information above, and I agree to the collection
-                and use of my information for this purpose.
-              </span>
-            </label>
-            {errors.consent && (
-              <span className="text-xs text-red-500 block">{errors.consent}</span>
-            )}
+            </div>
+            <h1 className="text-2xl font-bold text-gray-900">Cancer Self-Assessment Portal</h1>
+            <p className="mt-2 text-sm text-gray-500">
+              Answer a few questions about your health to find out your risk level and get
+              connected to a nearby screening centre. Takes about 5 minutes.
+            </p>
           </div>
 
-          <Label>
-            <span className="text-sm font-semibold">
-              Full Name <span className="text-red-500">*</span>
-            </span>
-            <Input
-              className={`mt-2 rounded-2xl h-12 ${errors.fullName ? "ring-2 ring-red-400" : ""}`}
-              value={form.fullName}
-              onChange={(e) => setField("fullName", e.target.value)}
-              placeholder="Enter your full name"
-            />
-            {errors.fullName && (
-              <span className="text-xs text-red-500 mt-1 block">{errors.fullName}</span>
-            )}
-          </Label>
-
-          <div className="grid grid-cols-2 gap-4">
+          <form
+            onSubmit={handleSubmit}
+            className="bg-white rounded-3xl shadow-lg border border-gray-100 p-6 space-y-5"
+          >
             <Label>
               <span className="text-sm font-semibold">
-                Gender <span className="text-red-500">*</span>
-              </span>
-              <Select
-                className={`mt-2 rounded-2xl h-12 ${errors.gender ? "ring-2 ring-red-400" : ""}`}
-                value={form.gender}
-                onChange={(e) => setField("gender", e.target.value)}
-              >
-                <option value="">Select</option>
-                <option value="female">Female</option>
-                <option value="male">Male</option>
-              </Select>
-              {errors.gender && (
-                <span className="text-xs text-red-500 mt-1 block">{errors.gender}</span>
-              )}
-            </Label>
-
-            <Label>
-              <span className="text-sm font-semibold">
-                Phone Number <span className="text-red-500">*</span>
+                Full Name <span className="text-red-500">*</span>
               </span>
               <Input
-                type="tel"
-                className={`mt-2 rounded-2xl h-12 ${errors.phoneNumber ? "ring-2 ring-red-400" : ""}`}
-                value={form.phoneNumber}
-                onChange={(e) => setField("phoneNumber", e.target.value)}
-                placeholder="080xxxxxxxx"
+                className={`mt-2 rounded-2xl h-12 ${errors.fullName ? "ring-2 ring-red-400" : ""}`}
+                value={form.fullName}
+                onChange={(e) => setField("fullName", e.target.value)}
+                placeholder="Enter your full name"
               />
-              {errors.phoneNumber && (
-                <span className="text-xs text-red-500 mt-1 block">{errors.phoneNumber}</span>
-              )}
-            </Label>
-          </div>
-
-          <Label>
-            <span className="text-sm font-semibold">
-              Email <span className="text-gray-400 font-normal">(optional)</span>
-            </span>
-            <Input
-              type="email"
-              className="mt-2 rounded-2xl h-12"
-              value={form.email}
-              onChange={(e) => setField("email", e.target.value)}
-              placeholder="you@example.com"
-            />
-          </Label>
-
-          <div className="grid grid-cols-2 gap-4">
-            <Label>
-              <span className="text-sm font-semibold">
-                State <span className="text-red-500">*</span>
-              </span>
-              <Select
-                className={`mt-2 rounded-2xl h-12 ${errors.stateOfResidence ? "ring-2 ring-red-400" : ""}`}
-                value={form.stateOfResidence}
-                onChange={(e) => setField("stateOfResidence", e.target.value)}
-              >
-                <option value="">Select state</option>
-                {nigerianStates.map((s) => (
-                  <option key={s.code} value={s.name}>{s.name}</option>
-                ))}
-              </Select>
-              {errors.stateOfResidence && (
-                <span className="text-xs text-red-500 mt-1 block">{errors.stateOfResidence}</span>
+              {errors.fullName && (
+                <span className="text-xs text-red-500 mt-1 block">{errors.fullName}</span>
               )}
             </Label>
 
-            <Label>
-              <span className="text-sm font-semibold">
-                LGA <span className="text-red-500">*</span>
-              </span>
-              <Select
-                className={`mt-2 rounded-2xl h-12 ${errors.lgaOfResidence ? "ring-2 ring-red-400" : ""}`}
-                value={form.lgaOfResidence}
-                disabled={!form.stateOfResidence}
-                onChange={(e) => setField("lgaOfResidence", e.target.value)}
-              >
-                <option value="">Select LGA</option>
-                {form.stateOfResidence &&
-                  lgasByState[getStateCode(form.stateOfResidence)]?.map((lga) => (
-                    <option key={lga} value={lga}>{lga}</option>
-                  ))}
-              </Select>
-              {errors.lgaOfResidence && (
-                <span className="text-xs text-red-500 mt-1 block">{errors.lgaOfResidence}</span>
-              )}
-            </Label>
-
-            {availableAreas.length > 0 && (
-              <Label className="col-span-2">
+            <div className="grid grid-cols-2 gap-4">
+              <Label>
                 <span className="text-sm font-semibold">
-                  Area / District{" "}
-                  <span className="text-gray-400 font-normal">(helps us find the closest centre)</span>
+                  Gender <span className="text-red-500">*</span>
                 </span>
                 <Select
-                  className="mt-2 rounded-2xl h-12"
-                  value={form.areaOfResidence}
-                  onChange={(e) => setField("areaOfResidence", e.target.value)}
+                  className={`mt-2 rounded-2xl h-12 ${errors.gender ? "ring-2 ring-red-400" : ""}`}
+                  value={form.gender}
+                  onChange={(e) => setField("gender", e.target.value)}
                 >
-                  <option value="">Select your area</option>
-                  {availableAreas.map((a) => (
-                    <option key={a} value={a}>{a}</option>
+                  <option value="">Select</option>
+                  <option value="female">Female</option>
+                  <option value="male">Male</option>
+                </Select>
+                {errors.gender && (
+                  <span className="text-xs text-red-500 mt-1 block">{errors.gender}</span>
+                )}
+              </Label>
+
+              <Label>
+                <span className="text-sm font-semibold">
+                  Phone Number <span className="text-red-500">*</span>
+                </span>
+                <Input
+                  type="tel"
+                  className={`mt-2 rounded-2xl h-12 ${errors.phoneNumber ? "ring-2 ring-red-400" : ""}`}
+                  value={form.phoneNumber}
+                  onChange={(e) => setField("phoneNumber", e.target.value)}
+                  placeholder="080xxxxxxxx"
+                />
+                {errors.phoneNumber && (
+                  <span className="text-xs text-red-500 mt-1 block">{errors.phoneNumber}</span>
+                )}
+              </Label>
+            </div>
+
+            <Label>
+              <span className="text-sm font-semibold">
+                Email <span className="text-gray-400 font-normal">(optional)</span>
+              </span>
+              <Input
+                type="email"
+                className="mt-2 rounded-2xl h-12"
+                value={form.email}
+                onChange={(e) => setField("email", e.target.value)}
+                placeholder="you@example.com"
+              />
+            </Label>
+            <p className="text-sm leading-relaxed mb-2 italic text-red-500">
+              Current location information helps us connect you to the nearest screening centre.
+            </p> 
+            <div className="grid grid-cols-2 gap-4">
+              <Label>
+                <span className="text-sm font-semibold">
+                  State of Residence <span className="text-red-500">*</span>
+                </span>
+                <Select
+                  className={`mt-2 rounded-2xl h-12 ${errors.stateOfResidence ? "ring-2 ring-red-400" : ""}`}
+                  value={form.stateOfResidence}
+                  onChange={(e) => setField("stateOfResidence", e.target.value)}
+                >
+                  <option value="">Select state</option>
+                  {nigerianStates.map((s) => (
+                    <option key={s.code} value={s.name}>{s.name}</option>
                   ))}
                 </Select>
+                {errors.stateOfResidence && (
+                  <span className="text-xs text-red-500 mt-1 block">{errors.stateOfResidence}</span>
+                )}
               </Label>
-            )}
-          </div>
 
-          <Button
-            type="submit"
-            disabled={submitting || !consentChecked}
-            className={`w-full h-12 rounded-2xl text-base font-semibold mt-2 ${
-              !consentChecked
-                ? "bg-gray-400 border-gray-400 cursor-not-allowed"
-                : "bg-green-700 border-green-700 hover:bg-green-800"
-            }`}
-          >
-            {submitting ? (
-              <span className="inline-flex items-center gap-2">
-                <Loader2 className="w-4 h-4 animate-spin" />
-                Getting started...
-              </span>
-            ) : (
-              "Start My Assessment"
-            )}
-          </Button>
+              <Label>
+                <span className="text-sm font-semibold">
+                  LGA of Residence <span className="text-red-500">*</span>
+                </span>
+                <Select
+                  className={`mt-2 rounded-2xl h-12 ${errors.lgaOfResidence ? "ring-2 ring-red-400" : ""}`}
+                  value={form.lgaOfResidence}
+                  disabled={!form.stateOfResidence}
+                  onChange={(e) => setField("lgaOfResidence", e.target.value)}
+                >
+                  <option value="">Select LGA</option>
+                  {form.stateOfResidence &&
+                    lgasByState[getStateCode(form.stateOfResidence)]?.map((lga) => (
+                      <option key={lga} value={lga}>{lga}</option>
+                    ))}
+                </Select>
+                {errors.lgaOfResidence && (
+                  <span className="text-xs text-red-500 mt-1 block">{errors.lgaOfResidence}</span>
+                )}
+              </Label>
 
-          <p className="text-center text-xs text-gray-400">
-            We'll text you a verification code to confirm you consent to sharing this
-            information for cancer screening linkage. Your information is kept confidential.
-          </p>
-        </form>
+              {(form.stateOfResidence && form.lgaOfResidence) && (
+                <Label className="col-span-2">
+                  <span className="text-sm font-semibold">
+                    Area / District{" "}
+                    <span className="text-gray-400 font-normal">(helps us find the closest centre)</span>
+                  </span>
+                  {availableAreas.length > 0 ? (
+                    <Select
+                      className="mt-2 rounded-2xl h-12"
+                      value={form.areaOfResidence}
+                      onChange={(e) => setField("areaOfResidence", e.target.value)}
+                    >
+                      <option value="">Select your area</option>
+                      {availableAreas.map((a) => (
+                        <option key={a} value={a}>{a}</option>
+                      ))}
+                    </Select>
+                  ) : (
+                    <Input
+                      className="mt-2 rounded-2xl h-12"
+                      value={form.areaOfResidence}
+                      onChange={(e) => setField("areaOfResidence", e.target.value)}
+                      placeholder="Type your area, ward, or district"
+                    />
+                  )}
+                </Label>
+              )}
+            </div>
+
+            {/* Consent Section */}
+            <div className="bg-blue-50 border border-blue-200 rounded-2xl p-4 space-y-3">
+              <h2 className="text-sm font-bold text-blue-900">Consent to Collect and Use Your Information</h2>
+              <p className="text-sm text-gray-700 leading-relaxed">
+                Before you begin, please confirm that you agree to provide information for this
+                cancer screening assessment. Your information will be used to assess your screening
+                needs, support referrals, and improve the delivery of cancer screening services.
+                Your information will be handled securely and will only be accessed by authorized
+                personnel. Completing this assessment does not provide a confirmed diagnosis. You
+                may be contacted or referred for further assessment based on your responses.
+              </p>
+              <label className="flex items-start gap-3 cursor-pointer pt-1">
+                <input
+                  type="checkbox"
+                  checked={consentChecked}
+                  onChange={(e) => {
+                    setConsentChecked(e.target.checked);
+                    if (e.target.checked) {
+                      setErrors((prev) => ({ ...prev, consent: "" }));
+                    }
+                  }}
+                  className="mt-1 w-4 h-4 text-green-700 border-gray-300 rounded focus:ring-green-500"
+                />
+                <span className="text-sm text-gray-700">
+                  I have read and understood the information above, and I agree to the collection
+                  and use of my information for this purpose.
+                </span>
+              </label>
+              {errors.consent && (
+                <span className="text-xs text-red-500 block">{errors.consent}</span>
+              )}
+            </div>
+            
+            <Button
+              type="submit"
+              disabled={submitting || !consentChecked}
+              className={`w-full h-12 rounded-2xl text-base font-semibold mt-2 ${
+                !consentChecked
+                  ? "bg-gray-400 border-gray-400 cursor-not-allowed"
+                  : "bg-green-700 border-green-700 hover:bg-green-800"
+              }`}
+            >
+              {submitting ? (
+                <span className="inline-flex items-center gap-2">
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Getting started...
+                </span>
+              ) : (
+                "Start My Assessment"
+              )}
+            </Button>
+
+            <p className="text-center text-xs text-gray-400">
+              We'll text you a verification code to confirm you consent to sharing this
+              information for cancer screening linkage. Your information is kept confidential.
+            </p>
+          </form>
+        </div>
+
+        <p className="mt-6 text-center text-xs text-gray-400">
+          Platform powered by Resilience Nigeria
+        </p>
       </div>
-
-      <p className="mt-6 text-center text-xs text-gray-400">
-        Platform powered by Resilience Nigeria
-      </p>
-    </div>
+    </>
   );
 }
