@@ -8,7 +8,13 @@ import PageTitle from "../components/Typography/PageTitle";
 import api from "../../lib/api";
 
 // react-leaflet touches the DOM directly and has no SSR support.
-const FacilityMapView = dynamic(() => import("../components/FacilityMapView"), {
+// Imported from outside pages/ deliberately — anything under pages/
+// (including pages/components/) is auto-discovered by Next.js as its
+// own routable page, and with output: 'export' every discovered page
+// must be statically prerenderable. Leaflet blows up in that Node
+// environment even with ssr:false here, because Next was trying to
+// build it as a *separate* standalone page, not through this import.
+const FacilityMapView = dynamic(() => import("../../components/FacilityMapView"), {
   ssr: false,
   loading: () => (
     <div className="flex items-center justify-center h-full">
