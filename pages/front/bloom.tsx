@@ -275,6 +275,7 @@ export default function BloomPage() {
   const [maskedPhone, setMaskedPhone] = useState<string>("");
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [availableAreas, setAvailableAreas] = useState<string[]>([]);
+  const [loadingAreas, setLoadingAreas] = useState(false);
   const [assessmentResult, setAssessmentResult] = useState<AssessmentResult | null>(null);
   const [consentChecked, setConsentChecked] = useState(false);
   const [showInfoPopup, setShowInfoPopup] = useState(true);
@@ -306,6 +307,7 @@ export default function BloomPage() {
       setForm((prev) => ({ ...prev, areaOfResidence: "" }));
       return;
     }
+    setLoadingAreas(true);
     (async () => {
       try {
         const { data } = await api.get("/areas", {
@@ -315,6 +317,8 @@ export default function BloomPage() {
         setForm((prev) => ({ ...prev, areaOfResidence: "" }));
       } catch {
         setAvailableAreas([]);
+      } finally {
+        setLoadingAreas(false);
       }
     })();
   }, [form.stateOfResidence, form.lgaOfResidence]);
@@ -432,17 +436,23 @@ export default function BloomPage() {
                 <span className="text-sm font-semibold">
                   Gender <span className="text-red-500">*</span>
                 </span>
-                <Select
-                  className={`mt-2 rounded-2xl h-12 ${errors.gender ? "ring-2 ring-red-400" : ""}`}
-                  value={form.gender}
-                  onChange={(e) => setField("gender", e.target.value)}
-                >
-                  <option value="">Select</option>
-                  <option value="female">Female</option>
-                  <option value="male">Male</option>
-                </Select>
-                {errors.gender && (
-                  <span className="text-xs text-red-500 mt-1 block">{errors.gender}</span>
+                {availableAreas.length > 0 ? (
+                  <Select
+                    className="mt-2 rounded-2xl h-12"
+                    value={form.areaOfResidence}
+                    onChange={(e) => setField("areaOfResidence", e.target.value)}
+                  >
+                    <option value="">Select your area</option>
+                    {availableAreas.map((a) => (
+                      <option key={a} value={a}>{a}</option>
+                    ))}
+                  </Select>
+                ) : loadingAreas ? (
+                  <p className="mt-2 text-sm text-gray-400 italic">Loading areas...</p>
+                ) : (
+                  <p className="mt-2 text-sm text-amber-600">
+                    No areas found for this LGA yet — please contact support.
+                  </p>
                 )}
               </Label>
 
