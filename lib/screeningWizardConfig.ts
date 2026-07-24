@@ -80,14 +80,6 @@ export function cancerLabel(type?: CancerType | string): string {
 export const PRE_COUNSELLING_FIELDS: WizardField[] = [
   { name: "preScreeningCounselingDate", label: "Counselling Date", type: "date", colSpan: 1 },
   { name: "preScreeningCounselor", label: "Counsellor Name / ID", type: "text", colSpan: 1, placeholder: "Enter counsellor name" },
-  {
-    name: "preScreeningConsent",
-    label: "Consent Obtained",
-    type: "select",
-    options: yesNo,
-    required: true,
-    colSpan: 2,
-  },
 ];
 
 // ---------------------------------------------------------------------------

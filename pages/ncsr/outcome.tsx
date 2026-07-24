@@ -48,7 +48,6 @@ export default function OutcomePage() {
     // PRE-SCREENING COUNSELING
     preScreeningCounselingDate: "",
     preScreeningCounselor: "",
-    preScreeningConsent: "",
     
     // SCREENING OUTCOME (COMES FIRST)
     screeningResult: "",
@@ -158,7 +157,6 @@ export default function OutcomePage() {
           // Pre-screening
           preScreeningCounselingDate: rawOutcome.preScreeningCounselingDate ?? rawOutcome.pre_screening_counseling_date ?? "",
           preScreeningCounselor: rawOutcome.preScreeningCounselor ?? rawOutcome.pre_screening_counselor ?? "",
-          preScreeningConsent: rawOutcome.preScreeningConsent ?? rawOutcome.pre_screening_consent ?? "",
           
           // Screening outcome
           screeningResult: rawOutcome.screeningResult ?? rawOutcome.screening_result ?? "",
@@ -402,19 +400,6 @@ export default function OutcomePage() {
                 onChange={(e) => setField("preScreeningCounselor", e.target.value)}
                 placeholder="Enter counselor name"
               />
-            </Label>
-
-            <Label className="md:col-span-2">
-              <span className="text-sm font-semibold">Consent Obtained</span>
-              <Select
-                className="mt-2 rounded-2xl h-12 shadow-sm"
-                value={form.preScreeningConsent}
-                onChange={(e) => setField("preScreeningConsent", e.target.value)}
-              >
-                <option value="">Select</option>
-                <option value="yes">Yes</option>
-                <option value="no">No</option>
-              </Select>
             </Label>
           </div>
         </div>

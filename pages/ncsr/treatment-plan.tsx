@@ -66,8 +66,6 @@ export default function TreatmentPlanPage() {
   const [performanceStatusValue, setPerformanceStatusValue] = useState("");
   const [comorbidities, setComorbidities] = useState("");
   const [patientPreferencesNotes, setPatientPreferencesNotes] = useState("");
-  const [consentObtained, setConsentObtained] = useState(false);
-  const [consentDate, setConsentDate] = useState(todayStr());
 
   const [tStage, setTStage] = useState("");
   const [nStage, setNStage] = useState("");
@@ -127,8 +125,6 @@ export default function TreatmentPlanPage() {
     setPerformanceStatusValue(plan.performanceStatusValue || "");
     setComorbidities(plan.comorbidities || "");
     setPatientPreferencesNotes(plan.patientPreferencesNotes || "");
-    setConsentObtained(!!plan.consentObtained);
-    setConsentDate(plan.consentDate || todayStr());
     setTStage(plan.tStage || "");
     setNStage(plan.nStage || "");
     setMStage(plan.mStage || "");
@@ -200,8 +196,6 @@ export default function TreatmentPlanPage() {
         performanceStatusValue,
         comorbidities,
         patientPreferencesNotes,
-        consentObtained,
-        consentDate,
       });
       next();
     } catch (err: any) {
@@ -431,16 +425,6 @@ export default function TreatmentPlanPage() {
               <span className="text-sm font-semibold">Patient Preferences</span>
               <Textarea className="mt-2 rounded-2xl" rows={2} value={patientPreferencesNotes} onChange={(e) => setPatientPreferencesNotes(e.target.value)} />
             </Label>
-
-            <div className="flex items-center gap-4">
-              <label className="flex items-center gap-2">
-                <input type="checkbox" checked={consentObtained} onChange={(e) => setConsentObtained(e.target.checked)} className="w-4 h-4 text-green-600 rounded" />
-                <span className="text-sm font-semibold">Informed consent obtained</span>
-              </label>
-              {consentObtained && (
-                <Input type="date" className="rounded-xl h-10" value={consentDate} onChange={(e) => setConsentDate(e.target.value)} />
-              )}
-            </div>
           </div>
         )}
 

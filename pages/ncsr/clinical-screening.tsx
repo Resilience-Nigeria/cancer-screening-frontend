@@ -154,6 +154,7 @@ export default function ClinicalScreeningPage() {
   // Client / visit
   const [clientId, setClientId] = useState<string>("");
   const [visitId, setVisitId] = useState<number | null>(null);
+  const [consentAgreed, setConsentAgreed] = useState(false);
 
   const [biodata, setBiodata] = useState<Record<string, any>>({
     fullName: "",
@@ -350,6 +351,11 @@ export default function ClinicalScreeningPage() {
   async function submitRegistration() {
     if (!biodata.fullName || !biodata.gender || !biodata.phoneNumber) {
       toast.error("Full name, sex, and phone number are required.");
+      return;
+    }
+
+    if (!clientId && !consentAgreed) {
+      toast.error("Please confirm consent to collect and use this client's information before continuing.");
       return;
     }
 
@@ -707,6 +713,35 @@ export default function ClinicalScreeningPage() {
         {currentKey === "registration" && (
           <div className="space-y-4">
             <h3 className="text-lg font-semibold text-gray-800 dark:text-white">A. Registration</h3>
+
+            {!clientId && (
+              <div className="rounded-2xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/40 p-5 space-y-3">
+                <h4 className="text-sm font-bold text-gray-800 dark:text-white">
+                  Consent to Collect and Use Your Information
+                </h4>
+                <p className="text-sm text-gray-600 dark:text-gray-300">
+                  Before you begin, please confirm that you agree to provide information for this cancer
+                  screening assessment. Your information will be used to assess your screening needs,
+                  support referrals, and improve the delivery of cancer screening services. Your
+                  information will be handled securely and will only be accessed by authorized personnel.
+                  Completing this assessment does not provide a confirmed diagnosis. You may be contacted
+                  or referred for further assessment based on your responses.
+                </p>
+                <label className="flex items-start gap-3 pt-1">
+                  <input
+                    type="checkbox"
+                    checked={consentAgreed}
+                    onChange={(e) => setConsentAgreed(e.target.checked)}
+                    className="w-4 h-4 mt-0.5 text-green-600 rounded shrink-0"
+                  />
+                  <span className="text-sm font-medium text-gray-700 dark:text-gray-200">
+                    I have read and understood the information above, and I agree to the collection and
+                    use of my information for this purpose.
+                  </span>
+                </label>
+              </div>
+            )}
+
             <div className="grid grid-cols-2 gap-4">
               <Label className="col-span-2">
                 <span className="text-sm font-semibold">Full Name *</span>
@@ -1107,7 +1142,7 @@ export default function ClinicalScreeningPage() {
             </button>
 
             {currentKey === "registration" && (
-              <Button onClick={submitRegistration} disabled={busy} className="h-11 px-5 rounded-2xl bg-green-700 border-green-700 hover:bg-green-800">
+              <Button onClick={submitRegistration} disabled={busy || (!clientId && !consentAgreed)} className="h-11 px-5 rounded-2xl bg-green-700 border-green-700 hover:bg-green-800">
                 {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <span className="inline-flex items-center gap-1">Save & Continue <ChevronRight className="w-4 h-4" /></span>}
               </Button>
             )}

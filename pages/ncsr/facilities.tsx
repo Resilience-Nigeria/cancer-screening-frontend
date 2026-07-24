@@ -33,6 +33,9 @@ interface Facility {
   facilityState: string;
   facilityLga: string;
   facilityAddress: string;
+  clinicDays: string[] | null;
+  clinicOpenTime: string | null;
+  clinicCloseTime: string | null;
   phoneNumber: string;
   email: string;
   activeUsers: number;
@@ -65,6 +68,9 @@ interface FormData {
   facilityState: string;
   facilityLga: string;
   facilityAddress: string;
+  clinicDays: string[];
+  clinicOpenTime: string;
+  clinicCloseTime: string;
   phoneNumber: string;
   email: string;
   status: "active" | "inactive";
@@ -143,6 +149,9 @@ export default function FacilitiesManagementPage() {
     facilityState: "",
     facilityLga: "",
     facilityAddress: "",
+    clinicDays: [],
+    clinicOpenTime: "",
+    clinicCloseTime: "",
     phoneNumber: "",
     email: "",
     status: "active",
@@ -238,6 +247,9 @@ export default function FacilitiesManagementPage() {
         facilityState: "",
         facilityLga: "",
         facilityAddress: "",
+        clinicDays: [],
+        clinicOpenTime: "",
+        clinicCloseTime: "",
         phoneNumber: "",
         email: "",
         status: "active",
@@ -257,6 +269,9 @@ export default function FacilitiesManagementPage() {
         facilityState: facility.facilityState,
         facilityLga: facility.facilityLga,
         facilityAddress: facility.facilityAddress,
+        clinicDays: facility.clinicDays || [],
+        clinicOpenTime: facility.clinicOpenTime || "",
+        clinicCloseTime: facility.clinicCloseTime || "",
         phoneNumber: facility.phoneNumber,
         email: facility.email,
         status: facility.status,
@@ -876,6 +891,20 @@ export default function FacilitiesManagementPage() {
                       </p>
                     </div>
 
+                    {(selectedFacility.clinicDays?.length || selectedFacility.clinicOpenTime) && (
+                      <div className="md:col-span-2">
+                        <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
+                          Clinic Hours
+                        </label>
+                        <p className="text-gray-900 dark:text-white">
+                          {selectedFacility.clinicDays?.join(", ") || "—"}
+                          {selectedFacility.clinicOpenTime && selectedFacility.clinicCloseTime
+                            ? ` · ${selectedFacility.clinicOpenTime} - ${selectedFacility.clinicCloseTime}`
+                            : ""}
+                        </p>
+                      </div>
+                    )}
+
                     <div>
                       <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
                         Phone Number
@@ -1008,6 +1037,59 @@ export default function FacilitiesManagementPage() {
                         className="w-full px-4 py-2.5 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-green-500 focus:border-transparent resize-none"
                         placeholder="Enter full address"
                         required
+                      />
+                    </div>
+
+                    <div className="md:col-span-2">
+                      <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
+                        Clinic Days
+                      </label>
+                      <div className="flex flex-wrap gap-2">
+                        {["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"].map((day) => (
+                          <button
+                            type="button"
+                            key={day}
+                            onClick={() =>
+                              setFormData((prev) => ({
+                                ...prev,
+                                clinicDays: prev.clinicDays.includes(day)
+                                  ? prev.clinicDays.filter((d) => d !== day)
+                                  : [...prev.clinicDays, day],
+                              }))
+                            }
+                            className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
+                              formData.clinicDays.includes(day)
+                                ? "bg-green-700 text-white border-green-700"
+                                : "border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300"
+                            }`}
+                          >
+                            {day.slice(0, 3)}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
+                        Opening Time
+                      </label>
+                      <input
+                        type="time"
+                        value={formData.clinicOpenTime}
+                        onChange={(e) => setFormData({ ...formData, clinicOpenTime: e.target.value })}
+                        className="w-full px-4 py-2.5 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
+                        Closing Time
+                      </label>
+                      <input
+                        type="time"
+                        value={formData.clinicCloseTime}
+                        onChange={(e) => setFormData({ ...formData, clinicCloseTime: e.target.value })}
+                        className="w-full px-4 py-2.5 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-green-500 focus:border-transparent"
                       />
                     </div>
 

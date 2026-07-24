@@ -11,6 +11,7 @@ type Facility = {
   facilityAddress?: string;
   navigatorName?: string;
   navigatorPhone?: string;
+  clinicHoursDisplay?: string;
 };
 
 function SuccessScreen({
@@ -48,6 +49,9 @@ function SuccessScreen({
             <p className="text-lg font-bold text-gray-900">{facility.facilityName}</p>
             {facility.facilityAddress && (
               <p className="text-sm text-gray-500">{facility.facilityAddress}</p>
+            )}
+            {facility.clinicHoursDisplay && (
+              <p className="text-sm text-gray-500">🕐 {facility.clinicHoursDisplay}</p>
             )}
             {facility.navigatorName && (
               <div className="pt-3 border-t border-gray-100">
