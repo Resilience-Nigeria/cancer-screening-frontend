@@ -637,7 +637,7 @@ export default function ClinicalScreeningPage() {
 
       <div className="mb-6 flex items-center justify-between flex-wrap gap-2">
         <div>
-          <PageTitle>Stage 2 — Clinical Screening (PHC)</PageTitle>
+          <PageTitle>Stage 2 — Clinical Screening</PageTitle>
           <p className="text-sm text-gray-500 mt-1">
             For use by a nurse, CHEW, or trained screening officer at the point of care.
           </p>
