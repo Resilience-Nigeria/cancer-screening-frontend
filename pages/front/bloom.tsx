@@ -138,6 +138,7 @@ export default function BloomPage() {
   const [maskedPhone, setMaskedPhone] = useState<string>("");
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [availableAreas, setAvailableAreas] = useState<string[]>([]);
+  const [loadingAreas, setLoadingAreas] = useState(false);
   const [assessmentResult, setAssessmentResult] = useState<AssessmentResult | null>(null);
 
   function setField(name: string, value: string) {
@@ -165,6 +166,7 @@ export default function BloomPage() {
       setForm((prev) => ({ ...prev, areaOfResidence: "" }));
       return;
     }
+    setLoadingAreas(true);
     (async () => {
       try {
         const { data } = await api.get("/areas", {
@@ -174,6 +176,8 @@ export default function BloomPage() {
         setForm((prev) => ({ ...prev, areaOfResidence: "" }));
       } catch {
         setAvailableAreas([]);
+      } finally {
+        setLoadingAreas(false);
       }
     })();
   }, [form.stateOfResidence, form.lgaOfResidence]);
@@ -385,13 +389,12 @@ export default function BloomPage() {
                       <option key={a} value={a}>{a}</option>
                     ))}
                   </Select>
+                ) : loadingAreas ? (
+                  <p className="mt-2 text-sm text-gray-400 italic">Loading areas...</p>
                 ) : (
-                  <Input
-                    className="mt-2 rounded-2xl h-12"
-                    value={form.areaOfResidence}
-                    onChange={(e) => setField("areaOfResidence", e.target.value)}
-                    placeholder="Type your area, ward, or district"
-                  />
+                  <p className="mt-2 text-sm text-amber-600">
+                    No areas found for this LGA yet — please contact support.
+                  </p>
                 )}
               </Label>
             )}
