@@ -436,23 +436,17 @@ export default function BloomPage() {
                 <span className="text-sm font-semibold">
                   Gender <span className="text-red-500">*</span>
                 </span>
-                {availableAreas.length > 0 ? (
-                  <Select
-                    className="mt-2 rounded-2xl h-12"
-                    value={form.areaOfResidence}
-                    onChange={(e) => setField("areaOfResidence", e.target.value)}
-                  >
-                    <option value="">Select your area</option>
-                    {availableAreas.map((a) => (
-                      <option key={a} value={a}>{a}</option>
-                    ))}
-                  </Select>
-                ) : loadingAreas ? (
-                  <p className="mt-2 text-sm text-gray-400 italic">Loading areas...</p>
-                ) : (
-                  <p className="mt-2 text-sm text-amber-600">
-                    No areas found for this LGA yet — please contact support.
-                  </p>
+                <Select
+                  className={`mt-2 rounded-2xl h-12 ${errors.gender ? "ring-2 ring-red-400" : ""}`}
+                  value={form.gender}
+                  onChange={(e) => setField("gender", e.target.value)}
+                >
+                  <option value="">Select</option>
+                  <option value="female">Female</option>
+                  <option value="male">Male</option>
+                </Select>
+                {errors.gender && (
+                  <span className="text-xs text-red-500 mt-1 block">{errors.gender}</span>
                 )}
               </Label>
 
