@@ -28,6 +28,7 @@ import {
   getRiskGroups,
   SCREENING_GROUPS,
   FieldGroup,
+  defaultScreeningFor,
 } from "../../lib/screeningWizardConfig";
 import { GroupedForm, buildScreeningPayload } from "../components/ScreningWizard";
 import OtpVerificationStep from "../components/OtpVerificationService";
@@ -986,11 +987,17 @@ export default function ClinicalScreeningPage() {
                   <button
                     key={ct.value}
                     type="button"
-                    onClick={() =>
+                    onClick={() => {
+                      const willSelect = !cancerTypes.includes(ct.value);
                       setCancerTypes((prev) =>
                         prev.includes(ct.value) ? prev.filter((t) => t !== ct.value) : [...prev, ct.value]
-                      )
-                    }
+                      );
+                      if (willSelect) {
+                        setScreenings((prev) =>
+                          prev[ct.value] ? prev : { ...prev, [ct.value]: defaultScreeningFor(ct.value as CancerType) }
+                        );
+                      }
+                    }}
                     className={`text-left px-4 py-3 rounded-xl border-2 transition-colors ${
                       selected
                         ? "border-green-600 bg-green-50 text-green-800"

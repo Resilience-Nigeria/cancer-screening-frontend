@@ -73,6 +73,36 @@ export function cancerLabel(type?: CancerType | string): string {
   return CANCER_TYPES.find((c) => c.value === type)?.label ?? "Screening";
 }
 
+/**
+ * Sensible default screening method per cancer type, used to pre-fill
+ * a new screening entry when the type is first selected - saves a
+ * click for the most common method rather than leaving it blank.
+ */
+export const DEFAULT_METHOD: Partial<Record<CancerType, string>> = {
+  cervical: "via",
+  breast: "cbe",
+  colorectal: "fit",
+  liver: "uss",
+};
+
+/**
+ * Pre-fills a new screening entry with today's date, a default
+ * "negative" result, and the default method for that cancer type (or
+ * the CBE flag for breast, which uses a checkbox rather than a select).
+ */
+export function defaultScreeningFor(ct: CancerType): Record<string, any> {
+  const base: Record<string, any> = {
+    screeningDate: new Date().toISOString().split("T")[0],
+    screeningResult: "negative",
+  };
+  if (ct === "breast") {
+    base.methodCbe = true;
+  } else if (DEFAULT_METHOD[ct]) {
+    base.method = DEFAULT_METHOD[ct];
+  }
+  return base;
+}
+
 // ---------------------------------------------------------------------------
 // Step 2 — Pre-screening counselling (persisted to /outcome)
 // ---------------------------------------------------------------------------
