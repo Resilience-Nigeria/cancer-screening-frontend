@@ -15,7 +15,6 @@ import {
   ShieldCheck,
   Building2,
   Search,
-  AlertTriangle,
 } from "lucide-react";
 import toast from "react-hot-toast";
 
@@ -341,7 +340,6 @@ const initialBiodata = () => ({
 const initialPreCounsel = () => ({
   preScreeningCounselingDate: today(),
   preScreeningCounselor:      "",
-  preScreeningConsent:        "",
 });
 
 const initialReferral = () => ({
@@ -856,17 +854,6 @@ const initialReferral = () => ({
       if (!clientId) { if (!(await persistBiodata())) return; }
     }
 
-    if (key === "precounsel") {
-      if (preCounsel.preScreeningConsent === "no") {
-        toast.error("Screening cannot proceed without the client's consent.");
-        return;
-      }
-      if (preCounsel.preScreeningConsent !== "yes") {
-        toast.error("Please record whether consent was obtained.");
-        return;
-      }
-    }
-
     if (key === "cancer" && cancerTypes.length === 0) {
       toast.error("Select at least one cancer type to screen for.");
       return;
@@ -912,7 +899,6 @@ const initialReferral = () => ({
 
   const currentKey      = steps[stepIndex].key;
   const isLast          = stepIndex === steps.length - 1;
-  const consentDenied   = preCounsel.preScreeningConsent === "no";
   const filteredFacilities = facilities.filter((f) =>
     f.facilityName.toLowerCase().includes(facilitySearch.toLowerCase())
   );
@@ -1002,7 +988,7 @@ const initialReferral = () => ({
               Pre-Screening Counselling
             </h3>
             <p className="text-sm text-gray-500 dark:text-gray-400">
-              Counselling and consent are recorded before any test is performed.
+              Record counselling details before the screening test is performed.
             </p>
             <div className="grid gap-4 grid-cols-1 sm:grid-cols-2">
               {PRE_COUNSELLING_FIELDS.map((f) => (
@@ -1015,14 +1001,6 @@ const initialReferral = () => ({
                 />
               ))}
             </div>
-            {consentDenied && (
-              <div className="rounded-xl bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 px-4 py-3 flex items-start gap-3">
-                <AlertTriangle className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />
-                <p className="text-sm text-red-700 dark:text-red-300">
-                  Consent was not obtained. Screening cannot proceed until the client consents.
-                </p>
-              </div>
-            )}
           </div>
         )}
 
@@ -1602,7 +1580,7 @@ const initialReferral = () => ({
         <Button
           className="rounded-2xl h-11 w-full sm:w-auto bg-green-700 border-green-700 hover:bg-green-800 hover:border-green-800"
           onClick={handleNext}
-          disabled={busy || referralSubmitting || (currentKey === "precounsel" && consentDenied)}
+          disabled={busy || referralSubmitting}
         >
           <span className="inline-flex items-center justify-center gap-2">
             {(busy || referralSubmitting) && <Loader2 className="w-4 h-4 animate-spin" />}
