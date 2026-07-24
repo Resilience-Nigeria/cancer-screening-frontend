@@ -33,6 +33,7 @@ import {
   OUTCOME_GROUPS,
   WizardField,
   FieldGroup,
+  defaultScreeningFor,
 } from "../../lib/screeningWizardConfig";
 
 // ---------------------------------------------------------------------------
@@ -85,26 +86,6 @@ const REFERRAL_STEP: Step = { key: "referral", label: "Referral", icon: Building
 // ---------------------------------------------------------------------------
 const today = () => new Date().toISOString().split("T")[0];
 const dateOnly = (v?: string | null) => (v ? String(v).split("T")[0] : "");
-
-const DEFAULT_METHOD: Partial<Record<CancerType, string>> = {
-  cervical:   "via",
-  breast:     "cbe",
-  colorectal: "fit",
-  liver:      "uss",
-};
-
-function defaultScreeningFor(ct: CancerType): Record<string, any> {
-  const base: Record<string, any> = {
-    screeningDate:   today(),
-    screeningResult: "negative",
-  };
-  if (ct === "breast") {
-    base.methodCbe = true;
-  } else if (DEFAULT_METHOD[ct]) {
-    base.method = DEFAULT_METHOD[ct];
-  }
-  return base;
-}
 
 const SCREENING_INT_FIELDS = [
   "ageAtFirstIntercourse",
