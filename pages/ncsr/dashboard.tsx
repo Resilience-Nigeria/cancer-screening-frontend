@@ -607,7 +607,7 @@ function Dashboard() {
                           <Button layout="outline" className="text-green-700 dark:text-green-400 rounded-2xl h-12 border-green-700 hover:bg-green-50 dark:hover:bg-green-900/20">
                             <span className="inline-flex items-center gap-2">
                               <ClipboardCheck className="w-4 h-4" />
-                              Stage 2: Clinical Screening (PHC)
+                              Stage 2: Clinical Screening
                             </span>
                           </Button>
                         </Link>
