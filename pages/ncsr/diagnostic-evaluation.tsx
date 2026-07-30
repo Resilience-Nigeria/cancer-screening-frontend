@@ -11,6 +11,77 @@ import Layout from "../containers/Layout";
 import PageTitle from "../components/Typography/PageTitle";
 import api from "../../lib/api";
 
+const YES_NO_UNKNOWN = [
+  { value: "yes", label: "Yes" },
+  { value: "no", label: "No" },
+  { value: "unknown", label: "Unknown" },
+];
+
+const SYMPTOM_ITEMS = [
+  { key: "lump", label: "Lump / mass" },
+  { key: "pain", label: "Pain" },
+  { key: "bleeding", label: "Abnormal bleeding" },
+  { key: "discharge", label: "Discharge" },
+  { key: "weightLoss", label: "Unexplained weight loss" },
+  { key: "fatigue", label: "Fatigue" },
+  { key: "other", label: "Other concerning symptom" },
+];
+
+const FAMILY_HISTORY_ITEMS = [
+  { key: "breast", label: "Breast cancer" },
+  { key: "cervical", label: "Cervical cancer" },
+  { key: "prostate", label: "Prostate cancer" },
+  { key: "colorectal", label: "Colorectal cancer" },
+  { key: "liver", label: "Liver cancer" },
+  { key: "other", label: "Other cancer" },
+];
+
+/** ICD-oriented cancer detail options by suspected type (extend as needed) */
+const ICD_CANCER_DETAILS: Record<string, { value: string; label: string }[]> = {
+  breast: [
+    { value: "C50.9", label: "C50.9 — Malignant neoplasm of breast, unspecified" },
+    { value: "C50.0", label: "C50.0 — Nipple and areola" },
+    { value: "C50.1", label: "C50.1 — Central portion of breast" },
+    { value: "C50.2", label: "C50.2 — Upper-inner quadrant" },
+    { value: "C50.3", label: "C50.3 — Lower-inner quadrant" },
+    { value: "C50.4", label: "C50.4 — Upper-outer quadrant" },
+    { value: "C50.5", label: "C50.5 — Lower-outer quadrant" },
+    { value: "C50.8", label: "C50.8 — Overlapping lesion of breast" },
+  ],
+  cervical: [
+    { value: "C53.9", label: "C53.9 — Malignant neoplasm of cervix uteri, unspecified" },
+    { value: "C53.0", label: "C53.0 — Endocervix" },
+    { value: "C53.1", label: "C53.1 — Exocervix" },
+    { value: "C53.8", label: "C53.8 — Overlapping lesion of cervix uteri" },
+  ],
+  prostate: [
+    { value: "C61", label: "C61 — Malignant neoplasm of prostate" },
+  ],
+  colorectal: [
+    { value: "C18.9", label: "C18.9 — Colon, unspecified" },
+    { value: "C18.0", label: "C18.0 — Caecum" },
+    { value: "C18.2", label: "C18.2 — Ascending colon" },
+    { value: "C18.7", label: "C18.7 — Sigmoid colon" },
+    { value: "C19", label: "C19 — Rectosigmoid junction" },
+    { value: "C20", label: "C20 — Rectum" },
+  ],
+  liver: [
+    { value: "C22.0", label: "C22.0 — Liver cell carcinoma" },
+    { value: "C22.1", label: "C22.1 — Intrahepatic bile duct carcinoma" },
+    { value: "C22.9", label: "C22.9 — Liver, unspecified" },
+  ],
+  lung: [
+    { value: "C34.9", label: "C34.9 — Bronchus or lung, unspecified" },
+    { value: "C34.1", label: "C34.1 — Upper lobe, bronchus or lung" },
+    { value: "C34.3", label: "C34.3 — Lower lobe, bronchus or lung" },
+  ],
+  oral: [
+    { value: "C06.9", label: "C06.9 — Mouth, unspecified" },
+    { value: "C02.9", label: "C02.9 — Tongue, unspecified" },
+    { value: "C03.9", label: "C03.9 — Gum, unspecified" },
+  ],
+};
+
 const CANCER_LABELS: Record<string, string> = {
   breast: "Breast", cervical: "Cervix", prostate: "Prostate",
   colorectal: "Colorectal", lung: "Lung", liver: "Liver", oral: "Oral",
@@ -30,13 +101,23 @@ const BLOOD_TESTS = ["CBC", "LFT", "RFT", "Tumour Markers"];
 
 const STEPS = ["lookup", "consultation", "examination", "tests", "pathology", "decision", "done"] as const;
 type StepKey = typeof STEPS[number];
+// const STEP_LABELS: Record<StepKey, string> = {
+//   lookup: "Find Client",
+//   consultation: "A. Consultation",
+//   examination: "B. Advanced Exam",
+//   tests: "C. Diagnostic Tests",
+//   pathology: "D. Pathology",
+//   decision: "Final Decision",
+//   done: "Complete",
+// };
+
 const STEP_LABELS: Record<StepKey, string> = {
   lookup: "Find Client",
   consultation: "A. Consultation",
-  examination: "B. Advanced Exam",
-  tests: "C. Diagnostic Tests",
+  examination: "B. Clinical Exam",
+  tests: "C. Test Results",
   pathology: "D. Pathology",
-  decision: "Final Decision",
+  decision: "E. Final Diagnosis",
   done: "Complete",
 };
 
@@ -76,6 +157,55 @@ export default function DiagnosticEvaluationPage() {
   const [procedurePerformed, setProcedurePerformed] = useState("");
   const [procedureComplications, setProcedureComplications] = useState("");
   const [surveillanceNotes, setSurveillanceNotes] = useState("");
+
+  const [symptomChecklist, setSymptomChecklist] = useState<Record<string, string>>({});
+const [familyHistoryChecklist, setFamilyHistoryChecklist] = useState<Record<string, string>>({});
+const [icdCancerCode, setIcdCancerCode] = useState("");
+
+
+useEffect(() => {
+  if (pathologyResult === "malignant") {
+    if (decisionPathway === "no_cancer") setDecisionPathway("cancer_confirmed");
+  }
+}, [pathologyResult]);
+
+
+async function submitDecision() {
+  if (!evaluationId || !decisionPathway) {
+    toast.error("Please select a decision pathway.");
+    return;
+  }
+  if (pathologyResult === "malignant") {
+    if (decisionPathway === "no_cancer") {
+      toast.error("Malignant pathology cannot be recorded as “No cancer detected”.");
+      return;
+    }
+    if (!icdCancerCode) {
+      toast.error("Please select the ICD cancer classification.");
+      return;
+    }
+  }
+  setBusy(true);
+  try {
+    await api.post(`/diagnostic-evaluations/${evaluationId}/decision`, {
+      decisionPathway,
+      managementNotes,
+      routineRecallDate: routineRecallDate || null,
+      procedurePerformed,
+      procedureComplications,
+      surveillanceNotes,
+      icdCancerCode: icdCancerCode || null,
+      symptomChecklist,
+      familyHistoryChecklist,
+    });
+    toast.success("Clinical decision recorded — evaluation complete.");
+    next();
+  } catch (err: any) {
+    toast.error(err?.response?.data?.message ?? "Could not save the decision.");
+  } finally {
+    setBusy(false);
+  }
+}
 
   function goTo(key: StepKey) {
     setStepIndex(STEPS.indexOf(key));
@@ -209,29 +339,29 @@ export default function DiagnosticEvaluationPage() {
     }
   }
 
-  async function submitDecision() {
-    if (!evaluationId || !decisionPathway) {
-      toast.error("Please select a decision pathway.");
-      return;
-    }
-    setBusy(true);
-    try {
-      await api.post(`/diagnostic-evaluations/${evaluationId}/decision`, {
-        decisionPathway,
-        managementNotes,
-        routineRecallDate: routineRecallDate || null,
-        procedurePerformed,
-        procedureComplications,
-        surveillanceNotes,
-      });
-      toast.success("Clinical decision recorded — evaluation complete.");
-      next();
-    } catch (err: any) {
-      toast.error(err?.response?.data?.message ?? "Could not save the decision.");
-    } finally {
-      setBusy(false);
-    }
-  }
+  // async function submitDecision() {
+  //   if (!evaluationId || !decisionPathway) {
+  //     toast.error("Please select a decision pathway.");
+  //     return;
+  //   }
+  //   setBusy(true);
+  //   try {
+  //     await api.post(`/diagnostic-evaluations/${evaluationId}/decision`, {
+  //       decisionPathway,
+  //       managementNotes,
+  //       routineRecallDate: routineRecallDate || null,
+  //       procedurePerformed,
+  //       procedureComplications,
+  //       surveillanceNotes,
+  //     });
+  //     toast.success("Clinical decision recorded — evaluation complete.");
+  //     next();
+  //   } catch (err: any) {
+  //     toast.error(err?.response?.data?.message ?? "Could not save the decision.");
+  //   } finally {
+  //     setBusy(false);
+  //   }
+  // }
 
   const relevantTests = suspectedCancerType ? CANCER_TESTS[suspectedCancerType] || [] : [];
 
@@ -260,7 +390,7 @@ export default function DiagnosticEvaluationPage() {
         </p>
       </div>
 
-      {!["lookup"].includes(currentKey) && (
+      {/* {!["lookup"].includes(currentKey) && (
         <div className="mb-6 flex flex-wrap gap-2">
           {STEPS.map((key, i) => (
             <div
@@ -273,7 +403,33 @@ export default function DiagnosticEvaluationPage() {
             </div>
           ))}
         </div>
-      )}
+      )} */}
+
+      {!["lookup"].includes(currentKey) && (
+  <div className="mb-6 flex flex-wrap gap-2">
+    {STEPS.map((key, i) => {
+      const canJump = i < stepIndex && key !== "done"; // completed steps only
+      return (
+        <button
+          key={key}
+          type="button"
+          disabled={!canJump}
+          onClick={() => canJump && goTo(key)}
+          className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
+            i === stepIndex
+              ? "bg-green-700 text-white"
+              : i < stepIndex
+              ? "bg-green-100 text-green-700 hover:bg-green-200 cursor-pointer"
+              : "bg-gray-100 text-gray-400 cursor-default"
+          }`}
+          title={canJump ? `Return to ${STEP_LABELS[key]}` : undefined}
+        >
+          {STEP_LABELS[key]}
+        </button>
+      );
+    })}
+  </div>
+)}
 
       <div className="max-w-3xl bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700 shadow-sm p-6 space-y-6">
         {currentKey === "lookup" && (
@@ -320,71 +476,164 @@ export default function DiagnosticEvaluationPage() {
         )}
 
         {currentKey === "consultation" && (
-          <div className="space-y-5">
-            <h3 className="text-lg font-semibold text-gray-800 dark:text-white">A. Specialist Consultation</h3>
+  <div className="space-y-5">
+    <h3 className="text-lg font-semibold text-gray-800 dark:text-white">
+      A. Specialist Consultation
+    </h3>
 
-            {clientInfo && (
-              <div className="rounded-2xl bg-gray-50 dark:bg-gray-900/40 p-4">
-                <p className="text-sm font-bold text-gray-800 dark:text-white">{clientInfo.fullName}</p>
-                <p className="text-xs text-gray-500">{clientInfo.clientId} · {clientInfo.age} yrs · {clientInfo.gender}</p>
-              </div>
-            )}
+    {clientInfo && (
+      <div className="rounded-2xl bg-gray-50 dark:bg-gray-900/40 p-4">
+        <p className="text-sm font-bold text-gray-800 dark:text-white">
+          {clientInfo.fullName}
+        </p>
+        <p className="text-xs text-gray-500">
+          {clientInfo.clientId} · {clientInfo.age} yrs · {clientInfo.gender}
+        </p>
+      </div>
+    )}
 
-            <div className="rounded-2xl border border-amber-100 bg-amber-50 dark:bg-amber-900/20 dark:border-amber-800 p-4 space-y-3">
-              <p className="text-xs font-semibold text-amber-700 dark:text-amber-400 uppercase tracking-wide">Review Before Proceeding</p>
+    {/* Screening findings — single reference block */}
+    <div className="rounded-2xl border border-amber-100 bg-amber-50 dark:bg-amber-900/20 dark:border-amber-800 p-4 space-y-3">
+      <p className="text-xs font-semibold text-amber-700 dark:text-amber-400 uppercase tracking-wide">
+        Screening findings (Stage 2 — reference)
+      </p>
 
-              <div>
-                <p className="text-xs font-semibold text-gray-600 dark:text-gray-300">Risk Factors & Family History</p>
-                {riskProfile ? (
-                  <p className="text-sm text-gray-700 dark:text-gray-300 mt-1">
-                    Family history: {riskProfile.familyHistory || "not recorded"} · Smoking: {riskProfile.smokingStatus || "not recorded"}
-                  </p>
-                ) : (
-                  <p className="text-sm text-gray-400 mt-1">No risk profile on file.</p>
-                )}
-              </div>
-
-              <div>
-                <p className="text-xs font-semibold text-gray-600 dark:text-gray-300">Previous Screening Findings</p>
-                {priorVisits.length === 0 ? (
-                  <p className="text-sm text-gray-400 mt-1">No prior Stage 2 visits on file.</p>
-                ) : (
-                  priorVisits.slice(0, 3).map((v: any) => (
-                    <p key={v.visitId} className="text-sm text-gray-700 dark:text-gray-300 mt-1">
-                      {v.visitDate}: {v.overallOutcome ? v.overallOutcome.replace(/_/g, " ") : "no outcome recorded"}
-                    </p>
-                  ))
-                )}
-              </div>
-            </div>
-
-            <Label>
-              <span className="text-sm font-semibold">Suspected Cancer Type *</span>
-              <Select className="mt-2 rounded-2xl h-12" value={suspectedCancerType} onChange={(e) => setSuspectedCancerType(e.target.value)}>
-                <option value="">Select type</option>
-                {Object.entries(CANCER_LABELS).map(([key, label]) => (
-                  <option key={key} value={key}>{label}</option>
-                ))}
-              </Select>
-            </Label>
-
-            <Label>
-              <span className="text-sm font-semibold">Evaluation Date *</span>
-              <Input type="date" className="mt-2 rounded-2xl h-12" value={evaluationDate} onChange={(e) => setEvaluationDate(e.target.value)} />
-            </Label>
-
-            <Label>
-              <span className="text-sm font-semibold">Consultation Notes</span>
-              <Textarea
-                className="mt-2 rounded-2xl"
-                rows={4}
-                value={consultationNotes}
-                onChange={(e) => setConsultationNotes(e.target.value)}
-                placeholder="Specialist's review of symptoms, family history, risk factors, and previous findings..."
-              />
-            </Label>
-          </div>
+      <div>
+        <p className="text-xs font-semibold text-gray-600 dark:text-gray-300">
+          Risk Factors & Family History
+        </p>
+        {riskProfile ? (
+          <p className="text-sm text-gray-700 dark:text-gray-300 mt-1">
+            Family history: {riskProfile.familyHistory || "not recorded"} · Smoking:{" "}
+            {riskProfile.smokingStatus || "not recorded"}
+          </p>
+        ) : (
+          <p className="text-sm text-gray-400 mt-1">No risk profile on file.</p>
         )}
+      </div>
+
+      <div>
+        <p className="text-xs font-semibold text-gray-600 dark:text-gray-300">
+          Previous Screening Findings
+        </p>
+        {priorVisits.length === 0 ? (
+          <p className="text-sm text-gray-400 mt-1">No prior Stage 2 visits on file.</p>
+        ) : (
+          priorVisits.slice(0, 3).map((v: any) => (
+            <p key={v.visitId} className="text-sm text-gray-700 dark:text-gray-300 mt-1">
+              {v.visitDate}:{" "}
+              {v.overallOutcome
+                ? v.overallOutcome.replace(/_/g, " ")
+                : "no outcome recorded"}
+            </p>
+          ))
+        )}
+      </div>
+    </div>
+
+    <Label>
+      <span className="text-sm font-semibold">Suspected Cancer Type *</span>
+      <Select
+        className="mt-2 rounded-2xl h-12"
+        value={suspectedCancerType}
+        onChange={(e) => setSuspectedCancerType(e.target.value)}
+      >
+        <option value="">Select type</option>
+        {Object.entries(CANCER_LABELS).map(([key, label]) => (
+          <option key={key} value={key}>
+            {label}
+          </option>
+        ))}
+      </Select>
+    </Label>
+
+    <Label>
+      <span className="text-sm font-semibold">Evaluation Date *</span>
+      <Input
+        type="date"
+        className="mt-2 rounded-2xl h-12"
+        value={evaluationDate}
+        onChange={(e) => setEvaluationDate(e.target.value)}
+      />
+    </Label>
+
+    {/* Simplified symptom checklist */}
+    <div>
+      <p className="text-sm font-semibold text-gray-800 dark:text-white mb-2">
+        Symptoms checklist
+      </p>
+      <p className="text-xs text-gray-500 mb-3">
+        Tick what applies — reduces free-text burden.
+      </p>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+        {SYMPTOM_ITEMS.map((item) => (
+          <div
+            key={item.key}
+            className="flex items-center justify-between gap-2 p-2 rounded-xl border border-gray-100 dark:border-gray-700"
+          >
+            <span className="text-sm text-gray-700 dark:text-gray-300">{item.label}</span>
+            <Select
+              className="rounded-xl h-9 w-28 text-sm"
+              value={symptomChecklist[item.key] || ""}
+              onChange={(e) =>
+                setSymptomChecklist((p) => ({ ...p, [item.key]: e.target.value }))
+              }
+            >
+              <option value="">—</option>
+              {YES_NO_UNKNOWN.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </Select>
+          </div>
+        ))}
+      </div>
+    </div>
+
+    {/* Simplified family history checklist */}
+    <div>
+      <p className="text-sm font-semibold text-gray-800 dark:text-white mb-2">
+        Family history of cancer
+      </p>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+        {FAMILY_HISTORY_ITEMS.map((item) => (
+          <div
+            key={item.key}
+            className="flex items-center justify-between gap-2 p-2 rounded-xl border border-gray-100 dark:border-gray-700"
+          >
+            <span className="text-sm text-gray-700 dark:text-gray-300">{item.label}</span>
+            <Select
+              className="rounded-xl h-9 w-28 text-sm"
+              value={familyHistoryChecklist[item.key] || ""}
+              onChange={(e) =>
+                setFamilyHistoryChecklist((p) => ({ ...p, [item.key]: e.target.value }))
+              }
+            >
+              <option value="">—</option>
+              {YES_NO_UNKNOWN.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </Select>
+          </div>
+        ))}
+      </div>
+    </div>
+
+    <Label>
+      <span className="text-sm font-semibold">Consultation Notes</span>
+      <Textarea
+        className="mt-2 rounded-2xl"
+        rows={4}
+        value={consultationNotes}
+        onChange={(e) => setConsultationNotes(e.target.value)}
+        placeholder="Optional free-text notes after the checklists..."
+      />
+    </Label>
+  </div>
+)}
 
         {currentKey === "examination" && (
           <div className="space-y-5">
@@ -516,61 +765,82 @@ export default function DiagnosticEvaluationPage() {
         )}
 
         {currentKey === "decision" && (
-          <div className="space-y-5">
-            <h3 className="text-lg font-semibold text-gray-800 dark:text-white">4.2 Final Clinical Decision</h3>
-            <p className="text-sm text-gray-500">
-              Based on the pathology result: <span className="font-semibold capitalize">{pathologyResult.replace(/_/g, " ")}</span>
-            </p>
-            <div className="grid grid-cols-1 gap-3">
-              {[
-                { value: "no_cancer", label: "A. No Cancer Detected", desc: "Benign, normal, infection, inflammatory, fibroadenoma, BPE, benign cervical changes" },
-                { value: "pre_cancerous", label: "B. Pre-cancerous Disease", desc: "CIN, adenomatous polyps, oral leukoplakia with dysplasia, Barrett's with dysplasia" },
-                { value: "cancer_confirmed", label: "C. Cancer Confirmed", desc: "Proceeds to Stage 4 for staging, MDT review, and treatment" },
-              ].map((opt) => (
-                <button
-                  key={opt.value}
-                  onClick={() => setDecisionPathway(opt.value)}
-                  className={`text-left p-4 rounded-xl border-2 transition-colors ${
-                    decisionPathway === opt.value ? "border-green-600 bg-green-50 dark:bg-green-900/20" : "border-gray-200 dark:border-gray-700"
-                  }`}
-                >
-                  <p className="text-sm font-semibold text-gray-800 dark:text-white">{opt.label}</p>
-                  <p className="text-xs text-gray-500 mt-1">{opt.desc}</p>
-                </button>
-              ))}
-            </div>
+  <div className="space-y-5">
+    <h3 className="text-lg font-semibold text-gray-800 dark:text-white">E. Final Clinical Decision</h3>
+    <p className="text-sm text-gray-500">
+      Pathology: <span className="font-semibold capitalize">{pathologyResult.replace(/_/g, " ")}</span>
+      {" · "}
+      Exam & tests remain on earlier steps (use the step chips to edit).
+    </p>
 
-            {decisionPathway === "no_cancer" && (
-              <Label>
-                <span className="text-sm font-semibold">Routine Screening Recall Date</span>
-                <Input type="date" className="mt-2 rounded-2xl h-12" value={routineRecallDate} onChange={(e) => setRoutineRecallDate(e.target.value)} />
-              </Label>
-            )}
+    <div className="grid grid-cols-1 gap-3">
+      {[
+        {
+          value: "no_cancer",
+          label: "A. No Cancer Detected",
+          desc: "Benign, normal, infection, inflammatory, fibroadenoma, BPE, benign cervical changes",
+          hideWhenMalignant: true,
+        },
+        {
+          value: "pre_cancerous",
+          label: "B. Pre-cancerous Disease",
+          desc: "CIN, adenomatous polyps, oral leukoplakia with dysplasia, Barrett's with dysplasia",
+        },
+        {
+          value: "cancer_confirmed",
+          label: "C. Cancer Confirmed",
+          desc: "Proceeds to Stage 4 for staging, MDT review, and treatment",
+        },
+      ]
+        .filter((opt) => !(pathologyResult === "malignant" && opt.hideWhenMalignant))
+        .map((opt) => (
+          <button
+            key={opt.value}
+            type="button"
+            onClick={() => setDecisionPathway(opt.value)}
+            className={`text-left p-4 rounded-xl border-2 transition-colors ${
+              decisionPathway === opt.value
+                ? "border-green-600 bg-green-50 dark:bg-green-900/20"
+                : "border-gray-200 dark:border-gray-700"
+            }`}
+          >
+            <p className="text-sm font-semibold text-gray-800 dark:text-white">{opt.label}</p>
+            <p className="text-xs text-gray-500 mt-1">{opt.desc}</p>
+          </button>
+        ))}
+    </div>
 
-            {decisionPathway === "pre_cancerous" && (
-              <div className="space-y-3">
-                <Label>
-                  <span className="text-sm font-semibold">Procedure Performed</span>
-                  <Input className="mt-2 rounded-2xl h-12" value={procedurePerformed} onChange={(e) => setProcedurePerformed(e.target.value)} placeholder="Cryotherapy, LEEP, polypectomy, etc." />
-                </Label>
-                <Label>
-                  <span className="text-sm font-semibold">Complications</span>
-                  <Textarea className="mt-2 rounded-2xl" rows={2} value={procedureComplications} onChange={(e) => setProcedureComplications(e.target.value)} />
-                </Label>
-                <Label>
-                  <span className="text-sm font-semibold">Surveillance Plan</span>
-                  <Textarea className="mt-2 rounded-2xl" rows={2} value={surveillanceNotes} onChange={(e) => setSurveillanceNotes(e.target.value)} placeholder="Repeat HPV test, VIA, colonoscopy, clinical review..." />
-                </Label>
-              </div>
-            )}
+    {/* ICD details — show as soon as pathology is malignant */}
+    {pathologyResult === "malignant" && (
+      <Label>
+        <span className="text-sm font-semibold">Cancer details (ICD) *</span>
+        <Select
+          className="mt-2 rounded-2xl h-12"
+          value={icdCancerCode}
+          onChange={(e) => setIcdCancerCode(e.target.value)}
+        >
+          <option value="">Select ICD classification</option>
+          {(ICD_CANCER_DETAILS[suspectedCancerType] || []).map((o) => (
+            <option key={o.value} value={o.value}>{o.label}</option>
+          ))}
+        </Select>
+      </Label>
+    )}
 
-            <Label>
-              <span className="text-sm font-semibold">Management Notes</span>
-              <Textarea className="mt-2 rounded-2xl" rows={3} value={managementNotes} onChange={(e) => setManagementNotes(e.target.value)} />
-            </Label>
-          </div>
-        )}
+    {/* existing conditional fields for no_cancer / pre_cancerous */}
+    {/* ... */}
 
+    <Label>
+      <span className="text-sm font-semibold">Management Notes</span>
+      <Textarea
+        className="mt-2 rounded-2xl"
+        rows={3}
+        value={managementNotes}
+        onChange={(e) => setManagementNotes(e.target.value)}
+      />
+    </Label>
+  </div>
+)}
         {currentKey === "done" && (
           <div className="text-center py-10 space-y-3">
             <CheckCircle className="w-14 h-14 text-green-600 mx-auto" />
