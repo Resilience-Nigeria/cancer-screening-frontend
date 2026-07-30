@@ -40,8 +40,8 @@ function ResultsScreen({ name, result }: { name: string; result: AssessmentResul
           <h1 className="text-2xl font-bold text-gray-900">
             Thank you{name ? `, ${name.split(" ")[0]}` : ""}
           </h1>
-          <p className="mt-2 text-sm text-gray-500">Here's what your assessment found.</p>
-          <p className="mt-1 text-xs text-gray-400">Reference: SA-{result.assessmentId}</p>
+          <p className="mt-2 text-sm text-gray-500">Here's what your assessment found:</p>
+          {/* <p className="mt-1 text-xs text-gray-400">Reference: SA-{result.assessmentId}</p> */}
         </div>
 
         <div className="bg-white rounded-3xl shadow-lg border border-gray-100 p-6 space-y-4">
@@ -65,8 +65,8 @@ function ResultsScreen({ name, result }: { name: string; result: AssessmentResul
             </div>
           )}
 
-          <p className="text-xs text-gray-400 italic">
-            This is a decision-support tool, not a diagnosis. Please discuss these results with a healthcare provider.
+          <p className="text-xl text-gray-400 italic">
+            Please note that this is a decision-support tool, NOT a diagnosis. Please discuss these results with a healthcare provider.
           </p>
         </div>
 
