@@ -583,32 +583,12 @@ breast: [
     ],
   },
 
-  {
-    title: "Screening Details",
-    fields: [
-      // Multi-select via checkboxes — rendered specially by the wizard
-      // Primary method still sent as `method`; all selections as `screeningMethods`
-      {
-        name: "screeningDate",
-        label: "Screening Date",
-        type: "date",
-        required: true,
-        colSpan: 1,
-      },
-      {
-        name: "screeningResult",
-        label: "Screening Result",
-        type: "select",
-        options: resultOptions,
-        required: true,
-        colSpan: 1,
-      },
-    ],
-  },
+ 
 
+  // CBE section: findings + breast health/symptoms (only when CBE is selected)
   {
-    title: "CBE Findings — Left & Right",
-    description: "Document each breast independently during the clinical exam.",
+    title: "Clinical Breast Exam (CBE)",
+    description: "Document each breast independently and record relevant symptoms during the clinical exam.",
     fields: [
       {
         name: "leftCbeFinding",
@@ -632,12 +612,95 @@ breast: [
           { value: "suspicious", label: "Suspicious" },
         ],
       },
+
+      // Breast health & symptoms — only when CBE is selected
+      {
+        name: "breastLumps",
+        label: "Breast Lumps",
+        type: "select",
+        colSpan: 1,
+        showIf: (v) => !!v.methodCbe,
+        options: [
+          { value: "", label: "Select" },
+          { value: "current", label: "Current" },
+          { value: "previous", label: "Previous" },
+          { value: "none", label: "None" },
+        ],
+      },
+      {
+        name: "breastNippleDischarge",
+        label: "Breast/Nipple Discharge",
+        type: "select",
+        options: yesNo,
+        colSpan: 1,
+        showIf: (v) => !!v.methodCbe,
+      },
+      {
+        name: "dischargeType",
+        label: "Discharge Type",
+        type: "select",
+        colSpan: 2,
+        showIf: (v) => !!v.methodCbe && v.breastNippleDischarge === "yes",
+        options: [
+          { value: "", label: "Select type" },
+          { value: "bloody", label: "Bloody" },
+          { value: "clear", label: "Clear" },
+          { value: "milky", label: "Milky" },
+          { value: "purulent", label: "Purulent" },
+          { value: "others", label: "Others" },
+        ],
+      },
+      {
+        name: "skinChanges",
+        label: "Skin Appearance Changes",
+        type: "select",
+        options: yesNo,
+        colSpan: 1,
+        showIf: (v) => !!v.methodCbe,
+      },
+      {
+        name: "breastPain",
+        label: "Breast Pain",
+        type: "select",
+        options: yesNo,
+        colSpan: 1,
+        showIf: (v) => !!v.methodCbe,
+      },
+
+      // Previous biopsy history lives with CBE context; result is independent of Procedures
+      {
+  name: "previousBiopsy",
+  label: "Previous Biopsy",
+  type: "select",
+  options: [
+    { value: "yes", label: "Yes" },
+    { value: "no", label: "No" },
+    { value: "unknown", label: "Unknown" },
+  ],
+  colSpan: 1,
+  showIf: (v) => !!v.methodCbe,
+},
+      {
+        name: "previousBiopsyResult",
+        label: "Previous Biopsy Result",
+        type: "select",
+        colSpan: 1,
+        showIf: (v) => !!v.methodCbe && v.previousBiopsy === "yes",
+        options: [
+          { value: "", label: "Select result" },
+          { value: "positive", label: "Positive" },
+          { value: "negative", label: "Negative" },
+          { value: "inconclusive", label: "Inconclusive" },
+          { value: "unknown", label: "Unknown" },
+        ],
+      },
     ],
   },
 
   {
     title: "Imaging Findings",
-    description: "BI-RADS category, breast density, and overall finding — recorded per side (from mammography / ultrasound).",
+    description:
+      "BI-RADS category, breast density, and overall finding — recorded per side (from mammography / ultrasound).",
     fields: [
       {
         name: "leftBiradsScore",
@@ -726,160 +789,116 @@ breast: [
     ],
   },
 
-  {
-    title: "Breast Health History & Symptoms",
+   {
+    title: "Screening Details",
     fields: [
       {
-        name: "breastLumps",
-        label: "Breast Lumps",
-        type: "select",
+        name: "screeningDate",
+        label: "Screening Date",
+        type: "date",
+        required: true,
         colSpan: 1,
-        options: [
-          { value: "", label: "Select" },
-          { value: "current", label: "Current" },
-          { value: "previous", label: "Previous" },
-          { value: "none", label: "None" },
-        ],
       },
-      { name: "breastNippleDischarge", label: "Breast/Nipple Discharge", type: "select", options: yesNo, colSpan: 1 },
       {
-        name: "dischargeType",
-        label: "Discharge Type",
+        name: "screeningResult",
+        label: "Screening Result",
         type: "select",
-        colSpan: 2,
-        showIf: (v) => v.breastNippleDischarge === "yes",
-        options: [
-          { value: "", label: "Select type" },
-          { value: "bloody", label: "Bloody" },
-          { value: "clear", label: "Clear" },
-          { value: "milky", label: "Milky" },
-          { value: "purulent", label: "Purulent" },
-          { value: "others", label: "Others" },
-        ],
+        options: resultOptions,
+        required: true,
+        colSpan: 1,
       },
-      { name: "skinChanges", label: "Skin Appearance Changes", type: "select", options: yesNo, colSpan: 1 },
-      { name: "breastPain", label: "Breast Pain", type: "select", options: yesNo, colSpan: 1 },
-      { name: "previousBiopsy", label: "Previous Biopsy", type: "select", options: yesNo, colSpan: 1 },
     ],
   },
-
+  
   {
-  title: "Procedures & Follow-up",
-  fields: [
-    // Biopsy done this visit — only if no previous biopsy
-    {
-      name: "biopsyDone",
-      label: "Biopsy done (this visit)",
-      type: "checkbox",
-      colSpan: 1,
-      showIf: (v) => v.previousBiopsy !== "yes",
-    },
-    {
-      name: "biopsyResult",
-      label: "Biopsy Result",
-      type: "select",
-      colSpan: 1,
-      showIf: (v) => !!v.biopsyDone && v.previousBiopsy !== "yes",
-      options: [
-        { value: "", label: "Select result" },
-        { value: "positive", label: "Positive" },
-        { value: "negative", label: "Negative" },
-      ],
-    },
-
-    // Previous biopsy = yes → collect that existing result
-    {
-      name: "previousBiopsyResult",
-      label: "Previous Biopsy Result",
-      type: "select",
-      colSpan: 1,
-      showIf: (v) => v.previousBiopsy === "yes",
-      options: [
-        { value: "", label: "Select result" },
-        { value: "positive", label: "Positive" },
-        { value: "negative", label: "Negative" },
-        { value: "inconclusive", label: "Inconclusive" },
-        { value: "unknown", label: "Unknown" },
-      ],
-    },
-
-    // Standardized histology classification — drives the automated
-    // IHC prompt / referral trigger (see BreastScreeningController).
-    {
-      name: "histologyResult",
-      label: "Histology Result",
-      type: "select",
-      colSpan: 1,
-      showIf: (v) => !!v.biopsyDone && v.biopsyResult === "positive",
-      options: [
-        { value: "", label: "Select" },
-        { value: "malignant", label: "Malignant" },
-        { value: "benign", label: "Benign" },
-      ],
-      help: "Selecting Malignant automatically requests IHC and triggers referral.",
-    },
-    {
-      name: "ihcResult",
-      label: "IHC Result",
-      type: "text",
-      colSpan: 1,
-      showIf: (v) => v.histologyResult === "malignant",
-      placeholder: "e.g. ER+/PR+/HER2- (enter once available)",
-      help: "IHC has been automatically requested for this malignant result.",
-    },
-
-    // Previous biopsy = no → checkbox to book
-    {
-      name: "biopsyBookNow",
-      label: "Book biopsy now",
-      type: "checkbox",
-      colSpan: 2,
-      showIf: (v) => v.previousBiopsy === "no" && !v.biopsyDone,
-    },
-
-    // Booking form — only when book now is checked
-    {
-      name: "biopsyBookingDate",
-      label: "Biopsy Appointment Date",
-      type: "date",
-      colSpan: 1,
-      showIf: (v) => v.previousBiopsy === "no" && !!v.biopsyBookNow,
-    },
-    {
-      name: "biopsyBookingFacilityId",
-      label: "Facility",
-      type: "select",
-      colSpan: 1,
-      // Options injected at render time from the facilities list — see note below
-      options: [],
-      showIf: (v) => v.previousBiopsy === "no" && !!v.biopsyBookNow,
-    },
-    {
-      name: "biopsyBookingNotes",
-      label: "Booking Notes",
-      type: "textarea",
-      colSpan: 2,
-      placeholder: "Any instructions or referral details",
-      showIf: (v) => v.previousBiopsy === "no" && !!v.biopsyBookNow,
-    },
-
-    // Treatment referral — only when result is suspicious
-    {
-      name: "treatmentReferral",
-      label: "Treatment Referral",
-      type: "select",
-      colSpan: 1,
-      showIf: (v) => v.screeningResult === "suspicious",
-      options: [
-        { value: "", label: "Select" },
-        { value: "referred", label: "Referred" },
-        { value: "not_referred", label: "Not Referred" },
-      ],
-    },
-  ],
-},
+    title: "Procedures & Follow-up",
+    fields: [
+      // No longer gated by previousBiopsy — client can always document this-visit biopsy / booking
+      {
+        name: "biopsyDone",
+        label: "Biopsy done (this visit)",
+        type: "checkbox",
+        colSpan: 1,
+      },
+      {
+        name: "biopsyResult",
+        label: "Biopsy Result",
+        type: "select",
+        colSpan: 1,
+        showIf: (v) => !!v.biopsyDone,
+        options: [
+          { value: "", label: "Select result" },
+          { value: "positive", label: "Positive" },
+          { value: "negative", label: "Negative" },
+        ],
+      },
+      {
+        name: "histologyResult",
+        label: "Histology Result",
+        type: "select",
+        colSpan: 1,
+        showIf: (v) => !!v.biopsyDone && v.biopsyResult === "positive",
+        options: [
+          { value: "", label: "Select" },
+          { value: "malignant", label: "Malignant" },
+          { value: "benign", label: "Benign" },
+        ],
+        help: "Selecting Malignant automatically requests IHC and triggers referral.",
+      },
+      {
+        name: "ihcResult",
+        label: "IHC Result",
+        type: "text",
+        colSpan: 1,
+        showIf: (v) => v.histologyResult === "malignant",
+        placeholder: "e.g. ER+/PR+/HER2- (enter once available)",
+        help: "IHC has been automatically requested for this malignant result.",
+      },
+      {
+        name: "biopsyBookNow",
+        label: "Book biopsy now",
+        type: "checkbox",
+        colSpan: 2,
+        showIf: (v) => !v.biopsyDone,
+      },
+      {
+        name: "biopsyBookingDate",
+        label: "Biopsy Appointment Date",
+        type: "date",
+        colSpan: 1,
+        showIf: (v) => !!v.biopsyBookNow,
+      },
+      {
+        name: "biopsyBookingFacilityId",
+        label: "Facility",
+        type: "select",
+        colSpan: 1,
+        options: [],
+        showIf: (v) => !!v.biopsyBookNow,
+      },
+      {
+        name: "biopsyBookingNotes",
+        label: "Booking Notes",
+        type: "textarea",
+        colSpan: 2,
+        placeholder: "Any instructions or referral details",
+        showIf: (v) => !!v.biopsyBookNow,
+      },
+      {
+        name: "treatmentReferral",
+        label: "Treatment Referral",
+        type: "select",
+        colSpan: 1,
+        showIf: (v) => v.screeningResult === "suspicious",
+        options: [
+          { value: "", label: "Select" },
+          { value: "referred", label: "Referred" },
+          { value: "not_referred", label: "Not Referred" },
+        ],
+      },
+    ],
+  },
 ],
-
   prostate: [
     {
       title: "Screening Details",

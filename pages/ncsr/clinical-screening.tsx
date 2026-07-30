@@ -70,7 +70,8 @@ const NEXT_OF_KIN_RELATIONSHIP_OPTIONS = [
 
 const MEDICAL_HISTORY_GROUP: FieldGroup = {
   title: "Medical History — Confirm",
-  description: "Review and confirm with the client. Infection status, family history, and comorbidities (including diabetes/hypertension) are covered in the previous step — this section covers the rest.",
+  description:
+  "Review and confirm with the client. Infection status, family history, and comorbidities (including diabetes/hypertension) are covered above — this section covers the rest.",
   fields: [
     { name: "previousCancer", label: "Previous cancer diagnosis", type: "select", options: yesNoUnknown, colSpan: 1 },
     { name: "previousCancerDetails", label: "Details (if yes)", type: "text", colSpan: 1, showIf: (v) => v.previousCancer === "yes" },
@@ -91,23 +92,23 @@ const EXAM_GROUPS: FieldGroup[] = [
       { name: "heightCm", label: "Height (cm)", type: "number", step: "0.1", colSpan: 1 },
       { name: "weightKg", label: "Weight (kg)", type: "number", step: "0.1", colSpan: 1 },
       { name: "bmi", label: "BMI", type: "number", step: "0.1", colSpan: 1, readOnly: true, help: "Auto-calculated" },
-      { name: "bloodPressureSystolic", label: "BP Systolic (mmHg)", type: "number", colSpan: 1 },
-      { name: "bloodPressureDiastolic", label: "BP Diastolic (mmHg)", type: "number", colSpan: 1 },
-      { name: "pulse", label: "Pulse (bpm)", type: "number", colSpan: 1 },
+      // { name: "bloodPressureSystolic", label: "BP Systolic (mmHg)", type: "number", colSpan: 1 },
+      // { name: "bloodPressureDiastolic", label: "BP Diastolic (mmHg)", type: "number", colSpan: 1 },
+      // { name: "pulse", label: "Pulse (bpm)", type: "number", colSpan: 1 },
       { name: "temperatureCelsius", label: "Temperature (°C)", type: "number", step: "0.1", colSpan: 1 },
     ],
   },
-  {
-    title: "General Examination",
-    fields: [
-      { name: "pallor", label: "Pallor", type: "select", options: [{ value: "yes", label: "Present" }, { value: "no", label: "Absent" }], colSpan: 1 },
-      { name: "weightLossNoted", label: "Weight loss noted", type: "select", options: [{ value: "yes", label: "Present" }, { value: "no", label: "Absent" }], colSpan: 1 },
-      { name: "enlargedLymphNodes", label: "Enlarged lymph nodes", type: "select", options: [{ value: "yes", label: "Present" }, { value: "no", label: "Absent" }], colSpan: 1 },
-      { name: "enlargedLymphNodesSite", label: "Site (if present)", type: "text", colSpan: 1, showIf: (v) => v.enlargedLymphNodes === "yes" },
-      { name: "jaundice", label: "Jaundice", type: "select", options: [{ value: "yes", label: "Present" }, { value: "no", label: "Absent" }], colSpan: 1 },
-      { name: "notes", label: "Additional notes", type: "textarea", colSpan: 2 },
-    ],
-  },
+  // {
+  //   title: "General Examination",
+  //   fields: [
+  //     { name: "pallor", label: "Pallor", type: "select", options: [{ value: "yes", label: "Present" }, { value: "no", label: "Absent" }], colSpan: 1 },
+  //     { name: "weightLossNoted", label: "Weight loss noted", type: "select", options: [{ value: "yes", label: "Present" }, { value: "no", label: "Absent" }], colSpan: 1 },
+  //     { name: "enlargedLymphNodes", label: "Enlarged lymph nodes", type: "select", options: [{ value: "yes", label: "Present" }, { value: "no", label: "Absent" }], colSpan: 1 },
+  //     { name: "enlargedLymphNodesSite", label: "Site (if present)", type: "text", colSpan: 1, showIf: (v) => v.enlargedLymphNodes === "yes" },
+  //     { name: "jaundice", label: "Jaundice", type: "select", options: [{ value: "yes", label: "Present" }, { value: "no", label: "Absent" }], colSpan: 1 },
+  //     { name: "notes", label: "Additional notes", type: "textarea", colSpan: 2 },
+  //   ],
+  // },
 ];
 
 // ---------------------------------------------------------------------------
@@ -121,8 +122,8 @@ const OUTCOME_OPTIONS: { value: string; label: string; description: string; tone
 ];
 
 const STEPS = [
-  "lookup", "registration", "otpConsent", "riskVerify", "medicalHistory",
-  "cancerTypeSelect", "screening", "physicalExam", "outcome", "done",
+  "lookup", "registration", "otpConsent", "riskVerify", "physicalExam",
+  "cancerTypeSelect", "screening", "outcome", "done",
 ] as const;
 type StepKey = typeof STEPS[number];
 
@@ -131,10 +132,10 @@ const STEP_LABELS: Record<StepKey, string> = {
   registration: "A. Registration",
   otpConsent: "Consent (OTP)",
   riskVerify: "B. Risk Assessment",
-  medicalHistory: "C. Medical History",
-  cancerTypeSelect: "Cancer Type(s)",
-  screening: "D+F. Symptoms & Tests",
-  physicalExam: "E. Physical Exam",
+  // medicalHistory: "C. Medical History",
+  cancerTypeSelect: "C. Cancer Type(s)",
+  screening: "D+E. Symptoms & Tests",
+  physicalExam: "F. Physical Exam",
   outcome: "G. Outcome",
   done: "Complete",
 };
@@ -889,57 +890,51 @@ export default function ClinicalScreeningPage() {
         )}
 
         {currentKey === "riskVerify" && (
-          <div className="space-y-4">
-            <h3 className="text-lg font-semibold text-gray-800 dark:text-white">B. Verify Risk Assessment</h3>
-            <p className="text-sm text-gray-500">
-              Review the responses from Stage 1 (if any) and update as needed.
-            </p>
+  <div className="space-y-4">
+    <h3 className="text-lg font-semibold text-gray-800 dark:text-white">B. Verify Risk Assessment</h3>
+    <p className="text-sm text-gray-500">
+      Review the responses from Stage 1 (if any) and update as needed. Also confirm medical history with the client.
+    </p>
+    {bloomReference?.selfAssessment && (
+      <div className="rounded-2xl border border-amber-200 bg-amber-50 dark:bg-amber-900/20 dark:border-amber-800 p-4">
+        <p className="text-xs font-semibold text-amber-700 dark:text-amber-400 uppercase tracking-wide mb-2">
+          Stage 1 — Bloom Self-Assessment (reference only, not auto-filled below)
+        </p>
+        <p className="text-sm font-bold text-gray-800 dark:text-white capitalize">
+          Risk category: {String(bloomReference.selfAssessment.riskCategory).replace(/_/g, " ")}
+        </p>
+        <p className="text-sm text-gray-600 dark:text-gray-300 mt-1">
+          {bloomReference.selfAssessment.recommendation}
+        </p>
+        {Array.isArray(bloomReference.selfAssessment.flaggedReasonsJson) &&
+          bloomReference.selfAssessment.flaggedReasonsJson.length > 0 && (
+            <ul className="mt-2 text-xs text-gray-600 dark:text-gray-400 list-disc list-inside space-y-0.5">
+              {bloomReference.selfAssessment.flaggedReasonsJson.map((r: string, i: number) => (
+                <li key={i} className="capitalize">{r}</li>
+              ))}
+            </ul>
+          )}
+        <p className="text-xs text-amber-600 dark:text-amber-500 mt-2">
+          Use this to guide your questioning — enter your own findings in the fields below.
+        </p>
+      </div>
+    )}
+    <GroupedForm
+      groups={riskGroupsForVerify}
+      values={risk}
+      errors={{}}
+      onChange={(name, value) => setRisk((p) => ({ ...p, [name]: value }))}
+    />
+    <GroupedForm
+      groups={[MEDICAL_HISTORY_GROUP]}
+      values={risk}
+      errors={{}}
+      onChange={(name, value) => setRisk((p) => ({ ...p, [name]: value }))}
+    />
+  </div>
+)}
 
-            {bloomReference?.selfAssessment && (
-              <div className="rounded-2xl border border-amber-200 bg-amber-50 dark:bg-amber-900/20 dark:border-amber-800 p-4">
-                <p className="text-xs font-semibold text-amber-700 dark:text-amber-400 uppercase tracking-wide mb-2">
-                  Stage 1 — Bloom Self-Assessment (reference only, not auto-filled below)
-                </p>
-                <p className="text-sm font-bold text-gray-800 dark:text-white capitalize">
-                  Risk category: {String(bloomReference.selfAssessment.riskCategory).replace(/_/g, " ")}
-                </p>
-                <p className="text-sm text-gray-600 dark:text-gray-300 mt-1">
-                  {bloomReference.selfAssessment.recommendation}
-                </p>
-                {Array.isArray(bloomReference.selfAssessment.flaggedReasonsJson) &&
-                  bloomReference.selfAssessment.flaggedReasonsJson.length > 0 && (
-                    <ul className="mt-2 text-xs text-gray-600 dark:text-gray-400 list-disc list-inside space-y-0.5">
-                      {bloomReference.selfAssessment.flaggedReasonsJson.map((r: string, i: number) => (
-                        <li key={i} className="capitalize">{r}</li>
-                      ))}
-                    </ul>
-                  )}
-                <p className="text-xs text-amber-600 dark:text-amber-500 mt-2">
-                  Use this to guide your questioning — enter your own findings in the fields below.
-                </p>
-              </div>
-            )}
-
-            <GroupedForm
-              groups={riskGroupsForVerify}
-              values={risk}
-              errors={{}}
-              onChange={(name, value) => setRisk((p) => ({ ...p, [name]: value }))}
-            />
-          </div>
-        )}
-
-        {currentKey === "medicalHistory" && (
-          <div className="space-y-4">
-            <h3 className="text-lg font-semibold text-gray-800 dark:text-white">C. Medical History</h3>
-            <GroupedForm
-              groups={[MEDICAL_HISTORY_GROUP]}
-              values={risk}
-              errors={{}}
-              onChange={(name, value) => setRisk((p) => ({ ...p, [name]: value }))}
-            />
-          </div>
-        )}
+       
 
         {currentKey === "cancerTypeSelect" && (
           <div className="space-y-4">
@@ -1116,11 +1111,11 @@ export default function ClinicalScreeningPage() {
                 {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : "Save & Continue"}
               </Button>
             )}
-            {currentKey === "medicalHistory" && (
+            {/* {currentKey === "medicalHistory" && (
               <Button onClick={submitRiskAndHistory} disabled={busy} className="h-11 px-5 rounded-2xl bg-green-700 border-green-700 hover:bg-green-800">
                 {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : "Save & Continue"}
               </Button>
-            )}
+            )} */}
             {currentKey === "cancerTypeSelect" && (
               <Button onClick={next} disabled={cancerTypes.length === 0} className="h-11 px-5 rounded-2xl bg-green-700 border-green-700 hover:bg-green-800">
                 Continue
