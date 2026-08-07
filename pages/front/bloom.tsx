@@ -519,7 +519,7 @@ function ResultsScreen({ name, result }: { name: string; result: AssessmentResul
           )}
 
           <p className="text-xl text-gray-400 italic">
-            Please note that this is a decision-support tool, NOT a diagnosis. Please discuss these results with a healthcare provider.
+            Please note that this is a decision-support tool, NOT a diagnosis. Please discuss these information with a healthcare provider.
           </p>
         </div>
 

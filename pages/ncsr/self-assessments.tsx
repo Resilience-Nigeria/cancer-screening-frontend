@@ -1,11 +1,13 @@
 import React, { useEffect, useState } from "react";
 import { useRouter } from "next/router";
-import { Loader2, ClipboardList, Search, ArrowRight } from "lucide-react";
+// import { Loader2, ClipboardList, Search, ArrowRight } from "lucide-react";
 import toast from "react-hot-toast";
 
 import Layout from "../containers/Layout";
 import PageTitle from "../components/Typography/PageTitle";
 import api from "../../lib/api";
+import { Loader2, ClipboardList, Search, ArrowRight, Phone, Mail } from "lucide-react";
+
 
 const RISK_TONE: Record<string, string> = {
   low: "bg-green-50 text-green-700",
@@ -85,8 +87,14 @@ export default function SelfAssessmentsPage() {
                 <div>
                   <p className="text-sm font-bold text-gray-800 dark:text-white">{a.registration?.fullName}</p>
                   <p className="text-xs text-gray-500 mt-0.5">
-                    {a.registration?.phoneNumber} · {a.registration?.stateOfResidence} · Completed {fmtDate(a.completedAt)}
-                  </p>
+{[
+  a.registration?.phoneNumber,
+  a.registration?.email,
+  a.registration?.stateOfResidence,
+  `Completed ${fmtDate(a.completedAt)}`,
+]
+  .filter(Boolean)
+  .join(" · ")}                  </p>
                 </div>
                 <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold capitalize ${RISK_TONE[a.riskCategory] || "bg-gray-50 text-gray-600"}`}>
                   {a.riskCategory} risk
@@ -96,10 +104,27 @@ export default function SelfAssessmentsPage() {
                 <p className="text-sm text-gray-600 dark:text-gray-300 mt-3">{a.recommendation}</p>
               )}
               {a.suggestedCancerTypesJson?.length > 0 && (
-                <p className="text-xs text-gray-400 mt-2">
+                <p className="text-xs text-green-700 mt-2">
                   Suggested screening: {a.suggestedCancerTypesJson.join(", ")}
                 </p>
               )}
+              {/* <div>
+  <p className="text-sm font-bold text-gray-800 dark:text-white">{a.registration?.fullName}</p>
+  <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-1">
+    {a.registration?.phoneNumber && (
+      <span className="inline-flex items-center gap-1.5 text-xs text-gray-500">
+        <Phone className="w-3.5 h-3.5" /> {a.registration.phoneNumber}
+      </span>
+    )}
+    {a.registration?.email && (
+      <span className="inline-flex items-center gap-1.5 text-xs text-gray-500">
+        <Mail className="w-3.5 h-3.5" /> {a.registration.email}
+      </span>
+    )}
+    <span className="text-xs text-gray-500">{a.registration?.stateOfResidence}</span>
+    <span className="text-xs text-gray-500">Completed {fmtDate(a.completedAt)}</span>
+  </div>
+</div> */}
               <div className="flex items-center justify-between flex-wrap gap-3 mt-3 pt-3 border-t border-gray-100 dark:border-gray-700">
                 {a.client?.clientId ? (
                   <p className="text-xs text-blue-600">Linked to client {a.client.clientId}</p>

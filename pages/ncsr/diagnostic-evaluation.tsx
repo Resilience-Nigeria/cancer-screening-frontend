@@ -84,7 +84,7 @@ const ICD_CANCER_DETAILS: Record<string, { value: string; label: string }[]> = {
 
 const CANCER_LABELS: Record<string, string> = {
   breast: "Breast", cervical: "Cervix", prostate: "Prostate",
-  colorectal: "Colorectal", lung: "Lung", liver: "Liver", oral: "Oral",
+  colorectal: "Colorectal",  liver: "Liver",
 };
 
 const CANCER_TESTS: Record<string, string[]> = {
@@ -112,14 +112,47 @@ type StepKey = typeof STEPS[number];
 // };
 
 const STEP_LABELS: Record<StepKey, string> = {
-  lookup: "Find Client",
-  consultation: "A. Consultation",
-  examination: "B. Clinical Exam",
-  tests: "C. Test Results",
-  pathology: "D. Pathology",
-  decision: "E. Final Diagnosis",
+  lookup: "A. Find Client",
+  consultation: "B. Consultation",
+  examination: "C. Clinical Exam",
+  tests: "D. Test Results",
+  pathology: "E. Pathology",
+  decision: "F. Final Diagnosis",
   done: "Complete",
 };
+
+const PATHOLOGY_TO_DECISION: Record<string, string> = {
+  benign: "no_cancer",
+  pre_cancer: "pre_cancerous",
+  malignant: "cancer_confirmed",
+  inconclusive: "repeat_biopsy",
+};
+
+const DECISION_OPTIONS = [
+  {
+    value: "no_cancer",
+    label: "No Cancer Detected",
+    desc: "Benign, normal, infection, inflammatory, fibroadenoma, BPE, benign cervical changes",
+  },
+  {
+    value: "pre_cancerous",
+    label: "Pre-cancerous Disease",
+    desc: "CIN, adenomatous polyps, oral leukoplakia with dysplasia, Barrett's with dysplasia",
+  },
+  {
+    value: "cancer_confirmed",
+    label: "Cancer Confirmed",
+    desc: "Proceeds to Stage 4 for staging, MDT review, and treatment",
+  },
+  {
+    value: "repeat_biopsy",
+    label: "Repeat Biopsy",
+    desc: "Pathology was inconclusive — a repeat biopsy is required before a definitive decision can be made",
+  },
+];
+
+
+
 
 function todayStr() {
   return new Date().toISOString().slice(0, 10);
@@ -163,27 +196,27 @@ const [familyHistoryChecklist, setFamilyHistoryChecklist] = useState<Record<stri
 const [icdCancerCode, setIcdCancerCode] = useState("");
 
 
+// useEffect(() => {
+//   if (pathologyResult === "malignant") {
+//     if (decisionPathway === "no_cancer") setDecisionPathway("cancer_confirmed");
+//   }
+// }, [pathologyResult]);
+
 useEffect(() => {
-  if (pathologyResult === "malignant") {
-    if (decisionPathway === "no_cancer") setDecisionPathway("cancer_confirmed");
-  }
+  const mapped = PATHOLOGY_TO_DECISION[pathologyResult];
+  if (mapped) setDecisionPathway(mapped);
 }, [pathologyResult]);
 
 
 async function submitDecision() {
-  if (!evaluationId || !decisionPathway) {
-    toast.error("Please select a decision pathway.");
+  const expected = PATHOLOGY_TO_DECISION[pathologyResult];
+  if (!evaluationId || !decisionPathway || decisionPathway !== expected) {
+    toast.error("Decision pathway must match the recorded pathology result.");
     return;
   }
-  if (pathologyResult === "malignant") {
-    if (decisionPathway === "no_cancer") {
-      toast.error("Malignant pathology cannot be recorded as “No cancer detected”.");
-      return;
-    }
-    if (!icdCancerCode) {
-      toast.error("Please select the ICD cancer classification.");
-      return;
-    }
+  if (pathologyResult === "malignant" && !icdCancerCode) {
+    toast.error("Please select the ICD cancer classification.");
+    return;
   }
   setBusy(true);
   try {
@@ -206,7 +239,6 @@ async function submitDecision() {
     setBusy(false);
   }
 }
-
   function goTo(key: StepKey) {
     setStepIndex(STEPS.indexOf(key));
   }
@@ -390,20 +422,7 @@ async function submitDecision() {
         </p>
       </div>
 
-      {/* {!["lookup"].includes(currentKey) && (
-        <div className="mb-6 flex flex-wrap gap-2">
-          {STEPS.map((key, i) => (
-            <div
-              key={key}
-              className={`px-3 py-1.5 rounded-full text-xs font-medium ${
-                i === stepIndex ? "bg-green-700 text-white" : i < stepIndex ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-400"
-              }`}
-            >
-              {STEP_LABELS[key]}
-            </div>
-          ))}
-        </div>
-      )} */}
+ 
 
       {!["lookup"].includes(currentKey) && (
   <div className="mb-6 flex flex-wrap gap-2">
@@ -478,7 +497,7 @@ async function submitDecision() {
         {currentKey === "consultation" && (
   <div className="space-y-5">
     <h3 className="text-lg font-semibold text-gray-800 dark:text-white">
-      A. Specialist Consultation
+      B. Specialist Consultation
     </h3>
 
     {clientInfo && (
@@ -637,7 +656,7 @@ async function submitDecision() {
 
         {currentKey === "examination" && (
           <div className="space-y-5">
-            <h3 className="text-lg font-semibold text-gray-800 dark:text-white">B. Advanced Examination</h3>
+            <h3 className="text-lg font-semibold text-gray-800 dark:text-white">C. Advanced Examination</h3>
             <p className="text-sm text-gray-500">Repeat focused examination for {CANCER_LABELS[suspectedCancerType]}.</p>
             <Label>
               <span className="text-sm font-semibold">Examination Findings</span>
@@ -656,7 +675,7 @@ async function submitDecision() {
           <div className="space-y-6">
             <div>
               <h3 className="text-lg font-semibold text-gray-800 dark:text-white flex items-center gap-2">
-                <FlaskConical className="w-5 h-5 text-green-700" /> C. Diagnostic Tests — {CANCER_LABELS[suspectedCancerType]}
+                <FlaskConical className="w-5 h-5 text-green-700" /> D. Diagnostic Tests — {CANCER_LABELS[suspectedCancerType]}
               </h3>
               <div className="mt-4 space-y-3">
                 {relevantTests.map((test) => (
@@ -725,7 +744,7 @@ async function submitDecision() {
         {currentKey === "pathology" && (
           <div className="space-y-5">
             <h3 className="text-lg font-semibold text-gray-800 dark:text-white flex items-center gap-2">
-              <Microscope className="w-5 h-5 text-green-700" /> D. Pathology
+              <Microscope className="w-5 h-5 text-green-700" /> E. Pathology
             </h3>
             <p className="text-sm text-gray-500">The definitive diagnosis, made by histopathology.</p>
 
@@ -764,7 +783,7 @@ async function submitDecision() {
           </div>
         )}
 
-        {currentKey === "decision" && (
+ {currentKey === "decision" && (
   <div className="space-y-5">
     <h3 className="text-lg font-semibold text-gray-800 dark:text-white">E. Final Clinical Decision</h3>
     <p className="text-sm text-gray-500">
@@ -773,44 +792,29 @@ async function submitDecision() {
       Exam & tests remain on earlier steps (use the step chips to edit).
     </p>
 
-    <div className="grid grid-cols-1 gap-3">
-      {[
-        {
-          value: "no_cancer",
-          label: "A. No Cancer Detected",
-          desc: "Benign, normal, infection, inflammatory, fibroadenoma, BPE, benign cervical changes",
-          hideWhenMalignant: true,
-        },
-        {
-          value: "pre_cancerous",
-          label: "B. Pre-cancerous Disease",
-          desc: "CIN, adenomatous polyps, oral leukoplakia with dysplasia, Barrett's with dysplasia",
-        },
-        {
-          value: "cancer_confirmed",
-          label: "C. Cancer Confirmed",
-          desc: "Proceeds to Stage 4 for staging, MDT review, and treatment",
-        },
-      ]
-        .filter((opt) => !(pathologyResult === "malignant" && opt.hideWhenMalignant))
-        .map((opt) => (
-          <button
-            key={opt.value}
-            type="button"
-            onClick={() => setDecisionPathway(opt.value)}
-            className={`text-left p-4 rounded-xl border-2 transition-colors ${
-              decisionPathway === opt.value
-                ? "border-green-600 bg-green-50 dark:bg-green-900/20"
-                : "border-gray-200 dark:border-gray-700"
-            }`}
-          >
-            <p className="text-sm font-semibold text-gray-800 dark:text-white">{opt.label}</p>
-            <p className="text-xs text-gray-500 mt-1">{opt.desc}</p>
-          </button>
-        ))}
-    </div>
+    {/* Decision pathway is determined by pathology, not chosen manually */}
+    {(() => {
+      const determined = DECISION_OPTIONS.find((o) => o.value === decisionPathway);
+      if (!determined) return null;
+      return (
+        <div className={`p-4 rounded-xl border-2 ${
+          determined.value === "cancer_confirmed"
+            ? "border-red-500 bg-red-50 dark:bg-red-900/20"
+            : "border-green-600 bg-green-50 dark:bg-green-900/20"
+        }`}>
+          <div className="flex items-center gap-2">
+            <CheckCircle className={`w-4 h-4 ${determined.value === "cancer_confirmed" ? "text-red-600" : "text-green-600"}`} />
+            <p className="text-sm font-semibold text-gray-800 dark:text-white">{determined.label}</p>
+          </div>
+          <p className="text-xs text-gray-500 mt-1">{determined.desc}</p>
+          <p className="text-xs text-gray-400 mt-2 italic">
+            Determined automatically from the pathology result recorded in the previous step.
+          </p>
+        </div>
+      );
+    })()}
 
-    {/* ICD details — show as soon as pathology is malignant */}
+    {/* ICD details — required for malignant */}
     {pathologyResult === "malignant" && (
       <Label>
         <span className="text-sm font-semibold">Cancer details (ICD) *</span>
@@ -827,8 +831,18 @@ async function submitDecision() {
       </Label>
     )}
 
-    {/* existing conditional fields for no_cancer / pre_cancerous */}
-    {/* ... */}
+    {/* Repeat biopsy — booking details */}
+    {pathologyResult === "inconclusive" && (
+      <Label>
+        <span className="text-sm font-semibold">Repeat Biopsy Date</span>
+        <Input
+          type="date"
+          className="mt-2 rounded-2xl h-12"
+          value={routineRecallDate}
+          onChange={(e) => setRoutineRecallDate(e.target.value)}
+        />
+      </Label>
+    )}
 
     <Label>
       <span className="text-sm font-semibold">Management Notes</span>
@@ -841,6 +855,9 @@ async function submitDecision() {
     </Label>
   </div>
 )}
+
+   
+
         {currentKey === "done" && (
           <div className="text-center py-10 space-y-3">
             <CheckCircle className="w-14 h-14 text-green-600 mx-auto" />
@@ -848,9 +865,14 @@ async function submitDecision() {
             <p className="text-sm text-gray-500">
               Decision: <span className="font-semibold capitalize">{decisionPathway.replace(/_/g, " ")}</span>
             </p>
-            {decisionPathway === "cancer_confirmed" && (
-              <p className="text-sm text-green-700 font-medium">Client is now in the Stage 4 treatment queue.</p>
-            )}
+           {decisionPathway === "cancer_confirmed" && (
+  <p className="text-sm text-green-700 font-medium">Client is now in the Stage 4 treatment queue.</p>
+)}
+{decisionPathway === "repeat_biopsy" && (
+  <p className="text-sm text-amber-700 font-medium">
+    Client needs to return for a repeat biopsy{routineRecallDate ? ` on ${routineRecallDate}` : ""}.
+  </p>
+)}
             <Button
               onClick={() => router.push(`/ncsr/client-record?clientId=${clientId}`)}
               className="mt-4 h-12 px-6 rounded-2xl bg-green-700 border-green-700 hover:bg-green-800"

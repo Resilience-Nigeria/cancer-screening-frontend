@@ -796,7 +796,7 @@ breast: [
         name: "screeningDate",
         label: "Screening Date",
         type: "date",
-        required: true,
+        // required: true,
         colSpan: 1,
       },
       {
@@ -804,12 +804,12 @@ breast: [
         label: "Screening Result",
         type: "select",
         options: resultOptions,
-        required: true,
+        // required: true,
         colSpan: 1,
       },
     ],
   },
-  
+
   {
     title: "Procedures & Follow-up",
     fields: [
@@ -903,13 +903,17 @@ breast: [
     {
       title: "Screening Details",
       fields: [
-        { name: "screeningDate", label: "Screening Date", type: "date", required: true, colSpan: 1 },
+        { name: "screeningDate", 
+          label: "Screening Date", 
+          type: "date", 
+          // required: true, 
+          colSpan: 1 },
         {
           name: "screeningResult",
           label: "Screening Result",
           type: "select",
           options: resultOptions,
-          required: true,
+          // required: true,
           colSpan: 1,
         },
         { name: "psaLevel", label: "PSA Level (ng/mL)", type: "number", step: "0.01", colSpan: 1 },
@@ -1068,14 +1072,18 @@ breast: [
             { value: "afp", label: "AFP (Alpha-Fetoprotein)" },
           ],
         },
-        { name: "screeningDate", label: "Screening Date", type: "date", required: true, colSpan: 1 },
+        { name: "screeningDate", 
+          label: "Screening Date", 
+          type: "date", 
+          // required: true, 
+          colSpan: 1 },
         { name: "afpValue", label: "AFP Value (ng/mL)", type: "number", step: "0.1", colSpan: 1, showIf: (v) => v.method === "afp" },
         {
           name: "screeningResult",
           label: "Screening Result",
           type: "select",
           options: resultOptions,
-          required: true,
+          // required: true,
           colSpan: 1,
         },
       ],

@@ -35,6 +35,7 @@ import {
   getStateCode, 
   getLGACode 
 } from "../../lib/nigerianstates";
+import { nextToolFor } from "../../lib/referralStage";
 
 type Client = {
   id: number;
@@ -53,6 +54,11 @@ type Client = {
   landmark?: string | null;
   registrationDate?: string | null;
   dateOfBirth?: string | null;
+  latestReferral?: {
+    referralId: number;
+    referralType: string;
+    status: string;
+  } | null;
 };
 
 type ClientsResponse = {
@@ -154,6 +160,7 @@ export default function ClientsIndexPage() {
         registrationDate:
           client.registrationDate ?? client.registration_date ?? "",
         dateOfBirth: client.dateOfBirth ?? client.date_of_birth ?? "",
+        latestReferral: client.latestReferral ?? client.latest_referral ?? null,
       }));
 
       setClients(mappedClients);
@@ -962,7 +969,7 @@ function openEditModal(client: Client) {
                           </Button>
                         </Link>
 
-                          <Link
+                          {/* <Link
                           href={`/ncsr/screening-wizard?clientId=${client.clientId}`}
                         >
                           <Button layout="outline" className="rounded-xl">
@@ -971,7 +978,25 @@ function openEditModal(client: Client) {
                               Screen
                             </span>
                           </Button>
-                        </Link>
+                        </Link> */}
+
+                        {(() => {
+  const referral = client.latestReferral;
+  const tool = referral?.status === "completed" ? null : nextToolFor(referral?.referralType);
+  if (!tool) return null;
+  const query = new URLSearchParams({ search: client.clientId });
+  if (referral?.referralId) query.set("referralId", String(referral.referralId));
+  return (
+    <Link href={`${tool.href}?${query.toString()}`}>
+      <Button layout="outline" className="rounded-xl">
+        <span className="inline-flex items-center gap-2">
+          <Stethoscope className="w-4 h-4" />
+          {tool.label}
+        </span>
+      </Button>
+    </Link>
+  );
+})()}
 
                         <Link
                           href={`/ncsr/client-record?clientId=${client.clientId}`}

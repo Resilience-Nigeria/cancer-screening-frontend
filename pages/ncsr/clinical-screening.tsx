@@ -71,7 +71,7 @@ const NEXT_OF_KIN_RELATIONSHIP_OPTIONS = [
 const MEDICAL_HISTORY_GROUP: FieldGroup = {
   title: "Medical History — Confirm",
   description:
-  "Review and confirm with the client. Infection status, family history, and comorbidities (including diabetes/hypertension) are covered above — this section covers the rest.",
+    "Review and confirm with the client. Infection status, family history, and comorbidities (including diabetes/hypertension) are covered above — this section covers the rest.",
   fields: [
     { name: "previousCancer", label: "Previous cancer diagnosis", type: "select", options: yesNoUnknown, colSpan: 1 },
     { name: "previousCancerDetails", label: "Details (if yes)", type: "text", colSpan: 1, showIf: (v) => v.previousCancer === "yes" },
@@ -92,23 +92,9 @@ const EXAM_GROUPS: FieldGroup[] = [
       { name: "heightCm", label: "Height (cm)", type: "number", step: "0.1", colSpan: 1 },
       { name: "weightKg", label: "Weight (kg)", type: "number", step: "0.1", colSpan: 1 },
       { name: "bmi", label: "BMI", type: "number", step: "0.1", colSpan: 1, readOnly: true, help: "Auto-calculated" },
-      // { name: "bloodPressureSystolic", label: "BP Systolic (mmHg)", type: "number", colSpan: 1 },
-      // { name: "bloodPressureDiastolic", label: "BP Diastolic (mmHg)", type: "number", colSpan: 1 },
-      // { name: "pulse", label: "Pulse (bpm)", type: "number", colSpan: 1 },
       { name: "temperatureCelsius", label: "Temperature (°C)", type: "number", step: "0.1", colSpan: 1 },
     ],
   },
-  // {
-  //   title: "General Examination",
-  //   fields: [
-  //     { name: "pallor", label: "Pallor", type: "select", options: [{ value: "yes", label: "Present" }, { value: "no", label: "Absent" }], colSpan: 1 },
-  //     { name: "weightLossNoted", label: "Weight loss noted", type: "select", options: [{ value: "yes", label: "Present" }, { value: "no", label: "Absent" }], colSpan: 1 },
-  //     { name: "enlargedLymphNodes", label: "Enlarged lymph nodes", type: "select", options: [{ value: "yes", label: "Present" }, { value: "no", label: "Absent" }], colSpan: 1 },
-  //     { name: "enlargedLymphNodesSite", label: "Site (if present)", type: "text", colSpan: 1, showIf: (v) => v.enlargedLymphNodes === "yes" },
-  //     { name: "jaundice", label: "Jaundice", type: "select", options: [{ value: "yes", label: "Present" }, { value: "no", label: "Absent" }], colSpan: 1 },
-  //     { name: "notes", label: "Additional notes", type: "textarea", colSpan: 2 },
-  //   ],
-  // },
 ];
 
 // ---------------------------------------------------------------------------
@@ -128,16 +114,43 @@ const STEPS = [
 type StepKey = typeof STEPS[number];
 
 const STEP_LABELS: Record<StepKey, string> = {
-  lookup: "Find Client",
-  registration: "A. Registration",
-  otpConsent: "Consent (OTP)",
-  riskVerify: "B. Risk Assessment",
-  // medicalHistory: "C. Medical History",
-  cancerTypeSelect: "C. Cancer Type(s)",
-  screening: "D+E. Symptoms & Tests",
-  physicalExam: "F. Physical Exam",
-  outcome: "G. Outcome",
+  lookup: "A. Find Client",
+  registration: "B. Registration",
+  otpConsent: "C. Consent (OTP)",
+  riskVerify: "D. Risk Assessment",
+  cancerTypeSelect: "F. Cancer Type(s)",
+  screening: "G+H. Symptoms & Tests",
+  physicalExam: "E. Physical Exam",
+  outcome: "I. Outcome",
   done: "Complete",
+};
+
+// Helper function to collect missing fields - NOT making anything required
+function collectMissing(group: FieldGroup[], values: Record<string, any>) {
+  const missing: Array<{ name: string; label: string }> = [];
+  
+  group.forEach((g) => {
+    g.fields.forEach((field) => {
+      // Skip fields with showIf condition that aren't met
+      if (field.showIf && !field.showIf(values)) return;
+      
+      // Only check if field explicitly has required: true
+      if (field.required) {
+        const value = values[field.name];
+        if (value === undefined || value === null || value === "") {
+          missing.push({ name: field.name, label: field.label });
+        }
+      }
+    });
+  });
+  
+  return missing;
+}
+
+// Define endpoints
+const ENDPOINTS = {
+  screening: (visitId: number, cancerType: string) => 
+    `/visits/${visitId}/${cancerType}-screening`
 };
 
 function todayStr() {
@@ -189,6 +202,12 @@ export default function ClinicalScreeningPage() {
   const [pendingMaskedPhone, setPendingMaskedPhone] = useState<string>("");
   const [bloomReference, setBloomReference] = useState<{ registration: any; selfAssessment: any } | null>(null);
   const [duplicateMatch, setDuplicateMatch] = useState<{ field: "phone" | "email"; client: any } | null>(null);
+  const [incompleteVisits, setIncompleteVisits] = useState<any[]>([]);
+  
+  // State for facilities and screening errors
+  const [facilities, setFacilities] = useState<any[]>([]);
+  const [screeningErrors, setScreeningErrors] = useState<Record<string, Record<string, boolean>>>({});
+  const [treatmentReferral, setTreatmentReferral] = useState<string>("not_referred");
 
   const currentKey = STEPS[stepIndex];
 
@@ -202,9 +221,7 @@ export default function ClinicalScreeningPage() {
     return getRiskGroups(primaryType as CancerType);
   }, [cancerTypes, availableCancerTypes]);
 
-  // Prefill physical exam weight/height from the risk profile (Stage 1 /
-  // Section B) once it's available, so the nurse isn't re-measuring/re-typing
-  // values already on file — still editable if today's reading differs.
+  // Prefill physical exam weight/height from the risk profile
   useEffect(() => {
     if (!risk.weightKg && !risk.heightCm) return;
     setExamination((prev) => ({
@@ -222,16 +239,60 @@ export default function ClinicalScreeningPage() {
     setExamination((prev) => (prev.bmi === bmi ? prev : { ...prev, bmi }));
   }, [examination.weightKg, examination.heightCm]);
 
+  // Load facilities capable of biopsy
+  useEffect(() => {
+    (async () => {
+      try {
+        const { data } = await api.get("/services/biopsy/facilities");
+        setFacilities(data?.facilities ?? []);
+      } catch (error) {
+        console.error("Failed to load facilities:", error);
+      }
+    })();
+  }, []);
+
+  // Create facility options for the dropdown
+  const facilityOptions = useMemo(() => {
+    const options = facilities.map((facility) => ({
+      value: String(facility.facilityId),
+      label: `${facility.facilityName} - ${facility.facilityState}`
+    }));
+    
+    // Add a default empty option
+    return [{ value: "", label: "Select a facility" }, ...options];
+  }, [facilities]);
+
+  // Function to get screening groups with facility options injected
+  const getScreeningGroupsWithFacilities = (cancerType: CancerType): FieldGroup[] => {
+    const groups = SCREENING_GROUPS[cancerType] || [];
+    
+    // Deep clone and inject facility options
+    return groups.map(group => ({
+      ...group,
+      fields: group.fields.map(field => {
+        // If this is the biopsy facility dropdown, inject the options from API
+        if (field.name === 'biopsyBookingFacilityId') {
+          return {
+            ...field,
+            options: facilityOptions
+          };
+        }
+        return field;
+      })
+    }));
+  };
+
   function goTo(key: StepKey) {
     setStepIndex(STEPS.indexOf(key));
   }
+  
   function next() {
     setStepIndex((i) => Math.min(i + 1, STEPS.length - 1));
   }
+  
   function back() {
     setStepIndex((i) => {
       const prevIndex = Math.max(i - 1, 0);
-      // otpConsent was never shown for an existing client — skip past it.
       if (STEPS[prevIndex] === "otpConsent" && !pendingRegistrationId) {
         return Math.max(prevIndex - 1, 0);
       }
@@ -239,8 +300,7 @@ export default function ClinicalScreeningPage() {
     });
   }
 
-  // Entry points that already know it's a new client (e.g. "Add Client" on
-  // the clients list) can skip the lookup screen entirely.
+  // Entry points that already know it's a new client
   useEffect(() => {
     if (!router.isReady) return;
     if (router.query.new) {
@@ -248,8 +308,7 @@ export default function ClinicalScreeningPage() {
     }
   }, [router.isReady, router.query.new]);
 
-  // Deep-link support (e.g. from the Stage 1 self-assessment records
-  // page) — pre-fill and auto-run the lookup by phone number.
+  // Deep-link support
   useEffect(() => {
     if (!router.isReady) return;
     const qSearch = router.query.search;
@@ -260,20 +319,50 @@ export default function ClinicalScreeningPage() {
   }, [router.isReady]);
 
   // ── Lookup ───────────────────────────────────────────────────────────
-  async function handleLookup(overrideValue?: string) {
-    // const value = overrideValue ?? lookupValue;
-    // if (!value.trim()) return;
-    const value = (overrideValue ?? lookupValue ?? "").toString().trim();
-  if (!value) {
-    toast.error("Please enter a phone number or Client ID to search.");
-    return;
+  async function resumeVisit(visit: any) {
+    setVisitId(visit.visitId);
+
+    if (visit.examination) {
+      setExamination((p) => ({
+        ...p,
+        ...visit.examination,
+      }));
+    }
+
+    const types = visit.cancerTypes as CancerType[];
+    setCancerTypes(types);
+
+    const hydratedScreenings: Record<string, Record<string, any>> = {};
+    types.forEach((t) => {
+      hydratedScreenings[t] = visit.screenings[t] || {};
+    });
+    setScreenings(hydratedScreenings);
+
+    setIncompleteVisits([]);
+    goTo(visit.resumeStep);
   }
+
+  async function handleLookup(overrideValue?: string) {
+    const value = (overrideValue ?? lookupValue ?? "").toString().trim();
+
+    if (!value) {
+      toast.error("Please enter a phone number or Client ID to search.");
+      return;
+    }
+
     setBusy(true);
+    let hasIncompleteVisit = false;
+
     try {
-      const { data } = await api.get(`/clients/search/details`, { params: { search: value.trim() } });
+      const { data } = await api.get("/clients/search/details", {
+        params: { search: value },
+      });
+
       const found = data?.client;
+
       if (found) {
         setClientId(found.clientId);
+
         setBiodata({
           fullName: found.fullName || "",
           dateOfBirth: found.dateOfBirth?.slice(0, 10) || "",
@@ -292,15 +381,41 @@ export default function ClinicalScreeningPage() {
           nextOfKinPhone: found.nextOfKinPhone || "",
           nextOfKinRelationship: found.nextOfKinRelationship || "",
         });
+
+        // Check for an in-progress visit
+        const { data: incompleteData } = await api.get(
+          `/clients/${found.clientId}/visits/incomplete`
+        );
+
+        if (incompleteData?.riskProfile) {
+          setRisk((p) => ({
+            ...p,
+            ...incompleteData.riskProfile,
+          }));
+        }
+
+        const visits = incompleteData?.visits || [];
+
+        if (visits.length > 0) {
+          hasIncompleteVisit = true;
+          setIncompleteVisits(visits);
+          toast.success(
+            "Found an in-progress screening — pick a visit below to continue."
+          );
+          return;
+        }
+
         toast.success("Client found — details pre-filled below.");
       } else {
-        // No existing Client record — check for a prior Bloom
-        // self-assessment. Bloom only ever creates an AwarenessRegistration,
-        // never a Client, so this is a separate lookup by phone number.
+        // Existing Bloom fallback
         try {
-          const { data: bloomData } = await api.get(`/awareness/lookup`, { params: { phone: value.trim() } });
+          const { data: bloomData } = await api.get("/awareness/lookup", {
+            params: { phone: value },
+          });
+
           if (bloomData?.registration) {
             const reg = bloomData.registration;
+
             setBiodata((p) => ({
               ...p,
               fullName: reg.fullName || "",
@@ -310,32 +425,64 @@ export default function ClinicalScreeningPage() {
               stateOfResidence: reg.stateOfResidence || "",
               lgaOfResidence: reg.lgaOfResidence || "",
             }));
-            setBloomReference({ registration: reg, selfAssessment: bloomData.selfAssessment || null });
+
+            setBloomReference({
+              registration: reg,
+              selfAssessment: bloomData.selfAssessment || null,
+            });
+
             toast.success(
               bloomData.selfAssessment
                 ? "Found a prior Bloom self-assessment — details pre-filled, findings shown in Risk Assessment."
                 : "Found a prior Bloom registration — details pre-filled below."
             );
           } else {
-            toast("No matching client or Bloom record — continuing as a new registration.", { icon: "ℹ️" });
+            toast(
+              "No matching client or Bloom record — continuing as a new registration.",
+              { icon: "ℹ️" }
+            );
           }
         } catch {
-          toast("No matching client — continuing as a new registration.", { icon: "ℹ️" });
+          toast("No matching client — continuing as a new registration.", {
+            icon: "ℹ️",
+          });
         }
       }
-    } catch {
+    } catch (error) {
+      console.error("Lookup error:", error);
       toast.error("Lookup failed. You can continue as a new registration.");
     } finally {
       setBusy(false);
-      goTo("registration");
+      if (!hasIncompleteVisit) {
+        goTo("registration");
+      }
+    }
+  }
+
+  // Helper function to ensure a visit exists
+  async function ensureVisit(): Promise<number | null> {
+    if (visitId) return visitId;
+    
+    if (!clientId) {
+      toast.error("No client selected.");
+      return null;
+    }
+    
+    try {
+      const { data } = await api.post(`/clients/${clientId}/visits`, {
+        visitDate: todayStr(),
+        visitType: "initial",
+      });
+      const newVisitId = data?.visit?.visitId ?? data?.visitId;
+      setVisitId(newVisitId);
+      return newVisitId;
+    } catch (error: any) {
+      toast.error(error?.response?.data?.message ?? "Could not create visit.");
+      return null;
     }
   }
 
   // ── A. Registration ──────────────────────────────────────────────────
-  // Shared helper — returns the first match (if any) without touching state,
-  // so it can be used both for the onBlur early-warning AND as a guaranteed
-  // check right before submission (in case onBlur doesn't fire, e.g. if the
-  // UI kit's Input doesn't forward blur events reliably).
   async function lookupDuplicate(field: "phone" | "email", value: string): Promise<{ field: "phone" | "email"; client: any } | null> {
     if (!value.trim()) return null;
     try {
@@ -354,8 +501,6 @@ export default function ClinicalScreeningPage() {
       return;
     }
 
-    // Existing client (found via lookup) — no consent gate needed, they
-    // already consented at first registration. Just update and continue.
     if (clientId) {
       setBusy(true);
       try {
@@ -371,8 +516,6 @@ export default function ClinicalScreeningPage() {
       return;
     }
 
-    // Guaranteed duplicate check right before submission — don't rely only
-    // on onBlur having fired. Phone first, then email.
     setBusy(true);
     const phoneMatch = await lookupDuplicate("phone", biodata.phoneNumber);
     if (phoneMatch) {
@@ -389,8 +532,6 @@ export default function ClinicalScreeningPage() {
       }
     }
 
-    // New client — seek consent via OTP before creating the record,
-    // same as Stage 1 (Bloom).
     try {
       const { data } = await api.post(`/awareness/register`, {
         fullName: biodata.fullName,
@@ -409,15 +550,14 @@ export default function ClinicalScreeningPage() {
       const firstError = apiErrors ? Object.values(apiErrors)[0] : null;
       toast.error(
         (Array.isArray(firstError) ? firstError[0] : firstError) ??
-          err?.response?.data?.message ??
-          "Could not start registration."
+        err?.response?.data?.message ??
+        "Could not start registration."
       );
     } finally {
       setBusy(false);
     }
   }
 
-  // Shared by both the existing-client and post-OTP new-client paths.
   async function createVisitAndLoadRisk(cId: string) {
     const { data: visitData } = await api.post(`/clients/${cId}/visits`, {
       visitDate: todayStr(),
@@ -425,7 +565,6 @@ export default function ClinicalScreeningPage() {
     });
     setVisitId(visitData?.visit?.visitId ?? visitData?.visitId);
 
-    // Pull any existing risk profile (e.g. from a prior Bloom self-assessment)
     try {
       const { data: rp } = await api.get(`/clients/${cId}/risk-profile`);
       const profile = rp?.risk_profile ?? rp?.riskProfile ?? rp?.data ?? rp;
@@ -435,10 +574,6 @@ export default function ClinicalScreeningPage() {
     }
   }
 
-  // Real-time duplicate check on blur — only relevant while registering a
-  // NEW client. This is a best-effort early warning; submitRegistration()
-  // also runs a guaranteed check right before creating the record, in case
-  // this blur handler doesn't fire for some reason.
   async function checkDuplicate(field: "phone" | "email", value: string) {
     if (clientId) return;
     const match = await lookupDuplicate(field, value);
@@ -490,14 +625,11 @@ export default function ClinicalScreeningPage() {
     setDuplicateMatch(null);
   }
 
-  // Called once OTP consent is verified for a brand-new client.
   async function completeNewClientRegistration() {
     setBusy(true);
     try {
       const { data } = await api.post(`/clients`, {
         ...biodata,
-        // Fall back to residence only if origin was left blank, rather
-        // than always overriding what the form collected.
         stateOfOrigin: biodata.stateOfOrigin || biodata.stateOfResidence,
         lgaOfOrigin: biodata.lgaOfOrigin || biodata.lgaOfResidence,
         registrationDate: todayStr(),
@@ -516,9 +648,7 @@ export default function ClinicalScreeningPage() {
     }
   }
 
-
-
-  // ── B + C. Risk verify & medical history (same risk-profile record) ───
+  // ── B + C. Risk verify & medical history ───────────────────────────
   async function submitRiskAndHistory() {
     if (!clientId) return;
     setBusy(true);
@@ -533,13 +663,23 @@ export default function ClinicalScreeningPage() {
     }
   }
 
-  // ── D + F. Symptoms & cancer-specific tests ────────────────────────────
+  // ── D + F. Symptoms & cancer-specific tests ────────────────────────
   async function submitScreenings() {
-    if (!visitId) return;
+    if (!visitId) {
+      const newVisitId = await ensureVisit();
+      if (!newVisitId) return;
+      setVisitId(newVisitId);
+    }
+    
     setBusy(true);
     try {
       for (const ct of cancerTypes) {
-        await api.post(`/visits/${visitId}/${ct}-screening`, buildScreeningPayload(screenings[ct] || {}));
+        const screeningData = screenings[ct] || {};
+        
+        await api.post(
+          ENDPOINTS.screening(visitId!, ct),
+          buildScreeningPayload(screeningData, treatmentReferral)
+        );
       }
       toast.success("Screening findings saved.");
       next();
@@ -550,9 +690,14 @@ export default function ClinicalScreeningPage() {
     }
   }
 
-  // ── E. Physical examination ────────────────────────────────────────────
+  // ── E. Physical examination ────────────────────────────────────────
   async function submitExamination() {
-    if (!visitId) return;
+    if (!visitId) {
+      const newVisitId = await ensureVisit();
+      if (!newVisitId) return;
+      setVisitId(newVisitId);
+    }
+    
     setBusy(true);
     try {
       await api.post(`/visits/${visitId}/examination`, examination);
@@ -565,9 +710,14 @@ export default function ClinicalScreeningPage() {
     }
   }
 
-  // ── G. Outcome classification ──────────────────────────────────────────
+  // ── G. Outcome classification ──────────────────────────────────────
   async function submitOutcome() {
-    if (!visitId) return;
+    if (!visitId) {
+      const newVisitId = await ensureVisit();
+      if (!newVisitId) return;
+      setVisitId(newVisitId);
+    }
+    
     if (!outcome.overallOutcome) {
       toast.error("Please select an outcome classification.");
       return;
@@ -576,6 +726,7 @@ export default function ClinicalScreeningPage() {
       toast.error("Please set a repeat screening date for Low Suspicion outcomes.");
       return;
     }
+    
     setBusy(true);
     try {
       const { data } = await api.post(`/visits/${visitId}/outcome`, outcome);
@@ -648,24 +799,30 @@ export default function ClinicalScreeningPage() {
         )}
       </div>
 
-      {/* Step progress — hidden during a fresh registration, shown once
-          the client/visit exists and Stage 2 screening is under way. */}
+      {/* Step progress */}
       {!["lookup", "registration", "otpConsent"].includes(currentKey) && (
         <div className="mb-6 flex flex-wrap gap-2">
-          {STEPS.map((key, i) => (
-            <div
-              key={key}
-              className={`px-3 py-1.5 rounded-full text-xs font-medium ${
-                i === stepIndex
-                  ? "bg-green-700 text-white"
-                  : i < stepIndex
-                  ? "bg-green-100 text-green-700"
-                  : "bg-gray-100 text-gray-400"
-              }`}
-            >
-              {STEP_LABELS[key]}
-            </div>
-          ))}
+          {STEPS.map((key, i) => {
+            const canJump = i < stepIndex && key !== "done";
+            return (
+              <button
+                key={key}
+                type="button"
+                disabled={!canJump}
+                onClick={() => canJump && goTo(key)}
+                className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
+                  i === stepIndex
+                    ? "bg-green-700 text-white"
+                    : i < stepIndex
+                      ? "bg-green-100 text-green-700 hover:bg-green-200 cursor-pointer"
+                      : "bg-gray-100 text-gray-400 cursor-default"
+                }`}
+                title={canJump ? `Return to ${STEP_LABELS[key]}` : undefined}
+              >
+                {STEP_LABELS[key]}
+              </button>
+            );
+          })}
         </div>
       )}
 
@@ -678,23 +835,46 @@ export default function ClinicalScreeningPage() {
               self-assessment. If nothing matches, you'll continue as a new registration.
             </p>
             <div className="flex gap-2">
-            
-
               <Input
-  className="rounded-2xl h-12 flex-1"
-  placeholder="Phone number or Client ID"
-  value={lookupValue}
-  onChange={(e) => setLookupValue(e.target.value || "")}
-/>
-              <Button
-                // onClick={handleLookup}
-                onClick={() => handleLookup(lookupValue)}
-                disabled={busy}
-                className="h-12 px-5 rounded-2xl bg-green-700 border-green-700 hover:bg-green-800"
-              >
+                className="rounded-2xl h-12 flex-1"
+                placeholder="Phone number or Client ID"
+                value={lookupValue}
+                onChange={(e) => setLookupValue(e.target.value || "")}
+              />
+              <Button onClick={() => handleLookup(lookupValue)} disabled={busy} className="h-12 px-5 rounded-2xl bg-green-700 border-green-700 hover:bg-green-800">
                 {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
               </Button>
             </div>
+
+            {incompleteVisits.length > 0 && (
+              <div className="pt-4 border-t border-gray-100 dark:border-gray-700 space-y-2">
+                <p className="text-sm font-semibold text-gray-700 dark:text-gray-300">In-progress screenings for {biodata.fullName}</p>
+                {incompleteVisits.map((v) => (
+                  <button
+                    key={v.visitId}
+                    type="button"
+                    onClick={() => resumeVisit(v)}
+                    className="w-full text-left p-4 rounded-xl border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"
+                  >
+                    <p className="text-sm font-semibold text-gray-800 dark:text-white">
+                      Visit — {v.visitDate} ({v.visitType})
+                    </p>
+                    <p className="text-xs text-gray-500 mt-0.5">
+                      {v.cancerTypes?.length > 0 ? `Types: ${v.cancerTypes.join(", ")}` : "No screening started yet"}
+                      {" · "}Next: {STEP_LABELS[v.resumeStep as StepKey]}
+                    </p>
+                  </button>
+                ))}
+                <button
+                  type="button"
+                  onClick={() => goTo("registration")}
+                  className="text-sm font-semibold text-green-700 hover:text-green-800"
+                >
+                  Or start a new visit for this client instead
+                </button>
+              </div>
+            )}
+
             <button
               type="button"
               onClick={() => goTo("registration")}
@@ -707,7 +887,7 @@ export default function ClinicalScreeningPage() {
 
         {currentKey === "registration" && (
           <div className="space-y-4">
-            <h3 className="text-lg font-semibold text-gray-800 dark:text-white">A. Registration</h3>
+            <h3 className="text-lg font-semibold text-gray-800 dark:text-white">B. Registration</h3>
             <div className="grid grid-cols-2 gap-4">
               <Label className="col-span-2">
                 <span className="text-sm font-semibold">Full Name *</span>
@@ -890,51 +1070,49 @@ export default function ClinicalScreeningPage() {
         )}
 
         {currentKey === "riskVerify" && (
-  <div className="space-y-4">
-    <h3 className="text-lg font-semibold text-gray-800 dark:text-white">B. Verify Risk Assessment</h3>
-    <p className="text-sm text-gray-500">
-      Review the responses from Stage 1 (if any) and update as needed. Also confirm medical history with the client.
-    </p>
-    {bloomReference?.selfAssessment && (
-      <div className="rounded-2xl border border-amber-200 bg-amber-50 dark:bg-amber-900/20 dark:border-amber-800 p-4">
-        <p className="text-xs font-semibold text-amber-700 dark:text-amber-400 uppercase tracking-wide mb-2">
-          Stage 1 — Bloom Self-Assessment (reference only, not auto-filled below)
-        </p>
-        <p className="text-sm font-bold text-gray-800 dark:text-white capitalize">
-          Risk category: {String(bloomReference.selfAssessment.riskCategory).replace(/_/g, " ")}
-        </p>
-        <p className="text-sm text-gray-600 dark:text-gray-300 mt-1">
-          {bloomReference.selfAssessment.recommendation}
-        </p>
-        {Array.isArray(bloomReference.selfAssessment.flaggedReasonsJson) &&
-          bloomReference.selfAssessment.flaggedReasonsJson.length > 0 && (
-            <ul className="mt-2 text-xs text-gray-600 dark:text-gray-400 list-disc list-inside space-y-0.5">
-              {bloomReference.selfAssessment.flaggedReasonsJson.map((r: string, i: number) => (
-                <li key={i} className="capitalize">{r}</li>
-              ))}
-            </ul>
-          )}
-        <p className="text-xs text-amber-600 dark:text-amber-500 mt-2">
-          Use this to guide your questioning — enter your own findings in the fields below.
-        </p>
-      </div>
-    )}
-    <GroupedForm
-      groups={riskGroupsForVerify}
-      values={risk}
-      errors={{}}
-      onChange={(name, value) => setRisk((p) => ({ ...p, [name]: value }))}
-    />
-    <GroupedForm
-      groups={[MEDICAL_HISTORY_GROUP]}
-      values={risk}
-      errors={{}}
-      onChange={(name, value) => setRisk((p) => ({ ...p, [name]: value }))}
-    />
-  </div>
-)}
-
-       
+          <div className="space-y-4">
+            <h3 className="text-lg font-semibold text-gray-800 dark:text-white">C. Verify Risk Assessment</h3>
+            <p className="text-sm text-gray-500">
+              Review the responses from Stage 1 (if any) and update as needed. Also confirm medical history with the client.
+            </p>
+            {bloomReference?.selfAssessment && (
+              <div className="rounded-2xl border border-amber-200 bg-amber-50 dark:bg-amber-900/20 dark:border-amber-800 p-4">
+                <p className="text-xs font-semibold text-amber-700 dark:text-amber-400 uppercase tracking-wide mb-2">
+                  Stage 1 — Bloom Self-Assessment (reference only, not auto-filled below)
+                </p>
+                <p className="text-sm font-bold text-gray-800 dark:text-white capitalize">
+                  Risk category: {String(bloomReference.selfAssessment.riskCategory).replace(/_/g, " ")}
+                </p>
+                <p className="text-sm text-gray-600 dark:text-gray-300 mt-1">
+                  {bloomReference.selfAssessment.recommendation}
+                </p>
+                {Array.isArray(bloomReference.selfAssessment.flaggedReasonsJson) &&
+                  bloomReference.selfAssessment.flaggedReasonsJson.length > 0 && (
+                    <ul className="mt-2 text-xs text-gray-600 dark:text-gray-400 list-disc list-inside space-y-0.5">
+                      {bloomReference.selfAssessment.flaggedReasonsJson.map((r: string, i: number) => (
+                        <li key={i} className="capitalize">{r}</li>
+                      ))}
+                    </ul>
+                  )}
+                <p className="text-xs text-amber-600 dark:text-amber-500 mt-2">
+                  Use this to guide your questioning — enter your own findings in the fields below.
+                </p>
+              </div>
+            )}
+            <GroupedForm
+              groups={riskGroupsForVerify}
+              values={risk}
+              errors={{}}
+              onChange={(name, value) => setRisk((p) => ({ ...p, [name]: value }))}
+            />
+            <GroupedForm
+              groups={[MEDICAL_HISTORY_GROUP]}
+              values={risk}
+              errors={{}}
+              onChange={(name, value) => setRisk((p) => ({ ...p, [name]: value }))}
+            />
+          </div>
+        )}
 
         {currentKey === "cancerTypeSelect" && (
           <div className="space-y-4">
@@ -967,23 +1145,35 @@ export default function ClinicalScreeningPage() {
 
         {currentKey === "screening" && (
           <div className="space-y-8">
-            <h3 className="text-lg font-semibold text-gray-800 dark:text-white">D + F. Symptom Assessment & Screening Tests</h3>
+            <h3 className="text-lg font-semibold text-gray-800 dark:text-white">G + H. Symptom Assessment & Screening Tests</h3>
+            
             {cancerTypes.length === 0 && (
               <p className="text-sm text-amber-600">No cancer type selected — go back and select at least one.</p>
             )}
-            {cancerTypes.map((ct) => (
-              <div key={ct} className="border-t border-gray-100 dark:border-gray-700 pt-6 first:border-t-0 first:pt-0">
-                <p className="text-sm font-bold text-green-700 uppercase tracking-wide mb-3">{cancerLabel(ct)}</p>
-                <GroupedForm
-                  groups={SCREENING_GROUPS[ct] || []}
-                  values={screenings[ct] || {}}
-                  errors={{}}
-                  onChange={(name, value) =>
-                    setScreenings((prev) => ({ ...prev, [ct]: { ...(prev[ct] || {}), [name]: value } }))
-                  }
-                />
-              </div>
-            ))}
+            
+            {/* Cancer type specific forms with facility options injected */}
+            {cancerTypes.map((ct) => {
+              // Get the groups with facility options injected
+              const groupsWithFacilities = getScreeningGroupsWithFacilities(ct);
+              
+              return (
+                <div key={ct} className="border-t border-gray-100 dark:border-gray-700 pt-6 first:border-t-0 first:pt-0">
+                  <p className="text-sm font-bold text-green-700 uppercase tracking-wide mb-3">{cancerLabel(ct)}</p>
+                  <GroupedForm
+                    groups={groupsWithFacilities}
+                    values={screenings[ct] || {}}
+                    errors={screeningErrors[ct] || {}}
+                    onChange={(name, value) => {
+                      setScreenings((prev) => {
+                        const currentScreening = prev[ct] || {};
+                        const updatedScreening = { ...currentScreening, [name]: value };
+                        return { ...prev, [ct]: updatedScreening };
+                      });
+                    }}
+                  />
+                </div>
+              );
+            })}
           </div>
         )}
 
@@ -1111,11 +1301,6 @@ export default function ClinicalScreeningPage() {
                 {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : "Save & Continue"}
               </Button>
             )}
-            {/* {currentKey === "medicalHistory" && (
-              <Button onClick={submitRiskAndHistory} disabled={busy} className="h-11 px-5 rounded-2xl bg-green-700 border-green-700 hover:bg-green-800">
-                {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : "Save & Continue"}
-              </Button>
-            )} */}
             {currentKey === "cancerTypeSelect" && (
               <Button onClick={next} disabled={cancerTypes.length === 0} className="h-11 px-5 rounded-2xl bg-green-700 border-green-700 hover:bg-green-800">
                 Continue

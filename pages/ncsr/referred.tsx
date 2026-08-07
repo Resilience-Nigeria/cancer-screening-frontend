@@ -1,25 +1,26 @@
 import React, { useEffect, useState } from "react";
 import { useRouter } from "next/router";
-import { Loader2, ArrowRight, History, Inbox } from "lucide-react";
+// import { Loader2, ArrowRight, History, Inbox } from "lucide-react";
 import toast from "react-hot-toast";
+import { nextToolFor } from "../../lib/referralStage";
 
 import Layout from "../containers/Layout";
 import PageTitle from "../components/Typography/PageTitle";
 import api from "../../lib/api";
-
+import { Loader2, ArrowRight, History, Inbox, Phone, Mail } from "lucide-react";
 const STAGE_OPTIONS = [
   { value: "", label: "All stages" },
   { value: "screening_to_confirmation", label: "Stage 2 → Stage 3" },
   { value: "confirmation_to_treatment", label: "Stage 3 → Stage 4" },
 ];
 
-function nextToolFor(referralType: string) {
-  if (referralType === "screening_to_confirmation") {
-    return { href: "/ncsr/diagnostic-evaluation", label: "Start Screening" };
-  }
-  // Stage 4 (treatment) tooling doesn't exist yet.
-  return null;
-}
+// function nextToolFor(referralType: string) {
+//   if (referralType === "screening_to_confirmation") {
+//     return { href: "/ncsr/diagnostic-evaluation", label: "Start Screening" };
+//   }
+//   // Stage 4 (treatment) tooling doesn't exist yet.
+//   return null;
+// }
 
 export default function LinkedClientsPage() {
   const router = useRouter();
@@ -116,10 +117,10 @@ export default function LinkedClientsPage() {
                 className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700 shadow-sm p-5 flex items-center justify-between gap-4 flex-wrap"
               >
                 <div>
-                  <p className="text-sm font-bold text-gray-800 dark:text-white">{r.client?.fullName}</p>
+                  {/* <p className="text-sm font-bold text-gray-800 dark:text-white">{r.client?.fullName}</p>
                   <p className="text-xs text-gray-500 mt-0.5">
                     {r.client?.clientId} · From {r.fromFacility?.facilityName} · {r.referralDate}
-                  </p>
+                  </p> */}
                   <div className="flex items-center gap-2 mt-2">
                     <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 capitalize">
                       {r.status}
@@ -128,6 +129,26 @@ export default function LinkedClientsPage() {
                       {STAGE_OPTIONS.find((s) => s.value === r.referralType)?.label || r.referralType}
                     </span>
                   </div>
+                  {/* <div> */}
+  <p className="text-sm font-bold text-gray-800 dark:text-white">{r.client?.fullName}</p>
+  <p className="text-xs text-gray-500 mt-0.5">
+    {r.client?.clientId} · From {r.from_facility?.facilityName} · {r.referralDate}
+  </p>
+  <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-1.5">
+    {r.client?.phoneNumber && (
+      <span className="inline-flex items-center gap-1.5 text-xs text-gray-500">
+        <Phone className="w-3.5 h-3.5" /> {r.client.phoneNumber}
+      </span>
+    )}
+    {r.client?.email && (
+      <span className="inline-flex items-center gap-1.5 text-xs text-gray-500">
+        <Mail className="w-3.5 h-3.5" /> {r.client.email}
+      </span>
+    )}
+  </div>
+     <p className="text-xs text-gray-600 mt-0.5">
+    Navigator: {r.to_facility?.navigatorName} · {r.to_facility?.navigatorPhone}  · {r.to_facility?.navigatorEmail} 
+  </p>
                 </div>
                 {tool && r.status !== "completed" && (
                   <button

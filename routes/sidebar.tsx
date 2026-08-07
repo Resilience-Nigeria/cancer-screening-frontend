@@ -130,6 +130,11 @@ const routes: IRoute[] = [
     name: "Analytics",
   },
   {
+    path: "/ncsr/navigator-clients",
+    icon: Users,
+    name: "My Clients",
+  },
+  {
     path: "/ncsr/indigency-support",
     icon: HeartHandshake,
     name: "Indigency Support",

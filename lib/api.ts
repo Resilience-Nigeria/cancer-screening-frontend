@@ -22,17 +22,24 @@ api.interceptors.request.use((config) => {
 });
 
 // Response interceptor - handle auth errors and refresh
+// Response interceptor - handle auth errors and refresh
 api.interceptors.response.use(
   (response) => response,
   async (error) => {
     const originalRequest = error.config;
 
-    // If 401 error and we haven't tried to refresh yet
-    if (error?.response?.status === 401 && !originalRequest._retry) {
+    // Only refresh tokens for authenticated requests,
+    // NOT for login requests.
+    const shouldRefresh =
+      error?.response?.status === 401 &&
+      getToken() &&
+      !originalRequest._retry &&
+      !originalRequest.url?.includes("/auth/login");
+
+    if (shouldRefresh) {
       originalRequest._retry = true;
 
       try {
-        // Try to refresh the token
         const { data } = await axios.post(
           `${process.env.NEXT_PUBLIC_API_BASE_URL}/auth/refresh`,
           {},
@@ -40,33 +47,38 @@ api.interceptors.response.use(
         );
 
         if (data.status && data.access_token) {
-          // Save new token
           setToken(data.access_token);
 
-          // Update the failed request with new token
           originalRequest.headers.Authorization = `Bearer ${data.access_token}`;
 
-          // Retry the original request
           return api(originalRequest);
         }
       } catch (refreshError) {
-        // Refresh failed - clear auth and redirect to login
         clearAuth();
+
         if (typeof window !== "undefined") {
           window.location.href = "/";
         }
+
         return Promise.reject(refreshError);
       }
     }
 
-    // For any other 401 or if refresh failed, logout
-    if (error?.response?.status === 401) {
+    // If it's another authenticated request that returned 401,
+    // log the user out.
+    if (
+      error?.response?.status === 401 &&
+      getToken() &&
+      !originalRequest.url?.includes("/auth/login")
+    ) {
       clearAuth();
+
       if (typeof window !== "undefined") {
         window.location.href = "/";
       }
     }
 
+    // Let the login page handle login errors normally.
     return Promise.reject(error);
   }
 );
