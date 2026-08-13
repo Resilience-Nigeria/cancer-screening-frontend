@@ -121,37 +121,47 @@ function withoutReferral(groups: FieldGroup[]): FieldGroup[] {
     .filter((g) => g.fields.length > 0);
 }
 
+
 export function buildScreeningPayload(
   data: Record<string, any>,
   referralValue?: string
 ): Record<string, any> {
   const p: Record<string, any> = { ...data };
-
+ 
   // Derive primary method from breast checkboxes
   if (p.methodMammography) p.method = "mammography";
   else if (p.methodUltrasound) p.method = "uss";
   else if (p.methodCbe !== undefined) p.method = "cbe";
-
+ 
   delete p.methodCbe;
   delete p.methodMammography;
   delete p.methodUltrasound;
-
+ 
+  // Derive primary method from cervical checkboxes
+  if (p.methodHpv) p.method = "hpv";
+  else if (p.methodPap) p.method = "pap";
+  else if (p.methodVia) p.method = "via";
+ 
+  delete p.methodVia;
+  delete p.methodPap;
+  delete p.methodHpv;
+ 
   if (referralValue) p.treatmentReferral = referralValue;
-
+ 
   // result alias
   if (p.screeningResult !== undefined && p.result === undefined) p.result = p.screeningResult;
   if (p.result !== undefined && p.screeningResult === undefined) p.screeningResult = p.result;
-
+ 
   // Only send treatment referral for suspicious results
   if (p.screeningResult !== "suspicious") p.treatmentReferral = null;
-
+ 
   SCREENING_INT_FIELDS.forEach((k) => {
     if (k in p) p[k] = p[k] === "" || p[k] == null ? null : parseInt(p[k]);
   });
   SCREENING_FLOAT_FIELDS.forEach((k) => {
     if (k in p) p[k] = p[k] === "" || p[k] == null ? null : parseFloat(p[k]);
   });
-
+ 
   return p;
 }
 
