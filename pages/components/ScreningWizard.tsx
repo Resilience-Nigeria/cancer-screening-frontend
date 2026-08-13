@@ -87,6 +87,16 @@ const REFERRAL_STEP: Step = { key: "referral", label: "Referral", icon: Building
 const today = () => new Date().toISOString().split("T")[0];
 const dateOnly = (v?: string | null) => (v ? String(v).split("T")[0] : "");
 
+// const SCREENING_INT_FIELDS = [
+//   "ageAtFirstIntercourse",
+//   "numberOfChildbirths",
+//   "breastfeedingDuration",
+//   "ageAtFirstMenstruation",
+//   "ageAtMenopause",
+//   "ipssScore",
+//   "biopsyBookingFacilityId",
+// ];
+
 const SCREENING_INT_FIELDS = [
   "ageAtFirstIntercourse",
   "numberOfChildbirths",
@@ -95,7 +105,11 @@ const SCREENING_INT_FIELDS = [
   "ageAtMenopause",
   "ipssScore",
   "biopsyBookingFacilityId",
+  "ablationBookingFacilityId",
+  "leepBookingFacilityId",
+  "colposcopyBookingFacilityId",
 ];
+
 const SCREENING_FLOAT_FIELDS = ["psaLevel", "afpValue"];
 
 function withoutReferral(groups: FieldGroup[]): FieldGroup[] {

@@ -209,6 +209,10 @@ export default function ClinicalScreeningPage() {
   const [screeningErrors, setScreeningErrors] = useState<Record<string, Record<string, boolean>>>({});
   const [treatmentReferral, setTreatmentReferral] = useState<string>("not_referred");
 
+  const [ablationFacilities, setAblationFacilities] = useState<any[]>([]);
+const [leepFacilities, setLeepFacilities] = useState<any[]>([]);
+const [colposcopyFacilities, setColposcopyFacilities] = useState<any[]>([]);
+
   const currentKey = STEPS[stepIndex];
 
   const availableCancerTypes = useMemo(
@@ -263,24 +267,94 @@ export default function ClinicalScreeningPage() {
   }, [facilities]);
 
   // Function to get screening groups with facility options injected
-  const getScreeningGroupsWithFacilities = (cancerType: CancerType): FieldGroup[] => {
-    const groups = SCREENING_GROUPS[cancerType] || [];
+  // const getScreeningGroupsWithFacilities = (cancerType: CancerType): FieldGroup[] => {
+  //   const groups = SCREENING_GROUPS[cancerType] || [];
     
-    // Deep clone and inject facility options
-    return groups.map(group => ({
-      ...group,
-      fields: group.fields.map(field => {
-        // If this is the biopsy facility dropdown, inject the options from API
-        if (field.name === 'biopsyBookingFacilityId') {
-          return {
-            ...field,
-            options: facilityOptions
-          };
-        }
-        return field;
-      })
-    }));
-  };
+  //   // Deep clone and inject facility options
+  //   return groups.map(group => ({
+  //     ...group,
+  //     fields: group.fields.map(field => {
+  //       // If this is the biopsy facility dropdown, inject the options from API
+  //       if (field.name === 'biopsyBookingFacilityId') {
+  //         return {
+  //           ...field,
+  //           options: facilityOptions
+  //         };
+  //       }
+  //       return field;
+  //     })
+  //   }));
+  // };
+
+
+  const getScreeningGroupsWithFacilities = (cancerType: CancerType): FieldGroup[] => {
+  const groups = SCREENING_GROUPS[cancerType] || [];
+ 
+  return groups.map((group) => ({
+    ...group,
+    fields: group.fields.map((field) => {
+      if (field.name === "biopsyBookingFacilityId") {
+        return { ...field, options: facilityOptions };
+      }
+      if (field.name === "ablationBookingFacilityId") {
+        return { ...field, options: ablationFacilityOptions };
+      }
+      if (field.name === "leepBookingFacilityId") {
+        return { ...field, options: leepFacilityOptions };
+      }
+      if (field.name === "colposcopyBookingFacilityId") {
+        return { ...field, options: colposcopyFacilityOptions };
+      }
+      return field;
+    }),
+  }));
+};
+
+
+
+
+  useEffect(() => {
+  (async () => {
+    try {
+      const [ablation, leep, colposcopy] = await Promise.all([
+        api.get("/services/ablation/facilities"),
+        api.get("/services/leep/facilities"),
+        api.get("/services/colposcopy/facilities"),
+      ]);
+      setAblationFacilities(ablation.data?.facilities ?? []);
+      setLeepFacilities(leep.data?.facilities ?? []);
+      setColposcopyFacilities(colposcopy.data?.facilities ?? []);
+    } catch (error) {
+      console.error("Failed to load cervical referral facilities:", error);
+    }
+  })();
+}, []);
+
+
+const ablationFacilityOptions = useMemo(() => {
+  const options = ablationFacilities.map((f) => ({
+    value: String(f.facilityId),
+    label: `${f.facilityName} - ${f.facilityState}`,
+  }));
+  return [{ value: "", label: "Select a facility" }, ...options];
+}, [ablationFacilities]);
+ 
+const leepFacilityOptions = useMemo(() => {
+  const options = leepFacilities.map((f) => ({
+    value: String(f.facilityId),
+    label: `${f.facilityName} - ${f.facilityState}`,
+  }));
+  return [{ value: "", label: "Select a facility" }, ...options];
+}, [leepFacilities]);
+ 
+const colposcopyFacilityOptions = useMemo(() => {
+  const options = colposcopyFacilities.map((f) => ({
+    value: String(f.facilityId),
+    label: `${f.facilityName} - ${f.facilityState}`,
+  }));
+  return [{ value: "", label: "Select a facility" }, ...options];
+}, [colposcopyFacilities]);
+
 
   function goTo(key: StepKey) {
     setStepIndex(STEPS.indexOf(key));
@@ -406,6 +480,8 @@ export default function ClinicalScreeningPage() {
         }
 
         toast.success("Client found — details pre-filled below.");
+        // Go directly to registration (no OTP for existing client)
+        goTo("registration");
       } else {
         // Existing Bloom fallback
         try {
@@ -436,26 +512,30 @@ export default function ClinicalScreeningPage() {
                 ? "Found a prior Bloom self-assessment — details pre-filled, findings shown in Risk Assessment."
                 : "Found a prior Bloom registration — details pre-filled below."
             );
+            // Go directly to registration (no OTP for Bloom registration)
+            goTo("registration");
           } else {
             toast(
               "No matching client or Bloom record — continuing as a new registration.",
               { icon: "ℹ️" }
             );
+            // For new registration, go to registration (OTP will be sent later)
+            goTo("registration");
           }
         } catch {
           toast("No matching client — continuing as a new registration.", {
             icon: "ℹ️",
           });
+          // For new registration, go to registration (OTP will be sent later)
+          goTo("registration");
         }
       }
     } catch (error) {
       console.error("Lookup error:", error);
       toast.error("Lookup failed. You can continue as a new registration.");
+      goTo("registration");
     } finally {
       setBusy(false);
-      if (!hasIncompleteVisit) {
-        goTo("registration");
-      }
     }
   }
 
@@ -501,6 +581,7 @@ export default function ClinicalScreeningPage() {
       return;
     }
 
+    // CASE 1: Existing client (has clientId) - update and continue, NO OTP
     if (clientId) {
       setBusy(true);
       try {
@@ -516,13 +597,18 @@ export default function ClinicalScreeningPage() {
       return;
     }
 
+    // CASE 2: New client - check for duplicates first
     setBusy(true);
+    
+    // Check phone duplicate
     const phoneMatch = await lookupDuplicate("phone", biodata.phoneNumber);
     if (phoneMatch) {
       setDuplicateMatch(phoneMatch);
       setBusy(false);
       return;
     }
+    
+    // Check email duplicate if provided
     if (biodata.email) {
       const emailMatch = await lookupDuplicate("email", biodata.email);
       if (emailMatch) {
@@ -532,6 +618,7 @@ export default function ClinicalScreeningPage() {
       }
     }
 
+    // CASE 3: Fresh registration - send OTP
     try {
       const { data } = await api.post(`/awareness/register`, {
         fullName: biodata.fullName,
@@ -857,7 +944,32 @@ export default function ClinicalScreeningPage() {
                     className="w-full text-left p-4 rounded-xl border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"
                   >
                     <p className="text-sm font-semibold text-gray-800 dark:text-white">
-                      Visit — {v.visitDate} ({v.visitType})
+                      Visit — {(() => {
+  const date = new Date(v.visitDate);
+  const day = date.getDate();
+
+  const suffix =
+    day % 10 === 1 && day !== 11
+      ? "st"
+      : day % 10 === 2 && day !== 12
+      ? "nd"
+      : day % 10 === 3 && day !== 13
+      ? "rd"
+      : "th";
+
+  const formattedDate = date.toLocaleDateString("en-GB", {
+    month: "long",
+    year: "numeric",
+  });
+
+  const formattedTime = date.toLocaleTimeString("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  });
+
+  return `${day}${suffix} ${formattedDate} at ${formattedTime}`;
+})()} ({v.visitType})
                     </p>
                     <p className="text-xs text-gray-500 mt-0.5">
                       {v.cancerTypes?.length > 0 ? `Types: ${v.cancerTypes.join(", ")}` : "No screening started yet"}

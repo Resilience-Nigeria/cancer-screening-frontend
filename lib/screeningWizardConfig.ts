@@ -341,102 +341,258 @@ const resultDateGroup = (methodField: WizardField): FieldGroup => ({
 });
 
 export const SCREENING_GROUPS: Record<CancerType, FieldGroup[]> = {
-  cervical: [
-    resultDateGroup({
-      name: "method",
-      label: "Method",
-      type: "select",
-      required: true,
-      colSpan: 1,
-      options: [
-        { value: "via", label: "VIA" },
-        { value: "pap", label: "Pap Smear" },
-        { value: "hpv", label: "HPV" },
-      ],
-    }),
-    {
-      title: "HPV",
-      description: "Only relevant when the screening method is HPV.",
-      fields: [
-        {
-          name: "hpvResult",
-          label: "HPV Result",
-          type: "select",
-          colSpan: 1,
-          showIf: (v) => v.method === "hpv",
-          options: [
-            { value: "", label: "Select" },
-            { value: "positive", label: "Positive" },
-            { value: "negative", label: "Negative" },
-          ],
-        },
-        {
-          name: "hpvGenotype",
-          label: "HPV Genotype",
-          type: "text",
-          colSpan: 1,
-          placeholder: "e.g. 16, 18",
-          showIf: (v) => v.method === "hpv",
-        },
-
-          {
-          name: "treatmentReferral",
-          label: "Treatment Referral",
-          type: "select",
-          colSpan: 1,
-          options: [
-            { value: "", label: "Select" },
-            { value: "referred", label: "Referred" },
-            { value: "not_referred", label: "Not Referred" },
-          ],
-        },
-      ],
-    },
-    {
-      title: "Cervical Risk Factors",
-      fields: [
-        { name: "moreThanOnePartner", label: "More than 1 Sexual Partner", type: "select", options: yesNo, colSpan: 1 },
-        { name: "ageAtFirstIntercourse", label: "Age at First Intercourse", type: "number", min: 0, max: 100, colSpan: 1 },
-        { name: "numberOfChildbirths", label: "Number of Childbirths", type: "number", min: 0, colSpan: 1 },
-        {
-          name: "contraceptiveUse",
-          label: "Contraceptive Use",
-          type: "select",
-          colSpan: 1,
-          options: [
-            { value: "", label: "Select" },
-            { value: "none", label: "None" },
-            { value: "oral_contraceptives", label: "Oral Contraceptives" },
-            { value: "iud", label: "IUD" },
-            { value: "barrier_methods", label: "Barrier Methods" },
-            { value: "other", label: "Other" },
-          ],
-        },
-      ],
-    },
-    {
-      title: "Procedures & Follow-up",
-      fields: [
-        { name: "colposcopyDone", label: "Colposcopy done", type: "checkbox", colSpan: 1 },
-        { name: "biopsyDone", label: "Biopsy done", type: "checkbox", colSpan: 1 },
-        {
-          name: "biopsyResult",
-          label: "Biopsy Result",
-          type: "select",
-          colSpan: 2,
-          showIf: (v) => !!v.biopsyDone,
-          options: [
-            { value: "", label: "Select biopsy result" },
-            { value: "positive", label: "Positive" },
-            { value: "negative", label: "Negative" },
-          ],
-        },
-        // { name: "treatmentProvided", label: "Treatment provided", type: "checkbox", colSpan: 1 },
-        // { name: "referralCompleted", label: "Referral completed", type: "checkbox", colSpan: 1 },
-      ],
-    },
-  ],
-
+  
+cervical: [
+  {
+    title: "Screening Methods",
+    description: "Select all methods used during this encounter.",
+    fields: [
+      { name: "methodVia", label: "VIA", type: "checkbox", colSpan: 1 },
+      { name: "methodPap", label: "Pap Smear", type: "checkbox", colSpan: 1 },
+      { name: "methodHpv", label: "HPV", type: "checkbox", colSpan: 1 },
+    ],
+  },
+  {
+    title: "HPV",
+    description: "Only relevant when HPV is selected above.",
+    fields: [
+      {
+        name: "hpvResult",
+        label: "HPV Result",
+        type: "select",
+        colSpan: 1,
+        showIf: (v) => !!v.methodHpv,
+        options: [
+          { value: "", label: "Select" },
+          { value: "positive", label: "Positive" },
+          { value: "negative", label: "Negative" },
+        ],
+      },
+      {
+        name: "hpvGenotype",
+        label: "HPV Genotype",
+        type: "select",
+        colSpan: 1,
+        showIf: (v) => !!v.methodHpv,
+        options: [
+          { value: "", label: "Select" },
+          { value: "16", label: "16" },
+          { value: "18", label: "18" },
+          { value: "35", label: "35" },
+          { value: "45", label: "45" },
+          { value: "other", label: "Others" },
+        ],
+      },
+    ],
+  },
+  {
+    title: "Ablation Eligibility",
+    description:
+      "Shown for HPV 16/18/35/45, and again if a colposcopy result below comes back positive.",
+    fields: [
+      {
+        name: "ablationEligibility",
+        label: "Eligible for Ablative Treatment",
+        type: "select",
+        colSpan: 2,
+        showIf: (v) =>
+          ["16", "18", "35", "45"].includes(v.hpvGenotype) ||
+          v.colposcopyResult === "positive",
+        options: [
+          { value: "", label: "Select" },
+          { value: "eligible", label: "Eligible" },
+          { value: "not_eligible", label: "Not Eligible" },
+          { value: "suspicious_invasion", label: "Suspicious for Invasion" },
+        ],
+        help: "Eligible → book ablative treatment below. Not Eligible → book LEEP below. Suspicious for Invasion → automatically referred for evaluation & further management on save.",
+      },
+ 
+      // --- Eligible -> book ablative treatment ---
+      {
+        name: "ablationBookNow",
+        label: "Book for Ablative Treatment",
+        type: "checkbox",
+        colSpan: 2,
+        showIf: (v) => v.ablationEligibility === "eligible",
+      },
+      {
+        name: "ablationBookingDate",
+        label: "Ablation Appointment Date",
+        type: "date",
+        colSpan: 1,
+        showIf: (v) => !!v.ablationBookNow,
+      },
+      {
+        name: "ablationBookingFacilityId",
+        label: "Facility",
+        type: "select",
+        colSpan: 1,
+        options: [], // injected at render time from /services/ablation/facilities
+        showIf: (v) => !!v.ablationBookNow,
+      },
+      {
+        name: "ablationBookingNotes",
+        label: "Booking Notes",
+        type: "textarea",
+        colSpan: 2,
+        placeholder: "Any instructions or referral details",
+        showIf: (v) => !!v.ablationBookNow,
+      },
+ 
+      // --- Not Eligible -> book LEEP, then histology ---
+      {
+        name: "leepBookNow",
+        label: "Book for LEEP",
+        type: "checkbox",
+        colSpan: 2,
+        showIf: (v) => v.ablationEligibility === "not_eligible",
+      },
+      {
+        name: "leepBookingDate",
+        label: "LEEP Appointment Date",
+        type: "date",
+        colSpan: 1,
+        showIf: (v) => !!v.leepBookNow,
+      },
+      {
+        name: "leepBookingFacilityId",
+        label: "Facility",
+        type: "select",
+        colSpan: 1,
+        options: [], // injected at render time from /services/leep/facilities
+        showIf: (v) => !!v.leepBookNow,
+      },
+      {
+        name: "leepBookingNotes",
+        label: "Booking Notes",
+        type: "textarea",
+        colSpan: 2,
+        placeholder: "Any instructions or referral details",
+        showIf: (v) => !!v.leepBookNow,
+      },
+      {
+        name: "histologyResult",
+        label: "Histology Result",
+        type: "select",
+        colSpan: 2,
+        showIf: (v) => !!v.leepBookNow,
+        options: [
+          { value: "", label: "Select" },
+          { value: "cin1", label: "CIN1" },
+          { value: "cin2", label: "CIN2" },
+          { value: "cin3", label: "CIN3" },
+          { value: "ais", label: "AIS" },
+          { value: "cancer", label: "Cancer" },
+        ],
+        help: "Cancer automatically routes to referral for further evaluation on save.",
+      },
+    ],
+  },
+  {
+    title: "Colposcopy (Other High-Risk HPV)",
+    description: "Shown when HPV genotype is 'Others'.",
+    fields: [
+      {
+        name: "colposcopyBookNow",
+        label: "Book for Colposcopy",
+        type: "checkbox",
+        colSpan: 2,
+        showIf: (v) => v.hpvGenotype === "other",
+      },
+      {
+        name: "colposcopyBookingDate",
+        label: "Colposcopy Appointment Date",
+        type: "date",
+        colSpan: 1,
+        showIf: (v) => v.hpvGenotype === "other" && !!v.colposcopyBookNow,
+      },
+      {
+        name: "colposcopyBookingFacilityId",
+        label: "Facility",
+        type: "select",
+        colSpan: 1,
+        options: [], // injected at render time from /services/colposcopy/facilities
+        showIf: (v) => v.hpvGenotype === "other" && !!v.colposcopyBookNow,
+      },
+      {
+        name: "colposcopyBookingNotes",
+        label: "Booking Notes",
+        type: "textarea",
+        colSpan: 2,
+        placeholder: "Any instructions or referral details",
+        showIf: (v) => v.hpvGenotype === "other" && !!v.colposcopyBookNow,
+      },
+    ],
+  },
+  {
+    title: "Cervical Risk Factors",
+    fields: [
+      { name: "moreThanOnePartner", label: "More than 1 Sexual Partner", type: "select", options: yesNo, colSpan: 1 },
+      { name: "ageAtFirstIntercourse", label: "Age at First Intercourse", type: "number", min: 0, max: 100, colSpan: 1 },
+      { name: "numberOfChildbirths", label: "Number of Childbirths", type: "number", min: 0, colSpan: 1 },
+      {
+        name: "contraceptiveUse",
+        label: "Contraceptive Use",
+        type: "select",
+        colSpan: 1,
+        options: [
+          { value: "", label: "Select" },
+          { value: "none", label: "None" },
+          { value: "oral_contraceptives", label: "Oral Contraceptives" },
+          { value: "iud", label: "IUD" },
+          { value: "barrier_methods", label: "Barrier Methods" },
+          { value: "other", label: "Other" },
+        ],
+      },
+    ],
+  },
+  {
+    title: "Procedures & Follow-up",
+    fields: [
+      { name: "colposcopyDone", label: "Colposcopy done", type: "checkbox", colSpan: 1 },
+      {
+        name: "colposcopyResult",
+        label: "Colposcopy Result",
+        type: "select",
+        colSpan: 2,
+        showIf: (v) => !!v.colposcopyDone,
+        options: [
+          { value: "", label: "Select colposcopy result" },
+          { value: "positive", label: "Positive" },
+          { value: "negative", label: "Negative" },
+        ],
+        help: "Positive → re-opens the Ablation Eligibility step above. Negative → automatically referred for evaluation & further management on save.",
+      },
+      { name: "biopsyDone", label: "Biopsy done", type: "checkbox", colSpan: 1 },
+      {
+        name: "biopsyResult",
+        label: "Biopsy Result",
+        type: "select",
+        colSpan: 2,
+        showIf: (v) => !!v.biopsyDone,
+        options: [
+          { value: "", label: "Select biopsy result" },
+          { value: "positive", label: "Positive" },
+          { value: "negative", label: "Negative" },
+        ],
+      },
+    ],
+  },
+  {
+    title: "Screening Details",
+    description: "Optional — record once the result is known.",
+    fields: [
+      { name: "screeningDate", label: "Screening Date", type: "date", colSpan: 1 },
+      {
+        name: "screeningResult",
+        label: "Screening Result",
+        type: "select",
+        colSpan: 1,
+        options: resultOptions,
+      },
+    ],
+  },
+],
 //   breast: [
 //     resultDateGroup({
 //       name: "method",
