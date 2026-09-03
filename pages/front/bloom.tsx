@@ -29,17 +29,17 @@ const RISK_STYLES: Record<AssessmentResult["riskCategory"], { label: string; bad
   },
   average: {
     label: "Average Risk",
-    badge: "bg-blue-100 text-blue-800",
+    badge: "bg-green-200 text-green-800",
     icon: <CheckCircle className="w-5 h-5" />,
   },
   increased: {
     label: "Increased Risk",
-    badge: "bg-amber-100 text-amber-800",
+    badge: "bg-green-400 text-green-900",
     icon: <AlertTriangle className="w-5 h-5" />,
   },
   symptomatic_high: {
     label: "Needs Prompt Evaluation",
-    badge: "bg-red-100 text-red-800",
+    badge: "bg-green-700 text-white",
     icon: <AlertTriangle className="w-5 h-5" />,
   },
 };
@@ -363,15 +363,13 @@ function SelfAssessmentForm({
 
               return (
                 <div 
-                  key={question.id} 
-                  className={`p-4 rounded-2xl border-2 transition-all ${
-                    isAnswered 
-                      ? answer 
-                        ? "border-red-300 bg-red-50" 
-                        : "border-green-300 bg-green-50"
-                      : "border-gray-200"
-                  }`}
-                >
+  key={question.id} 
+  className={`p-4 rounded-2xl border-2 transition-all ${
+    isAnswered 
+      ? "border-green-300 bg-green-50"
+      : "border-gray-200"
+  }`}
+>
                   <div className="flex items-start gap-3">
                     <div className="flex-1">
                       <div className="flex items-center gap-2 mb-1">
@@ -388,17 +386,17 @@ function SelfAssessmentForm({
                       <p className="text-xs text-gray-500 mt-1">💡 {question.description}</p>
                     </div>
                     <div className="flex gap-2 flex-shrink-0">
-                      <button
-                        type="button"
-                        onClick={() => handleAnswer(question.id, true)}
-                        className={`px-4 py-2 rounded-xl text-sm font-medium transition-all ${
-                          answer === true
-                            ? "bg-red-600 text-white ring-2 ring-red-600 ring-offset-2"
-                            : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-                        }`}
-                      >
-                        Yes
-                      </button>
+                     <button
+  type="button"
+  onClick={() => handleAnswer(question.id, true)}
+  className={`px-4 py-2 rounded-xl text-sm font-medium transition-all ${
+    answer === true
+      ? "bg-green-600 text-white ring-2 ring-green-600 ring-offset-2"
+      : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+  }`}
+>
+  Yes
+</button>
                       <button
                         type="button"
                         onClick={() => handleAnswer(question.id, false)}
