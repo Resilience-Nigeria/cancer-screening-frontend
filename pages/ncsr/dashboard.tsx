@@ -590,7 +590,7 @@ function Dashboard() {
   </Button> */}
 
   <Link
-                          href={`/ncsr/screening-wizard`}
+                          href={`/ncsr/clinical-screening`}
                         >
                           <Button layout="outline" className="text-white rounded-2xl h-12 bg-green-700 border-green-700 hover:bg-green-800 hover:border-green-800">
                             <span className="inline-flex items-center gap-2">

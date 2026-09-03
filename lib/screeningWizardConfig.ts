@@ -250,6 +250,132 @@ const infectiousGroup = (required: boolean): FieldGroup => ({
   ],
 });
 
+// ---------------------------------------------------------------------------
+// Prostate screening decision logic (National Prostate Cancer Screening
+// Algorithm). Symptom triage → PSA-deferment check → PSA/DRE thresholds.
+// Kept here as pure, exported helpers so both wizard pages (the guided
+// wizard and the Stage 2 clinical screening flow) share one implementation.
+// ---------------------------------------------------------------------------
+
+/** Warning symptoms that mean a man should not be routed through routine screening. */
+export const PROSTATE_SYMPTOM_FIELDS = [
+  "delayStartingUrination",
+  "poorUrinaryStream",
+  "frequentDayUrination",
+  "nocturia",
+  "incompleteEmptying",
+  "bloodInUrine",
+  "inabilityToPassUrine",
+  "urgeIncontinence",
+  "inabilityToHoldUrine",
+  "terminalDribbling",
+  "bonePainHipBack",
+  "unexplainedWeightLoss",
+] as const;
+
+/** Conditions that can transiently raise PSA and should defer testing. */
+export const PROSTATE_DEFERMENT_FIELDS = [
+  "recentDre",
+  "recentEjaculation",
+  "recentUrinaryInfection",
+  "recentVigorousExercise",
+] as const;
+
+export function computeProstateSymptomatic(v: Record<string, any>): boolean {
+  return PROSTATE_SYMPTOM_FIELDS.some((f) => v[f] === "yes");
+}
+
+export function computeProstatePsaDeferred(v: Record<string, any>): boolean {
+  return PROSTATE_DEFERMENT_FIELDS.some((f) => v[f] === "yes");
+}
+
+export type ProstateOutcome = {
+  screeningPathway: "Symptomatic" | "Asymptomatic";
+  psaEligibility: "Deferred" | "Eligible" | "";
+  screeningResult: "suspicious" | "non_suspicious" | "";
+  treatmentReferral: "referred" | "not_referred" | "";
+  recommendedAction: string;
+};
+
+/**
+ * Pure implementation of the prostate screening decision tree:
+ *  1. Symptomatic → exit routine screening, refer to the clinical/diagnostic pathway.
+ *  2. Asymptomatic + a PSA-deferment condition → defer PSA, manage condition, recall.
+ *  3. Asymptomatic + eligible:
+ *       PSA > 3 or DRE suspicious           → abnormal screen, automatic urology referral
+ *       PSA 1–3, DRE not suspicious          → counsel, risk-adapted repeat PSA (recall)
+ *       PSA < 1, DRE not suspicious          → negative/low risk, risk-adapted recall
+ */
+export function computeProstateOutcome(v: Record<string, any>): ProstateOutcome {
+  if (computeProstateSymptomatic(v)) {
+    return {
+      screeningPathway: "Symptomatic",
+      psaEligibility: "",
+      screeningResult: "suspicious",
+      treatmentReferral: "referred",
+      recommendedAction:
+        "Symptomatic — exit routine screening. Refer to the clinical diagnostic / specialist pathway.",
+    };
+  }
+
+  if (computeProstatePsaDeferred(v)) {
+    return {
+      screeningPathway: "Asymptomatic",
+      psaEligibility: "Deferred",
+      screeningResult: "",
+      treatmentReferral: "not_referred",
+      recommendedAction:
+        "PSA deferred — a condition present can transiently raise PSA. Manage the condition and recall for PSA testing.",
+    };
+  }
+
+  const psa =
+    v.psaLevel !== undefined && v.psaLevel !== null && v.psaLevel !== ""
+      ? parseFloat(v.psaLevel)
+      : null;
+  const dreSuspicious = v.dreResult === "positive";
+
+  if (psa === null) {
+    return {
+      screeningPathway: "Asymptomatic",
+      psaEligibility: "Eligible",
+      screeningResult: "",
+      treatmentReferral: "not_referred",
+      recommendedAction: "Eligible for PSA testing — enter the PSA level (± DRE) to classify the screen.",
+    };
+  }
+
+  if (psa > 3 || dreSuspicious) {
+    return {
+      screeningPathway: "Asymptomatic",
+      psaEligibility: "Eligible",
+      screeningResult: "suspicious",
+      treatmentReferral: "referred",
+      recommendedAction:
+        "Abnormal screen (PSA > 3 ng/mL and/or DRE suspicious) — automatic urology referral.",
+    };
+  }
+
+  if (psa >= 1) {
+    return {
+      screeningPathway: "Asymptomatic",
+      psaEligibility: "Eligible",
+      screeningResult: "non_suspicious",
+      treatmentReferral: "not_referred",
+      recommendedAction:
+        "PSA 1–3 ng/mL, DRE not suspicious — counsel and schedule a risk-adapted repeat PSA (digital recall).",
+    };
+  }
+
+  return {
+    screeningPathway: "Asymptomatic",
+    psaEligibility: "Eligible",
+    screeningResult: "non_suspicious",
+    treatmentReferral: "not_referred",
+    recommendedAction: "PSA < 1 ng/mL, DRE not suspicious — negative/low risk. Routine risk-adapted recall.",
+  };
+}
+
 // Per-cancer emphasis line shown at the top of the risk step.
 export const RISK_FOCUS: Record<CancerType, string> = {
   cervical: "Cervical risk is driven by HIV status, smoking and family history.",
@@ -265,9 +391,15 @@ export const RISK_FOCUS: Record<CancerType, string> = {
 // }
 
 
-export function getRiskGroups(cancer: CancerType): FieldGroup[] {
+export function getRiskGroups(cancer: CancerType, gender?: string): FieldGroup[] {
+  // Reproductive-history fields (menstruation, menopause, breastfeeding) only
+  // make sense for female clients — guard on gender as well as cancer type so
+  // a male client screened for breast cancer (breast is gender "any"), or a
+  // step that hasn't collected a cancer-type selection yet and falls back to
+  // "breast", never gets asked these questions.
+  const includeReproductiveFields = cancer === "breast" && gender !== "male";
   const basicGroup: FieldGroup =
-    cancer === "breast"
+    includeReproductiveFields
       ? {
           ...commonRiskGroup,
           fields: [
@@ -593,142 +725,7 @@ cervical: [
     ],
   },
 ],
-//   breast: [
-//     resultDateGroup({
-//       name: "method",
-//       label: "Method",
-//       type: "select",
-//       required: true,
-//       colSpan: 1,
-//       options: [
-//         { value: "cbe", label: "Clinical Breast Exam (CBE)" },
-//         { value: "mammography", label: "Mammography" },
-//         { value: "ultrasound", label: "Ultrasound" },
-//       ],
-//     }),
-
-//     {
-//   title: "Imaging Findings",
-//   description: "BI-RADS category and breast density (from mammography / ultrasound).",
-//   fields: [
-//     {
-//       name: "biradsScore",
-//       label: "BI-RADS Score",
-//       type: "select",
-//       colSpan: 1,
-//       options: [
-//         { value: "", label: "Select" },
-//         { value: "0", label: "BI-RADS 0 — Incomplete" },
-//         { value: "1", label: "BI-RADS 1 — Negative" },
-//         { value: "2", label: "BI-RADS 2 — Benign" },
-//         { value: "3", label: "BI-RADS 3 — Probably Benign" },
-//         { value: "4", label: "BI-RADS 4 — Suspicious" },
-//         { value: "5", label: "BI-RADS 5 — Highly Suggestive of Malignancy" },
-//         { value: "6", label: "BI-RADS 6 — Known Malignancy" },
-//       ],
-//       showIf: (v) => v.method === "mammography" || v.method === "ultrasound"
-//     },
-//     {
-//       name: "breastDensity",
-//       label: "Breast Density (ACR)",
-//       type: "select",
-//       colSpan: 1,
-//       options: [
-//         { value: "", label: "Select" },
-//         { value: "a", label: "A — Almost entirely fatty" },
-//         { value: "b", label: "B — Scattered fibroglandular" },
-//         { value: "c", label: "C — Heterogeneously dense" },
-//         { value: "d", label: "D — Extremely dense" },
-//       ],
-//       showIf: (v) => v.method === "mammography" || v.method === "ultrasound"
-//     },
-//   ],
-// },
-
-//     {
-//       title: "Breast Health History & Symptoms",
-//       fields: [
-//         { name: "breastfeedingHistory", label: "Breastfeeding History", type: "select", options: yesNo, colSpan: 1 },
-//         {
-//           name: "breastfeedingDuration",
-//           label: "Breastfeeding Duration (months)",
-//           type: "number",
-//           min: 0,
-//           colSpan: 1,
-//           showIf: (v) => v.breastfeedingHistory === "yes",
-//         },
-//         {
-//           name: "breastLumps",
-//           label: "Breast Lumps",
-//           type: "select",
-//           colSpan: 1,
-//           options: [
-//             { value: "", label: "Select" },
-//             { value: "current", label: "Current" },
-//             { value: "previous", label: "Previous" },
-//             { value: "none", label: "None" },
-//           ],
-//         },
-//         { name: "breastNippleDischarge", label: "Breast/Nipple Discharge", type: "select", options: yesNo, colSpan: 1 },
-//         {
-//           name: "dischargeType",
-//           label: "Discharge Type",
-//           type: "select",
-//           colSpan: 2,
-//           showIf: (v) => v.breastNippleDischarge === "yes",
-//           options: [
-//             { value: "", label: "Select type" },
-//             { value: "bloody", label: "Bloody" },
-//             { value: "clear", label: "Clear" },
-//             { value: "milky", label: "Milky" },
-//             { value: "purulent", label: "Purulent" },
-//             { value: "others", label: "Others" },
-//           ],
-//         },
-//         { name: "skinChanges", label: "Skin Appearance Changes", type: "select", options: yesNo, colSpan: 1 },
-//         { name: "breastPain", label: "Breast Pain", type: "select", options: yesNo, colSpan: 1 },
-//         { name: "previousBreastSurgery", label: "Previous Breast Surgery", type: "select", options: yesNo, colSpan: 1 },
-//         { name: "previousBiopsy", label: "Previous Biopsy", type: "select", options: yesNo, colSpan: 1 },
-//         { name: "ageAtFirstMenstruation", label: "Age at First Menstruation", type: "number", min: 0, max: 30, colSpan: 1 },
-//         { name: "ageAtMenopause", label: "Age at Menopause (if applicable)", type: "number", min: 0, max: 100, colSpan: 1 },
-//       ],
-//     },
-//     {
-//       title: "Procedures & Follow-up",
-//       fields: [
-//         { name: "biopsyDone", label: "Biopsy done", type: "checkbox", colSpan: 1 },
-//         // { name: "referralCompleted", label: "Referral completed", type: "checkbox", colSpan: 1 },
-//         {
-//           name: "biopsyResult",
-//           label: "Biopsy Result",
-//           type: "select",
-//           colSpan: 2,
-//           showIf: (v) => !!v.biopsyDone,
-//           options: [
-//             { value: "", label: "Select" },
-//             { value: "positive", label: "Positive" },
-//             { value: "negative", label: "Negative" },
-//           ],
-//         },
-
-//           {
-//           name: "treatmentReferral",
-//           label: "Treatment Referral",
-//           type: "select",
-//           colSpan: 1,
-//           options: [
-//             { value: "", label: "Select" },
-//             { value: "referred", label: "Referred" },
-//             { value: "not_referred", label: "Not Referred" },
-//           ],
-//         },
-
-//       ],
-//     },
-//   ],
-
-
-breast: [
+  breast: [
   {
     title: "Screening Methods",
     description: "Select all methods used during this encounter.",
@@ -1057,27 +1054,106 @@ breast: [
 ],
   prostate: [
     {
+      title: "Warning Symptoms (Red-Flag Screen)",
+      description:
+        "Ask about each symptom below before proceeding. A symptomatic man is not routed through routine screening — he exits to the clinical diagnostic / specialist pathway.",
+      fields: [
+        { name: "delayStartingUrination", label: "Difficulty Initiating Urination", type: "select", options: yesNo, colSpan: 1 },
+        { name: "poorUrinaryStream", label: "Weak / Interrupted Urinary Stream", type: "select", options: yesNo, colSpan: 1 },
+        { name: "frequentDayUrination", label: "Increased Urinary Frequency (Day)", type: "select", options: yesNo, colSpan: 1 },
+        { name: "nocturia", label: "Frequent Urination at Night", type: "select", options: yesNo, colSpan: 1 },
+        { name: "incompleteEmptying", label: "Feeling of Incomplete Bladder Emptying", type: "select", options: yesNo, colSpan: 1 },
+        { name: "bloodInUrine", label: "Blood in Urine", type: "select", options: yesNo, colSpan: 1 },
+        { name: "inabilityToPassUrine", label: "Inability to Pass Urine", type: "select", options: yesNo, colSpan: 1 },
+        { name: "urgeIncontinence", label: "Urge Incontinence", type: "select", options: yesNo, colSpan: 1 },
+        { name: "inabilityToHoldUrine", label: "Inability to Hold Urine", type: "select", options: yesNo, colSpan: 1 },
+        { name: "terminalDribbling", label: "Terminal Dribbling", type: "select", options: yesNo, colSpan: 1 },
+        { name: "bonePainHipBack", label: "Persistent Bone, Hip or Back Pain", type: "select", options: yesNo, colSpan: 1 },
+        { name: "unexplainedWeightLoss", label: "Unexplained Weight Loss", type: "select", options: yesNo, colSpan: 1 },
+        {
+          name: "screeningPathway",
+          label: "Screening Pathway",
+          type: "text",
+          colSpan: 2,
+          readOnly: true,
+          help: "Auto-determined from the symptom checklist above. Symptomatic → screening exits to the clinical diagnostic / specialist referral pathway.",
+        },
+      ],
+    },
+    {
+      title: "PSA Testing Eligibility",
+      description:
+        "Shown for asymptomatic clients only. Certain recent events can transiently raise PSA and should defer testing.",
+      fields: [
+        {
+          name: "recentDre",
+          label: "DRE / Prostate Massage in Last 48 Hours",
+          type: "select",
+          options: yesNo,
+          colSpan: 1,
+          showIf: (v) => v.screeningPathway === "Asymptomatic",
+        },
+        {
+          name: "recentEjaculation",
+          label: "Ejaculation in Last 48 Hours",
+          type: "select",
+          options: yesNo,
+          colSpan: 1,
+          showIf: (v) => v.screeningPathway === "Asymptomatic",
+        },
+        {
+          name: "recentUrinaryInfection",
+          label: "Active Urinary Infection / Recent Catheterisation",
+          type: "select",
+          options: yesNo,
+          colSpan: 1,
+          showIf: (v) => v.screeningPathway === "Asymptomatic",
+        },
+        {
+          name: "recentVigorousExercise",
+          label: "Vigorous Exercise / Cycling in Last 48 Hours",
+          type: "select",
+          options: yesNo,
+          colSpan: 1,
+          showIf: (v) => v.screeningPathway === "Asymptomatic",
+        },
+        {
+          name: "psaEligibility",
+          label: "PSA Eligibility",
+          type: "text",
+          colSpan: 1,
+          readOnly: true,
+          showIf: (v) => v.screeningPathway === "Asymptomatic",
+          help: "Auto-determined from the conditions above.",
+        },
+        {
+          name: "recallDate",
+          label: "Recall / Repeat PSA Date",
+          type: "date",
+          colSpan: 1,
+          showIf: (v) => v.screeningPathway === "Asymptomatic" && v.psaEligibility === "Deferred",
+          help: "PSA deferred — manage the condition and recall for testing.",
+        },
+      ],
+    },
+    {
       title: "Screening Details",
       fields: [
-        { name: "screeningDate", 
-          label: "Screening Date", 
-          type: "date", 
-          // required: true, 
-          colSpan: 1 },
+        { name: "screeningDate", label: "Screening Date", type: "date", colSpan: 1 },
         {
-          name: "screeningResult",
-          label: "Screening Result",
-          type: "select",
-          options: resultOptions,
-          // required: true,
+          name: "psaLevel",
+          label: "PSA Level (ng/mL)",
+          type: "number",
+          step: "0.01",
           colSpan: 1,
+          showIf: (v) => v.screeningPathway === "Asymptomatic" && v.psaEligibility === "Eligible",
         },
-        { name: "psaLevel", label: "PSA Level (ng/mL)", type: "number", step: "0.01", colSpan: 1 },
         {
           name: "dreResult",
           label: "DRE Result",
           type: "select",
           colSpan: 1,
+          showIf: (v) => v.screeningPathway === "Asymptomatic" && v.psaEligibility === "Eligible",
           options: [
             { value: "", label: "Select" },
             { value: "negative", label: "Normal (Negative)" },
@@ -1085,55 +1161,49 @@ breast: [
           ],
         },
         { name: "ipssScore", label: "IPSS Score (0-35)", type: "number", min: 0, max: 35, colSpan: 1 },
-        // {
-        //   name: "referral",
-        //   label: "Referral",
-        //   type: "select",
-        //   colSpan: 1,
-        //   options: [
-        //     { value: "", label: "Select" },
-        //     { value: "referred", label: "Referred" },
-        //     { value: "not_referred", label: "Not Referred" },
-        //   ],
-        // },
-          {
+        {
+          name: "screeningResult",
+          label: "Screening Result",
+          type: "text",
+          colSpan: 1,
+          readOnly: true,
+          help: "Auto-derived from the symptom check and PSA/DRE thresholds — not editable.",
+        },
+        {
           name: "treatmentReferral",
           label: "Treatment Referral",
-          type: "select",
+          type: "text",
           colSpan: 1,
-          options: [
-            { value: "", label: "Select" },
-            { value: "referred", label: "Referred" },
-            { value: "not_referred", label: "Not Referred" },
-          ],
+          readOnly: true,
+          help: "Automatic: PSA > 3 ng/mL, DRE suspicious, or symptomatic → Referred.",
+        },
+        {
+          name: "recommendedAction",
+          label: "Recommended Action",
+          type: "textarea",
+          colSpan: 2,
+          readOnly: true,
         },
       ],
     },
     {
-      title: "Urinary Symptoms",
+      title: "Procedures (Post-Referral)",
+      description: "Following urology assessment for an abnormal or symptomatic screen.",
       fields: [
-        { name: "poorUrinaryStream", label: "Poor / Weak Urinary Stream", type: "select", options: yesNo, colSpan: 1 },
-        { name: "urgeIncontinence", label: "Urge Incontinence", type: "select", options: yesNo, colSpan: 1 },
-        { name: "delayStartingUrination", label: "Delay Starting Urination", type: "select", options: yesNo, colSpan: 1 },
-        { name: "inabilityToHoldUrine", label: "Inability to Hold Urine", type: "select", options: yesNo, colSpan: 1 },
-        { name: "terminalDribbling", label: "Terminal Dribbling", type: "select", options: yesNo, colSpan: 1 },
-        { name: "frequentDayUrination", label: "Frequent Urination (Day)", type: "select", options: yesNo, colSpan: 1 },
-        { name: "nocturia", label: "Nocturia (Night)", type: "select", options: yesNo, colSpan: 1 },
-        { name: "incompleteEmptying", label: "Incomplete Bladder Emptying", type: "select", options: yesNo, colSpan: 1 },
-        { name: "bloodInUrine", label: "Blood in Urine", type: "select", options: yesNo, colSpan: 1 },
-      ],
-    },
-    {
-      title: "Procedures",
-      fields: [
-        { name: "biopsyDone", label: "Biopsy done", type: "checkbox", colSpan: 2 },
+        {
+          name: "biopsyDone",
+          label: "Biopsy done",
+          type: "checkbox",
+          colSpan: 2,
+          showIf: (v) => v.treatmentReferral === "referred",
+        },
         {
           name: "gleasonScore",
           label: "Gleason Score",
           type: "text",
           colSpan: 2,
           placeholder: "e.g. 3+4=7",
-          showIf: (v) => !!v.biopsyDone,
+          showIf: (v) => v.treatmentReferral === "referred" && !!v.biopsyDone,
         },
       ],
     },

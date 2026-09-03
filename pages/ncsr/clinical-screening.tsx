@@ -28,6 +28,7 @@ import {
   getRiskGroups,
   SCREENING_GROUPS,
   FieldGroup,
+  computeProstateOutcome,
 } from "../../lib/screeningWizardConfig";
 import { GroupedForm, buildScreeningPayload } from "../components/ScreningWizard";
 import OtpVerificationStep from "../components/OtpVerificationService";
@@ -222,8 +223,8 @@ const [colposcopyFacilities, setColposcopyFacilities] = useState<any[]>([]);
 
   const riskGroupsForVerify = useMemo(() => {
     const primaryType = cancerTypes[0] || availableCancerTypes[0]?.value || "breast";
-    return getRiskGroups(primaryType as CancerType);
-  }, [cancerTypes, availableCancerTypes]);
+    return getRiskGroups(primaryType as CancerType, biodata.gender);
+  }, [cancerTypes, availableCancerTypes, biodata.gender]);
 
   // Prefill physical exam weight/height from the risk profile
   useEffect(() => {
@@ -242,6 +243,51 @@ const [colposcopyFacilities, setColposcopyFacilities] = useState<any[]>([]);
     const bmi = w > 0 && hM > 0 ? (w / (hM * hM)).toFixed(1) : "";
     setExamination((prev) => (prev.bmi === bmi ? prev : { ...prev, bmi }));
   }, [examination.weightKg, examination.heightCm]);
+
+  // Cervical screening is female-only. `availableCancerTypes` already keeps
+  // it out of the selectable buttons on the "cancerTypeSelect" step, but if
+  // it was picked before gender was known, or hydrated from a resumed visit,
+  // it can still be sitting in `cancerTypes` — this drops it (and its
+  // screening data) the moment the client's gender is male, so cervical
+  // questions never render.
+  useEffect(() => {
+    if (biodata.gender !== "male") return;
+    if (!cancerTypes.includes("cervical")) return;
+    setCancerTypes((prev) => prev.filter((ct) => ct !== "cervical"));
+    setScreenings((prev) => {
+      if (!("cervical" in prev)) return prev;
+      const { cervical, ...rest } = prev;
+      return rest;
+    });
+    setScreeningErrors((prev) => {
+      if (!("cervical" in prev)) return prev;
+      const { cervical, ...rest } = prev;
+      return rest;
+    });
+  }, [biodata.gender, cancerTypes]);
+
+  // Prostate only: auto-derive the screening pathway, PSA eligibility,
+  // screening result, referral and recommended action from the symptom
+  // checklist and PSA/DRE thresholds (National Prostate Cancer Screening
+  // Algorithm — see lib/screeningWizardConfig#computeProstateOutcome).
+  // Scoped to the "prostate" key of `screenings`; every other cancer
+  // type's data and logic is untouched.
+  useEffect(() => {
+    if (!cancerTypes.includes("prostate")) return;
+    const current = screenings.prostate || {};
+    const outcome = computeProstateOutcome(current);
+    const changed =
+      current.screeningPathway !== outcome.screeningPathway ||
+      current.psaEligibility   !== outcome.psaEligibility   ||
+      current.screeningResult  !== outcome.screeningResult  ||
+      current.treatmentReferral !== outcome.treatmentReferral ||
+      current.recommendedAction !== outcome.recommendedAction;
+    if (!changed) return;
+    setScreenings((prev) => ({
+      ...prev,
+      prostate: { ...(prev.prostate || {}), ...outcome },
+    }));
+  }, [cancerTypes, screenings.prostate]);
 
   // Load facilities capable of biopsy
   useEffect(() => {

@@ -34,6 +34,7 @@ import {
   WizardField,
   FieldGroup,
   defaultScreeningFor,
+  computeProstateOutcome,
 } from "../../lib/screeningWizardConfig";
 
 // ---------------------------------------------------------------------------
@@ -145,15 +146,30 @@ export function buildScreeningPayload(
   delete p.methodVia;
   delete p.methodPap;
   delete p.methodHpv;
- 
-  if (referralValue) p.treatmentReferral = referralValue;
+
+  // Prostate: the symptom checklist + PSA/DRE thresholds determine the
+  // screening result and urology referral automatically (see
+  // lib/screeningWizardConfig#computeProstateOutcome), so — for this cancer
+  // type only — the shared "Treatment Referral" toggle on the Screening step
+  // is ignored in favour of the computed value already sitting on the record.
+  // Detected via psaLevel/dreResult/ipssScore, which only ever appear on a
+  // prostate screening payload, so every other cancer type's behaviour below
+  // is unchanged.
+  const isProstatePayload = "psaLevel" in p || "dreResult" in p || "ipssScore" in p;
+
+  if (referralValue && !isProstatePayload) p.treatmentReferral = referralValue;
  
   // result alias
   if (p.screeningResult !== undefined && p.result === undefined) p.result = p.screeningResult;
   if (p.result !== undefined && p.screeningResult === undefined) p.screeningResult = p.result;
  
   // Only send treatment referral for suspicious results
-  if (p.screeningResult !== "suspicious") p.treatmentReferral = null;
+  if (!isProstatePayload && p.screeningResult !== "suspicious") p.treatmentReferral = null;
+
+  // Prostate: drop the UI-only routing flag — it isn't part of the backend schema.
+  if (isProstatePayload) {
+    delete p.screeningPathway;
+  }
  
   SCREENING_INT_FIELDS.forEach((k) => {
     if (k in p) p[k] = p[k] === "" || p[k] == null ? null : parseInt(p[k]);
@@ -568,6 +584,51 @@ const initialReferral = () => ({
     setRisk((prev) => (prev.bmi === bmi ? prev : { ...prev, bmi }));
   }, [risk.weightKg, risk.heightCm]);
 
+  // Cervical screening is female-only. The "cancer" step's buttons already
+  // only render options from `availableCancers` (gender-filtered), but if
+  // cervical was selected before gender was set, or a client record was
+  // loaded whose gender is male, it can still be sitting in `cancerTypes` —
+  // this drops it (and its screening data) the moment gender is male, so
+  // cervical questions never render.
+  useEffect(() => {
+    if (biodata.gender !== "male") return;
+    if (!cancerTypes.includes("cervical")) return;
+    setCancerTypes((prev) => prev.filter((ct) => ct !== "cervical"));
+    setScreenings((prev) => {
+      if (!("cervical" in prev)) return prev;
+      const { cervical, ...rest } = prev;
+      return rest;
+    });
+    setScreeningErrors((prev) => {
+      if (!("cervical" in prev)) return prev;
+      const { cervical, ...rest } = prev;
+      return rest;
+    });
+  }, [biodata.gender, cancerTypes]);
+
+  // Prostate only: auto-derive the screening pathway, PSA eligibility,
+  // screening result, referral and recommended action from the symptom
+  // checklist and PSA/DRE thresholds (National Prostate Cancer Screening
+  // Algorithm — see lib/screeningWizardConfig#computeProstateOutcome).
+  // Scoped to the "prostate" key of `screenings`; every other cancer
+  // type's data and logic is untouched.
+  useEffect(() => {
+    if (!cancerTypes.includes("prostate")) return;
+    const current = screenings.prostate || {};
+    const outcome = computeProstateOutcome(current);
+    const changed =
+      current.screeningPathway !== outcome.screeningPathway ||
+      current.psaEligibility   !== outcome.psaEligibility   ||
+      current.screeningResult  !== outcome.screeningResult  ||
+      current.treatmentReferral !== outcome.treatmentReferral ||
+      current.recommendedAction !== outcome.recommendedAction;
+    if (!changed) return;
+    setScreenings((prev) => ({
+      ...prev,
+      prostate: { ...(prev.prostate || {}), ...outcome },
+    }));
+  }, [cancerTypes, screenings.prostate]);
+
   // ---------------------------------------------------------------------------
   // Memos — all guarded against empty arrays
   // ---------------------------------------------------------------------------
@@ -595,9 +656,10 @@ const initialReferral = () => ({
     return getRiskGroups(
       cancerTypes.includes("liver")
         ? "liver"
-        : (cancerTypes[0] as CancerType)
+        : (cancerTypes[0] as CancerType),
+      biodata.gender
     );
-  }, [cancerTypes]);
+  }, [cancerTypes, biodata.gender]);
 
   // ---------------------------------------------------------------------------
   // Field setters
@@ -1418,7 +1480,10 @@ const initialReferral = () => ({
                 <h4 className="font-semibold text-gray-800 dark:text-white">Treatment Referral</h4>
               </div>
               <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">
-                Applies to {cancerTypes.length > 1 ? "all selected screenings" : "this screening"}.
+                Applies to {cancerTypes.length > 1 ? "all selected screenings" : "this screening"}
+                {cancerTypes.includes("prostate")
+                  ? " (Prostate is excluded — its referral is determined automatically from the symptom check and PSA/DRE thresholds)."
+                  : "."}
               </p>
               <div className="grid gap-4 grid-cols-1 sm:grid-cols-2">
                 <Label>
