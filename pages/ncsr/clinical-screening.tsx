@@ -28,7 +28,7 @@ import {
   getRiskGroups,
   SCREENING_GROUPS,
   FieldGroup,
-  computeProstateOutcome,
+  prostatePatch,
 } from "../../lib/screeningWizardConfig";
 import { GroupedForm, buildScreeningPayload } from "../components/ScreningWizard";
 import OtpVerificationStep from "../components/OtpVerificationService";
@@ -273,21 +273,14 @@ const [colposcopyFacilities, setColposcopyFacilities] = useState<any[]>([]);
   // Scoped to the "prostate" key of `screenings`; every other cancer
   // type's data and logic is untouched.
   useEffect(() => {
-    if (!cancerTypes.includes("prostate")) return;
-    const current = screenings.prostate || {};
-    const outcome = computeProstateOutcome(current);
-    const changed =
-      current.screeningPathway !== outcome.screeningPathway ||
-      current.psaEligibility   !== outcome.psaEligibility   ||
-      current.screeningResult  !== outcome.screeningResult  ||
-      current.treatmentReferral !== outcome.treatmentReferral ||
-      current.recommendedAction !== outcome.recommendedAction;
-    if (!changed) return;
-    setScreenings((prev) => ({
-      ...prev,
-      prostate: { ...(prev.prostate || {}), ...outcome },
-    }));
-  }, [cancerTypes, screenings.prostate]);
+  if (!cancerTypes.includes("prostate")) return;
+  const patch = prostatePatch(screenings.prostate || {}, biodata.dateOfBirth);
+  if (!patch) return;
+  setScreenings((prev) => ({
+    ...prev,
+    prostate: { ...(prev.prostate || {}), ...patch },
+  }));
+}, [cancerTypes, screenings.prostate, biodata.dateOfBirth]);
 
   // Load facilities capable of biopsy
   useEffect(() => {
@@ -410,15 +403,27 @@ const colposcopyFacilityOptions = useMemo(() => {
     setStepIndex((i) => Math.min(i + 1, STEPS.length - 1));
   }
   
+  // function back() {
+  //   setStepIndex((i) => {
+  //     const prevIndex = Math.max(i - 1, 0);
+  //     if (STEPS[prevIndex] === "otpConsent" && !pendingRegistrationId) {
+  //       return Math.max(prevIndex - 1, 0);
+  //     }
+  //     return prevIndex;
+  //   });
+  // }
+
   function back() {
-    setStepIndex((i) => {
-      const prevIndex = Math.max(i - 1, 0);
-      if (STEPS[prevIndex] === "otpConsent" && !pendingRegistrationId) {
-        return Math.max(prevIndex - 1, 0);
-      }
-      return prevIndex;
-    });
-  }
+  setStepIndex((i) => {
+    let prevIndex = Math.max(i - 1, 0);
+    // SMS (OTP) consent is only for brand-new registrations. Once a client record exists
+    // (found, duplicate-matched, or just verified) it is never revisited.
+    if (STEPS[prevIndex] === "otpConsent" && (clientId || !pendingRegistrationId)) {
+      prevIndex = Math.max(prevIndex - 1, 0);
+    }
+    return prevIndex;
+  });
+}
 
   // Entry points that already know it's a new client
   useEffect(() => {
@@ -482,6 +487,8 @@ const colposcopyFacilityOptions = useMemo(() => {
 
       if (found) {
         setClientId(found.clientId);
+        setPendingRegistrationId("");
+setPendingMaskedPhone("");
 
         setBiodata({
           fullName: found.fullName || "",
@@ -717,6 +724,8 @@ const colposcopyFacilityOptions = useMemo(() => {
     if (!duplicateMatch) return;
     const c = duplicateMatch.client;
     setClientId(c.clientId);
+    setPendingRegistrationId("");
+setPendingMaskedPhone("");
     setBiodata({
       fullName: c.fullName || "",
       dateOfBirth: c.dateOfBirth?.slice(0, 10) || "",
@@ -936,7 +945,9 @@ const colposcopyFacilityOptions = useMemo(() => {
       {!["lookup", "registration", "otpConsent"].includes(currentKey) && (
         <div className="mb-6 flex flex-wrap gap-2">
           {STEPS.map((key, i) => {
-            const canJump = i < stepIndex && key !== "done";
+            // const canJump = i < stepIndex && key !== "done";
+            if (key === "otpConsent" && clientId) return null;
+  const canJump = i < stepIndex && key !== "done";
             return (
               <button
                 key={key}
@@ -1046,6 +1057,11 @@ const colposcopyFacilityOptions = useMemo(() => {
         {currentKey === "registration" && (
           <div className="space-y-4">
             <h3 className="text-lg font-semibold text-gray-800 dark:text-white">B. Registration</h3>
+            {clientId && (
+  <p className="text-xs text-green-700">
+    Existing client — SMS consent is not required.
+  </p>
+)}
             <div className="grid grid-cols-2 gap-4">
               <Label className="col-span-2">
                 <span className="text-sm font-semibold">Full Name *</span>

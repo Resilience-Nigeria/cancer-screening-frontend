@@ -35,6 +35,7 @@ import {
   FieldGroup,
   defaultScreeningFor,
   computeProstateOutcome,
+  prostatePatch
 } from "../../lib/screeningWizardConfig";
 
 // ---------------------------------------------------------------------------
@@ -109,9 +110,15 @@ const SCREENING_INT_FIELDS = [
   "ablationBookingFacilityId",
   "leepBookingFacilityId",
   "colposcopyBookingFacilityId",
+  "ageAtScreening",
 ];
 
-const SCREENING_FLOAT_FIELDS = ["psaLevel", "afpValue"];
+// const SCREENING_FLOAT_FIELDS = ["psaLevel", "afpValue"];
+const SCREENING_FLOAT_FIELDS = [
+  "psaLevel", "afpValue",
+  "repeatPsaLevel", "previousPsaLevel", "prostateVolumeCc",
+  "psaDensity", "freePsaPercent", "psaVelocity",
+];
 
 function withoutReferral(groups: FieldGroup[]): FieldGroup[] {
   return groups
@@ -155,7 +162,9 @@ export function buildScreeningPayload(
   // Detected via psaLevel/dreResult/ipssScore, which only ever appear on a
   // prostate screening payload, so every other cancer type's behaviour below
   // is unchanged.
-  const isProstatePayload = "psaLevel" in p || "dreResult" in p || "ipssScore" in p;
+  // const isProstatePayload = "psaLevel" in p || "dreResult" in p || "ipssScore" in p;
+
+const isProstatePayload = "screeningPathway" in p || "psaLevel" in p || "ipssScore" in p;
 
   if (referralValue && !isProstatePayload) p.treatmentReferral = referralValue;
  
@@ -167,9 +176,9 @@ export function buildScreeningPayload(
   if (!isProstatePayload && p.screeningResult !== "suspicious") p.treatmentReferral = null;
 
   // Prostate: drop the UI-only routing flag — it isn't part of the backend schema.
-  if (isProstatePayload) {
-    delete p.screeningPathway;
-  }
+  // if (isProstatePayload) {
+  //   delete p.screeningPathway;
+  // }
  
   SCREENING_INT_FIELDS.forEach((k) => {
     if (k in p) p[k] = p[k] === "" || p[k] == null ? null : parseInt(p[k]);
@@ -612,22 +621,32 @@ const initialReferral = () => ({
   // Algorithm — see lib/screeningWizardConfig#computeProstateOutcome).
   // Scoped to the "prostate" key of `screenings`; every other cancer
   // type's data and logic is untouched.
+  // useEffect(() => {
+  //   if (!cancerTypes.includes("prostate")) return;
+  //   const current = screenings.prostate || {};
+  //   const outcome = computeProstateOutcome(current);
+  //   const changed =
+  //     current.screeningPathway !== outcome.screeningPathway ||
+  //     current.psaEligibility   !== outcome.psaEligibility   ||
+  //     current.screeningResult  !== outcome.screeningResult  ||
+  //     current.treatmentReferral !== outcome.treatmentReferral ||
+  //     current.recommendedAction !== outcome.recommendedAction;
+  //   if (!changed) return;
+  //   setScreenings((prev) => ({
+  //     ...prev,
+  //     prostate: { ...(prev.prostate || {}), ...outcome },
+  //   }));
+  // }, [cancerTypes, screenings.prostate]);
+
   useEffect(() => {
-    if (!cancerTypes.includes("prostate")) return;
-    const current = screenings.prostate || {};
-    const outcome = computeProstateOutcome(current);
-    const changed =
-      current.screeningPathway !== outcome.screeningPathway ||
-      current.psaEligibility   !== outcome.psaEligibility   ||
-      current.screeningResult  !== outcome.screeningResult  ||
-      current.treatmentReferral !== outcome.treatmentReferral ||
-      current.recommendedAction !== outcome.recommendedAction;
-    if (!changed) return;
-    setScreenings((prev) => ({
-      ...prev,
-      prostate: { ...(prev.prostate || {}), ...outcome },
-    }));
-  }, [cancerTypes, screenings.prostate]);
+  if (!cancerTypes.includes("prostate")) return;
+  const patch = prostatePatch(screenings.prostate || {}, biodata.dateOfBirth);
+  if (!patch) return;
+  setScreenings((prev) => ({
+    ...prev,
+    prostate: { ...(prev.prostate || {}), ...patch },
+  }));
+}, [cancerTypes, screenings.prostate, biodata.dateOfBirth]);
 
   // ---------------------------------------------------------------------------
   // Memos — all guarded against empty arrays

@@ -8,6 +8,9 @@ export type CancerType =
   | "colorectal"
   | "liver";
 
+  import { PROSTATE_GROUPS } from "./prostateScreening";
+export * from "./prostateScreening";
+
 export type Gender = "male" | "female" | "any";
 
 export type WizardField = {
@@ -58,7 +61,7 @@ export const CANCER_TYPES: {
 }[] = [
   { value: "cervical", label: "Cervical", gender: "female", blurb: "VIA, Pap smear or HPV" },
   { value: "breast", label: "Breast", gender: "any", blurb: "CBE, mammography or ultrasound" },
-  { value: "prostate", label: "Prostate", gender: "male", blurb: "PSA, DRE and IPSS" },
+  { value: "prostate", label: "Prostate", gender: "male", blurb: "PSA, DRE and IPSS (men 45–74)" },
   { value: "colorectal", label: "Colorectal", gender: "any", blurb: "FIT, FOBT or colonoscopy" },
   { value: "liver", label: "Liver", gender: "any", blurb: "USS / AFP with viral status" },
 ];
@@ -258,123 +261,123 @@ const infectiousGroup = (required: boolean): FieldGroup => ({
 // ---------------------------------------------------------------------------
 
 /** Warning symptoms that mean a man should not be routed through routine screening. */
-export const PROSTATE_SYMPTOM_FIELDS = [
-  "delayStartingUrination",
-  "poorUrinaryStream",
-  "frequentDayUrination",
-  "nocturia",
-  "incompleteEmptying",
-  "bloodInUrine",
-  "inabilityToPassUrine",
-  "urgeIncontinence",
-  "inabilityToHoldUrine",
-  "terminalDribbling",
-  "bonePainHipBack",
-  "unexplainedWeightLoss",
-] as const;
+// export const PROSTATE_SYMPTOM_FIELDS = [
+//   "delayStartingUrination",
+//   "poorUrinaryStream",
+//   "frequentDayUrination",
+//   "nocturia",
+//   "incompleteEmptying",
+//   "bloodInUrine",
+//   "inabilityToPassUrine",
+//   "urgeIncontinence",
+//   "inabilityToHoldUrine",
+//   "terminalDribbling",
+//   "bonePainHipBack",
+//   "unexplainedWeightLoss",
+// ] as const;
 
-/** Conditions that can transiently raise PSA and should defer testing. */
-export const PROSTATE_DEFERMENT_FIELDS = [
-  "recentDre",
-  "recentEjaculation",
-  "recentUrinaryInfection",
-  "recentVigorousExercise",
-] as const;
+// /** Conditions that can transiently raise PSA and should defer testing. */
+// export const PROSTATE_DEFERMENT_FIELDS = [
+//   "recentDre",
+//   "recentEjaculation",
+//   "recentUrinaryInfection",
+//   "recentVigorousExercise",
+// ] as const;
 
-export function computeProstateSymptomatic(v: Record<string, any>): boolean {
-  return PROSTATE_SYMPTOM_FIELDS.some((f) => v[f] === "yes");
-}
+// export function computeProstateSymptomatic(v: Record<string, any>): boolean {
+//   return PROSTATE_SYMPTOM_FIELDS.some((f) => v[f] === "yes");
+// }
 
-export function computeProstatePsaDeferred(v: Record<string, any>): boolean {
-  return PROSTATE_DEFERMENT_FIELDS.some((f) => v[f] === "yes");
-}
+// export function computeProstatePsaDeferred(v: Record<string, any>): boolean {
+//   return PROSTATE_DEFERMENT_FIELDS.some((f) => v[f] === "yes");
+// }
 
-export type ProstateOutcome = {
-  screeningPathway: "Symptomatic" | "Asymptomatic";
-  psaEligibility: "Deferred" | "Eligible" | "";
-  screeningResult: "suspicious" | "non_suspicious" | "";
-  treatmentReferral: "referred" | "not_referred" | "";
-  recommendedAction: string;
-};
+// export type ProstateOutcome = {
+//   screeningPathway: "Symptomatic" | "Asymptomatic";
+//   psaEligibility: "Deferred" | "Eligible" | "";
+//   screeningResult: "suspicious" | "non_suspicious" | "";
+//   treatmentReferral: "referred" | "not_referred" | "";
+//   recommendedAction: string;
+// };
 
-/**
- * Pure implementation of the prostate screening decision tree:
- *  1. Symptomatic → exit routine screening, refer to the clinical/diagnostic pathway.
- *  2. Asymptomatic + a PSA-deferment condition → defer PSA, manage condition, recall.
- *  3. Asymptomatic + eligible:
- *       PSA > 3 or DRE suspicious           → abnormal screen, automatic urology referral
- *       PSA 1–3, DRE not suspicious          → counsel, risk-adapted repeat PSA (recall)
- *       PSA < 1, DRE not suspicious          → negative/low risk, risk-adapted recall
- */
-export function computeProstateOutcome(v: Record<string, any>): ProstateOutcome {
-  if (computeProstateSymptomatic(v)) {
-    return {
-      screeningPathway: "Symptomatic",
-      psaEligibility: "",
-      screeningResult: "suspicious",
-      treatmentReferral: "referred",
-      recommendedAction:
-        "Symptomatic — exit routine screening. Refer to the clinical diagnostic / specialist pathway.",
-    };
-  }
+// /**
+//  * Pure implementation of the prostate screening decision tree:
+//  *  1. Symptomatic → exit routine screening, refer to the clinical/diagnostic pathway.
+//  *  2. Asymptomatic + a PSA-deferment condition → defer PSA, manage condition, recall.
+//  *  3. Asymptomatic + eligible:
+//  *       PSA > 3 or DRE suspicious           → abnormal screen, automatic urology referral
+//  *       PSA 1–3, DRE not suspicious          → counsel, risk-adapted repeat PSA (recall)
+//  *       PSA < 1, DRE not suspicious          → negative/low risk, risk-adapted recall
+//  */
+// export function computeProstateOutcome(v: Record<string, any>): ProstateOutcome {
+//   if (computeProstateSymptomatic(v)) {
+//     return {
+//       screeningPathway: "Symptomatic",
+//       psaEligibility: "",
+//       screeningResult: "suspicious",
+//       treatmentReferral: "referred",
+//       recommendedAction:
+//         "Symptomatic — exit routine screening. Refer to the clinical diagnostic / specialist pathway.",
+//     };
+//   }
 
-  if (computeProstatePsaDeferred(v)) {
-    return {
-      screeningPathway: "Asymptomatic",
-      psaEligibility: "Deferred",
-      screeningResult: "",
-      treatmentReferral: "not_referred",
-      recommendedAction:
-        "PSA deferred — a condition present can transiently raise PSA. Manage the condition and recall for PSA testing.",
-    };
-  }
+//   if (computeProstatePsaDeferred(v)) {
+//     return {
+//       screeningPathway: "Asymptomatic",
+//       psaEligibility: "Deferred",
+//       screeningResult: "",
+//       treatmentReferral: "not_referred",
+//       recommendedAction:
+//         "PSA deferred — a condition present can transiently raise PSA. Manage the condition and recall for PSA testing.",
+//     };
+//   }
 
-  const psa =
-    v.psaLevel !== undefined && v.psaLevel !== null && v.psaLevel !== ""
-      ? parseFloat(v.psaLevel)
-      : null;
-  const dreSuspicious = v.dreResult === "positive";
+//   const psa =
+//     v.psaLevel !== undefined && v.psaLevel !== null && v.psaLevel !== ""
+//       ? parseFloat(v.psaLevel)
+//       : null;
+//   const dreSuspicious = v.dreResult === "positive";
 
-  if (psa === null) {
-    return {
-      screeningPathway: "Asymptomatic",
-      psaEligibility: "Eligible",
-      screeningResult: "",
-      treatmentReferral: "not_referred",
-      recommendedAction: "Eligible for PSA testing — enter the PSA level (± DRE) to classify the screen.",
-    };
-  }
+//   if (psa === null) {
+//     return {
+//       screeningPathway: "Asymptomatic",
+//       psaEligibility: "Eligible",
+//       screeningResult: "",
+//       treatmentReferral: "not_referred",
+//       recommendedAction: "Eligible for PSA testing — enter the PSA level (± DRE) to classify the screen.",
+//     };
+//   }
 
-  if (psa > 3 || dreSuspicious) {
-    return {
-      screeningPathway: "Asymptomatic",
-      psaEligibility: "Eligible",
-      screeningResult: "suspicious",
-      treatmentReferral: "referred",
-      recommendedAction:
-        "Abnormal screen (PSA > 3 ng/mL and/or DRE suspicious) — automatic urology referral.",
-    };
-  }
+//   if (psa > 3 || dreSuspicious) {
+//     return {
+//       screeningPathway: "Asymptomatic",
+//       psaEligibility: "Eligible",
+//       screeningResult: "suspicious",
+//       treatmentReferral: "referred",
+//       recommendedAction:
+//         "Abnormal screen (PSA > 3 ng/mL and/or DRE suspicious) — automatic urology referral.",
+//     };
+//   }
 
-  if (psa >= 1) {
-    return {
-      screeningPathway: "Asymptomatic",
-      psaEligibility: "Eligible",
-      screeningResult: "non_suspicious",
-      treatmentReferral: "not_referred",
-      recommendedAction:
-        "PSA 1–3 ng/mL, DRE not suspicious — counsel and schedule a risk-adapted repeat PSA (digital recall).",
-    };
-  }
+//   if (psa >= 1) {
+//     return {
+//       screeningPathway: "Asymptomatic",
+//       psaEligibility: "Eligible",
+//       screeningResult: "non_suspicious",
+//       treatmentReferral: "not_referred",
+//       recommendedAction:
+//         "PSA 1–3 ng/mL, DRE not suspicious — counsel and schedule a risk-adapted repeat PSA (digital recall).",
+//     };
+//   }
 
-  return {
-    screeningPathway: "Asymptomatic",
-    psaEligibility: "Eligible",
-    screeningResult: "non_suspicious",
-    treatmentReferral: "not_referred",
-    recommendedAction: "PSA < 1 ng/mL, DRE not suspicious — negative/low risk. Routine risk-adapted recall.",
-  };
-}
+//   return {
+//     screeningPathway: "Asymptomatic",
+//     psaEligibility: "Eligible",
+//     screeningResult: "non_suspicious",
+//     treatmentReferral: "not_referred",
+//     recommendedAction: "PSA < 1 ng/mL, DRE not suspicious — negative/low risk. Routine risk-adapted recall.",
+//   };
+// }
 
 // Per-cancer emphasis line shown at the top of the risk step.
 export const RISK_FOCUS: Record<CancerType, string> = {
@@ -1052,162 +1055,164 @@ cervical: [
     ],
   },
 ],
-  prostate: [
-    {
-      title: "Warning Symptoms (Red-Flag Screen)",
-      description:
-        "Ask about each symptom below before proceeding. A symptomatic man is not routed through routine screening — he exits to the clinical diagnostic / specialist pathway.",
-      fields: [
-        { name: "delayStartingUrination", label: "Difficulty Initiating Urination", type: "select", options: yesNo, colSpan: 1 },
-        { name: "poorUrinaryStream", label: "Weak / Interrupted Urinary Stream", type: "select", options: yesNo, colSpan: 1 },
-        { name: "frequentDayUrination", label: "Increased Urinary Frequency (Day)", type: "select", options: yesNo, colSpan: 1 },
-        { name: "nocturia", label: "Frequent Urination at Night", type: "select", options: yesNo, colSpan: 1 },
-        { name: "incompleteEmptying", label: "Feeling of Incomplete Bladder Emptying", type: "select", options: yesNo, colSpan: 1 },
-        { name: "bloodInUrine", label: "Blood in Urine", type: "select", options: yesNo, colSpan: 1 },
-        { name: "inabilityToPassUrine", label: "Inability to Pass Urine", type: "select", options: yesNo, colSpan: 1 },
-        { name: "urgeIncontinence", label: "Urge Incontinence", type: "select", options: yesNo, colSpan: 1 },
-        { name: "inabilityToHoldUrine", label: "Inability to Hold Urine", type: "select", options: yesNo, colSpan: 1 },
-        { name: "terminalDribbling", label: "Terminal Dribbling", type: "select", options: yesNo, colSpan: 1 },
-        { name: "bonePainHipBack", label: "Persistent Bone, Hip or Back Pain", type: "select", options: yesNo, colSpan: 1 },
-        { name: "unexplainedWeightLoss", label: "Unexplained Weight Loss", type: "select", options: yesNo, colSpan: 1 },
-        {
-          name: "screeningPathway",
-          label: "Screening Pathway",
-          type: "text",
-          colSpan: 2,
-          readOnly: true,
-          help: "Auto-determined from the symptom checklist above. Symptomatic → screening exits to the clinical diagnostic / specialist referral pathway.",
-        },
-      ],
-    },
-    {
-      title: "PSA Testing Eligibility",
-      description:
-        "Shown for asymptomatic clients only. Certain recent events can transiently raise PSA and should defer testing.",
-      fields: [
-        {
-          name: "recentDre",
-          label: "DRE / Prostate Massage in Last 48 Hours",
-          type: "select",
-          options: yesNo,
-          colSpan: 1,
-          showIf: (v) => v.screeningPathway === "Asymptomatic",
-        },
-        {
-          name: "recentEjaculation",
-          label: "Ejaculation in Last 48 Hours",
-          type: "select",
-          options: yesNo,
-          colSpan: 1,
-          showIf: (v) => v.screeningPathway === "Asymptomatic",
-        },
-        {
-          name: "recentUrinaryInfection",
-          label: "Active Urinary Infection / Recent Catheterisation",
-          type: "select",
-          options: yesNo,
-          colSpan: 1,
-          showIf: (v) => v.screeningPathway === "Asymptomatic",
-        },
-        {
-          name: "recentVigorousExercise",
-          label: "Vigorous Exercise / Cycling in Last 48 Hours",
-          type: "select",
-          options: yesNo,
-          colSpan: 1,
-          showIf: (v) => v.screeningPathway === "Asymptomatic",
-        },
-        {
-          name: "psaEligibility",
-          label: "PSA Eligibility",
-          type: "text",
-          colSpan: 1,
-          readOnly: true,
-          showIf: (v) => v.screeningPathway === "Asymptomatic",
-          help: "Auto-determined from the conditions above.",
-        },
-        {
-          name: "recallDate",
-          label: "Recall / Repeat PSA Date",
-          type: "date",
-          colSpan: 1,
-          showIf: (v) => v.screeningPathway === "Asymptomatic" && v.psaEligibility === "Deferred",
-          help: "PSA deferred — manage the condition and recall for testing.",
-        },
-      ],
-    },
-    {
-      title: "Screening Details",
-      fields: [
-        { name: "screeningDate", label: "Screening Date", type: "date", colSpan: 1 },
-        {
-          name: "psaLevel",
-          label: "PSA Level (ng/mL)",
-          type: "number",
-          step: "0.01",
-          colSpan: 1,
-          showIf: (v) => v.screeningPathway === "Asymptomatic" && v.psaEligibility === "Eligible",
-        },
-        {
-          name: "dreResult",
-          label: "DRE Result",
-          type: "select",
-          colSpan: 1,
-          showIf: (v) => v.screeningPathway === "Asymptomatic" && v.psaEligibility === "Eligible",
-          options: [
-            { value: "", label: "Select" },
-            { value: "negative", label: "Normal (Negative)" },
-            { value: "positive", label: "Abnormal (Positive)" },
-          ],
-        },
-        { name: "ipssScore", label: "IPSS Score (0-35)", type: "number", min: 0, max: 35, colSpan: 1 },
-        {
-          name: "screeningResult",
-          label: "Screening Result",
-          type: "text",
-          colSpan: 1,
-          readOnly: true,
-          help: "Auto-derived from the symptom check and PSA/DRE thresholds — not editable.",
-        },
-        {
-          name: "treatmentReferral",
-          label: "Treatment Referral",
-          type: "text",
-          colSpan: 1,
-          readOnly: true,
-          help: "Automatic: PSA > 3 ng/mL, DRE suspicious, or symptomatic → Referred.",
-        },
-        {
-          name: "recommendedAction",
-          label: "Recommended Action",
-          type: "textarea",
-          colSpan: 2,
-          readOnly: true,
-        },
-      ],
-    },
-    {
-      title: "Procedures (Post-Referral)",
-      description: "Following urology assessment for an abnormal or symptomatic screen.",
-      fields: [
-        {
-          name: "biopsyDone",
-          label: "Biopsy done",
-          type: "checkbox",
-          colSpan: 2,
-          showIf: (v) => v.treatmentReferral === "referred",
-        },
-        {
-          name: "gleasonScore",
-          label: "Gleason Score",
-          type: "text",
-          colSpan: 2,
-          placeholder: "e.g. 3+4=7",
-          showIf: (v) => v.treatmentReferral === "referred" && !!v.biopsyDone,
-        },
-      ],
-    },
-  ],
+  // prostate: [
+  //   {
+  //     title: "Warning Symptoms (Red-Flag Screen)",
+  //     description:
+  //       "Ask about each symptom below before proceeding. A symptomatic man is not routed through routine screening — he exits to the clinical diagnostic / specialist pathway.",
+  //     fields: [
+  //       { name: "delayStartingUrination", label: "Difficulty Initiating Urination", type: "select", options: yesNo, colSpan: 1 },
+  //       { name: "poorUrinaryStream", label: "Weak / Interrupted Urinary Stream", type: "select", options: yesNo, colSpan: 1 },
+  //       { name: "frequentDayUrination", label: "Increased Urinary Frequency (Day)", type: "select", options: yesNo, colSpan: 1 },
+  //       { name: "nocturia", label: "Frequent Urination at Night", type: "select", options: yesNo, colSpan: 1 },
+  //       { name: "incompleteEmptying", label: "Feeling of Incomplete Bladder Emptying", type: "select", options: yesNo, colSpan: 1 },
+  //       { name: "bloodInUrine", label: "Blood in Urine", type: "select", options: yesNo, colSpan: 1 },
+  //       { name: "inabilityToPassUrine", label: "Inability to Pass Urine", type: "select", options: yesNo, colSpan: 1 },
+  //       { name: "urgeIncontinence", label: "Urge Incontinence", type: "select", options: yesNo, colSpan: 1 },
+  //       { name: "inabilityToHoldUrine", label: "Inability to Hold Urine", type: "select", options: yesNo, colSpan: 1 },
+  //       { name: "terminalDribbling", label: "Terminal Dribbling", type: "select", options: yesNo, colSpan: 1 },
+  //       { name: "bonePainHipBack", label: "Persistent Bone, Hip or Back Pain", type: "select", options: yesNo, colSpan: 1 },
+  //       { name: "unexplainedWeightLoss", label: "Unexplained Weight Loss", type: "select", options: yesNo, colSpan: 1 },
+  //       {
+  //         name: "screeningPathway",
+  //         label: "Screening Pathway",
+  //         type: "text",
+  //         colSpan: 2,
+  //         readOnly: true,
+  //         help: "Auto-determined from the symptom checklist above. Symptomatic → screening exits to the clinical diagnostic / specialist referral pathway.",
+  //       },
+  //     ],
+  //   },
+  //   {
+  //     title: "PSA Testing Eligibility",
+  //     description:
+  //       "Shown for asymptomatic clients only. Certain recent events can transiently raise PSA and should defer testing.",
+  //     fields: [
+  //       {
+  //         name: "recentDre",
+  //         label: "DRE / Prostate Massage in Last 48 Hours",
+  //         type: "select",
+  //         options: yesNo,
+  //         colSpan: 1,
+  //         showIf: (v) => v.screeningPathway === "Asymptomatic",
+  //       },
+  //       {
+  //         name: "recentEjaculation",
+  //         label: "Ejaculation in Last 48 Hours",
+  //         type: "select",
+  //         options: yesNo,
+  //         colSpan: 1,
+  //         showIf: (v) => v.screeningPathway === "Asymptomatic",
+  //       },
+  //       {
+  //         name: "recentUrinaryInfection",
+  //         label: "Active Urinary Infection / Recent Catheterisation",
+  //         type: "select",
+  //         options: yesNo,
+  //         colSpan: 1,
+  //         showIf: (v) => v.screeningPathway === "Asymptomatic",
+  //       },
+  //       {
+  //         name: "recentVigorousExercise",
+  //         label: "Vigorous Exercise / Cycling in Last 48 Hours",
+  //         type: "select",
+  //         options: yesNo,
+  //         colSpan: 1,
+  //         showIf: (v) => v.screeningPathway === "Asymptomatic",
+  //       },
+  //       {
+  //         name: "psaEligibility",
+  //         label: "PSA Eligibility",
+  //         type: "text",
+  //         colSpan: 1,
+  //         readOnly: true,
+  //         showIf: (v) => v.screeningPathway === "Asymptomatic",
+  //         help: "Auto-determined from the conditions above.",
+  //       },
+  //       {
+  //         name: "recallDate",
+  //         label: "Recall / Repeat PSA Date",
+  //         type: "date",
+  //         colSpan: 1,
+  //         showIf: (v) => v.screeningPathway === "Asymptomatic" && v.psaEligibility === "Deferred",
+  //         help: "PSA deferred — manage the condition and recall for testing.",
+  //       },
+  //     ],
+  //   },
+  //   {
+  //     title: "Screening Details",
+  //     fields: [
+  //       { name: "screeningDate", label: "Screening Date", type: "date", colSpan: 1 },
+  //       {
+  //         name: "psaLevel",
+  //         label: "PSA Level (ng/mL)",
+  //         type: "number",
+  //         step: "0.01",
+  //         colSpan: 1,
+  //         showIf: (v) => v.screeningPathway === "Asymptomatic" && v.psaEligibility === "Eligible",
+  //       },
+  //       {
+  //         name: "dreResult",
+  //         label: "DRE Result",
+  //         type: "select",
+  //         colSpan: 1,
+  //         showIf: (v) => v.screeningPathway === "Asymptomatic" && v.psaEligibility === "Eligible",
+  //         options: [
+  //           { value: "", label: "Select" },
+  //           { value: "negative", label: "Normal (Negative)" },
+  //           { value: "positive", label: "Abnormal (Positive)" },
+  //         ],
+  //       },
+  //       { name: "ipssScore", label: "IPSS Score (0-35)", type: "number", min: 0, max: 35, colSpan: 1 },
+  //       {
+  //         name: "screeningResult",
+  //         label: "Screening Result",
+  //         type: "text",
+  //         colSpan: 1,
+  //         readOnly: true,
+  //         help: "Auto-derived from the symptom check and PSA/DRE thresholds — not editable.",
+  //       },
+  //       {
+  //         name: "treatmentReferral",
+  //         label: "Treatment Referral",
+  //         type: "text",
+  //         colSpan: 1,
+  //         readOnly: true,
+  //         help: "Automatic: PSA > 3 ng/mL, DRE suspicious, or symptomatic → Referred.",
+  //       },
+  //       {
+  //         name: "recommendedAction",
+  //         label: "Recommended Action",
+  //         type: "textarea",
+  //         colSpan: 2,
+  //         readOnly: true,
+  //       },
+  //     ],
+  //   },
+  //   {
+  //     title: "Procedures (Post-Referral)",
+  //     description: "Following urology assessment for an abnormal or symptomatic screen.",
+  //     fields: [
+  //       {
+  //         name: "biopsyDone",
+  //         label: "Biopsy done",
+  //         type: "checkbox",
+  //         colSpan: 2,
+  //         showIf: (v) => v.treatmentReferral === "referred",
+  //       },
+  //       {
+  //         name: "gleasonScore",
+  //         label: "Gleason Score",
+  //         type: "text",
+  //         colSpan: 2,
+  //         placeholder: "e.g. 3+4=7",
+  //         showIf: (v) => v.treatmentReferral === "referred" && !!v.biopsyDone,
+  //       },
+  //     ],
+  //   },
+  // ],
+
+prostate: PROSTATE_GROUPS,
 
   colorectal: [
     resultDateGroup({
