@@ -74,6 +74,54 @@ export function ageOn(dob: any, on: Date): number | null {
 }
 
 // ---------------------------------------------------------------------------
+// International Prostate Symptom Score (I-PSS)
+// 7 questions, each 0–5 (total 0–35), plus a single 0–6 quality-of-life question.
+// 0–7 mildly symptomatic · 8–19 moderately symptomatic · 20–35 severely symptomatic.
+// ---------------------------------------------------------------------------
+export const IPSS_ITEMS = [
+  "ipssIncompleteEmptying",
+  "ipssFrequency",
+  "ipssIntermittency",
+  "ipssUrgency",
+  "ipssWeakStream",
+  "ipssStraining",
+  "ipssNocturia",
+] as const;
+
+export type IpssSeverity = "Mild" | "Moderate" | "Severe" | "";
+
+export function ipssSeverityFor(score: number | null): IpssSeverity {
+  if (score === null) return "";
+  if (score <= 7) return "Mild";
+  if (score <= 19) return "Moderate";
+  return "Severe";
+}
+
+/**
+ * Total is the sum of all seven answers, calculated only once every question is answered.
+ * If none of the seven are answered, an existing manually-entered total (older records) is left alone.
+ */
+export function computeIpss(v: Record<string, any>): { score: string; severity: IpssSeverity } {
+  const answers = IPSS_ITEMS.map((k) => num(v[k]));
+  const answered = answers.filter((a) => a !== null).length;
+
+  let score: number | null;
+  if (answered === 0) score = num(v.ipssScore);
+  else if (answered === IPSS_ITEMS.length) score = (answers as number[]).reduce((sum, a) => sum + a, 0);
+  else score = null;
+
+  return { score: score === null ? "" : String(score), severity: ipssSeverityFor(score) };
+}
+
+/** Human-readable PSA band used for the recall schedule (Step 5) and referral trigger (Step 6). */
+export function psaBandLabel(psa: number): string {
+  if (psa < 1.0) return "Low (< 1.0 ng/mL)";
+  if (psa <= 2.5) return "Intermediate (1.0–2.5 ng/mL)";
+  if (psa < PSA_REFERRAL_THRESHOLD) return "Raised (> 2.5 ng/mL)";
+  return "Elevated (≥ 3.0 ng/mL)";
+}
+
+// ---------------------------------------------------------------------------
 // Decision logic
 // ---------------------------------------------------------------------------
 export type ProstateOutcome = {
@@ -89,6 +137,10 @@ export type ProstateOutcome = {
   psaDensity: string;
   biopsyIndicated: "yes" | "no" | "";
   biopsyIndicationReasons: string;
+  ipssScore: string;
+  ipssSeverity: IpssSeverity;
+  psaCategory: string;
+  recallInterval: string;
 };
 
 /**
@@ -98,6 +150,7 @@ export type ProstateOutcome = {
 export function computeProstateOutcome(v: Record<string, any>, dateOfBirth?: any): ProstateOutcome {
   const on = parseDate(v.screeningDate) ?? new Date();
   const age = ageOn(dateOfBirth ?? v.dateOfBirth, on);
+  const ipss = computeIpss(v);
 
   const base: ProstateOutcome = {
     screeningPathway: "Asymptomatic",
@@ -110,6 +163,10 @@ export function computeProstateOutcome(v: Record<string, any>, dateOfBirth?: any
     nextScreeningDate: "",
     psaVelocity: "",
     psaDensity: "",
+    ipssScore: ipss.score,
+    ipssSeverity: ipss.severity,
+    psaCategory: "",
+    recallInterval: "",
     biopsyIndicated: "",
     biopsyIndicationReasons: "",
   };
@@ -120,6 +177,7 @@ export function computeProstateOutcome(v: Record<string, any>, dateOfBirth?: any
       ...base,
       screeningPathway: "Symptomatic",
       screeningResult: "suspicious",
+      recallInterval: "Specialist referral",
       treatmentReferral: "referred",
       recommendedAction:
         "Symptomatic — exit routine screening. Refer to the clinical diagnostic / specialist pathway.",
@@ -139,14 +197,9 @@ export function computeProstateOutcome(v: Record<string, any>, dateOfBirth?: any
     };
   }
 
-  // Steps 2–3 — informed consent, counselling, shared decision-making
-  if (v.consentGiven !== "yes" || v.counsellingDone !== "yes") {
-    return {
-      ...base,
-      psaEligibility: "Pending Consent",
-      recommendedAction: "Obtain informed consent and complete counselling before any testing.",
-    };
-  }
+  // Step 3 — shared decision-making.
+  // (Informed consent and counselling are auto-set to "yes" by prostatePatch and are not shown,
+  //  so they no longer gate the outcome here.)
   if (v.sharedDecision !== "proceed") {
     return {
       ...base,
@@ -203,6 +256,7 @@ export function computeProstateOutcome(v: Record<string, any>, dateOfBirth?: any
     dreResult,
     psaVelocity: psav === null ? "" : psav.toFixed(2),
     psaDensity: psad === null ? "" : psad.toFixed(3),
+    psaCategory: effective === null ? "" : psaBandLabel(effective),
   };
 
   // Step 6 — immediate urology referral triggers
@@ -241,6 +295,7 @@ export function computeProstateOutcome(v: Record<string, any>, dateOfBirth?: any
       ...derived,
       screeningResult: "suspicious",
       treatmentReferral: "referred",
+      recallInterval: "Urology referral",
       biopsyIndicated,
       biopsyIndicationReasons: bx.join("; "),
       recommendedAction:
@@ -258,6 +313,7 @@ export function computeProstateOutcome(v: Record<string, any>, dateOfBirth?: any
       ...eligible,
       ...derived,
       nextScreeningDate: iso(due),
+      recallInterval: "Repeat PSA in 2 weeks",
       recommendedAction:
         `PSA ${psa1} ng/mL (≥3.0) — repeat PSA at least 2 weeks after the first test (on or after ${iso(due)}) before referral.` +
         (repeatRejected ? " The repeat entered was not accepted: it must be dated ≥2 weeks after the first PSA." : ""),
@@ -280,6 +336,7 @@ export function computeProstateOutcome(v: Record<string, any>, dateOfBirth?: any
     ...derived,
     screeningResult: "non_suspicious",
     nextScreeningDate: iso(addYears(d1, years)),
+    recallInterval: years === 1 ? "Annually" : `Every ${years} years`,
     recommendedAction:
       `PSA ${effective} ng/mL (${band} ng/mL), DRE not abnormal — repeat screening ` +
       (years === 1 ? "annually" : `every ${years} years`) +
@@ -291,10 +348,23 @@ export function computeProstateOutcome(v: Record<string, any>, dateOfBirth?: any
  * Returns the derived fields to merge into state, or null when nothing changed.
  * Both wizard pages call this from their prostate useEffect.
  */
-export function prostatePatch(current: Record<string, any>, dateOfBirth?: any): ProstateOutcome | null {
+export function prostatePatch(current: Record<string, any>, dateOfBirth?: any): Record<string, any> | null {
   const out = computeProstateOutcome(current, dateOfBirth);
-  const changed = (Object.keys(out) as (keyof ProstateOutcome)[]).some((k) => (current[k] ?? "") !== out[k]);
-  return changed ? out : null;
+  const patch: Record<string, any> = {};
+  (Object.keys(out) as (keyof ProstateOutcome)[]).forEach((k) => {
+    if ((current[k] ?? "") !== out[k]) patch[k] = out[k];
+  });
+
+  // When "Book next screening" is ticked, pre-fill the appointment with the computed due date
+  // (or the manual recall date for a deferred PSA). The nurse can still change it.
+  const due = out.nextScreeningDate || current.recallDate || "";
+  if (current.recallBookNow && !current.recallBookingDate && due) patch.recallBookingDate = due;
+
+  // Informed consent and counselling are always recorded as "yes" and are not shown in the form.
+  if (current.consentGiven !== "yes") patch.consentGiven = "yes";
+  if (current.counsellingDone !== "yes") patch.counsellingDone = "yes";
+
+  return Object.keys(patch).length ? patch : null;
 }
 
 // ---------------------------------------------------------------------------
@@ -302,9 +372,40 @@ export function prostatePatch(current: Record<string, any>, dateOfBirth?: any): 
 // ---------------------------------------------------------------------------
 const asymptomatic = (v: Record<string, any>) => v.screeningPathway === "Asymptomatic";
 const proceeded = (v: Record<string, any>) =>
-  asymptomatic(v) && v.consentGiven === "yes" && v.counsellingDone === "yes" && v.sharedDecision === "proceed";
+  asymptomatic(v) && v.sharedDecision === "proceed";
 const eligibleForTest = (v: Record<string, any>) => proceeded(v) && v.psaEligibility === "Eligible";
 const referred = (v: Record<string, any>) => v.treatmentReferral === "referred" && v.screeningPathway !== "Symptomatic";
+
+const ipssFreqOptions = [
+  { value: "", label: "Select" },
+  { value: "0", label: "0 — Not at all" },
+  { value: "1", label: "1 — Less than 1 time in 5" },
+  { value: "2", label: "2 — Less than half the time" },
+  { value: "3", label: "3 — About half the time" },
+  { value: "4", label: "4 — More than half the time" },
+  { value: "5", label: "5 — Almost always" },
+];
+
+const ipssNocturiaOptions = [
+  { value: "", label: "Select" },
+  { value: "0", label: "0 — None" },
+  { value: "1", label: "1 — Once" },
+  { value: "2", label: "2 — Twice" },
+  { value: "3", label: "3 — 3 times" },
+  { value: "4", label: "4 — 4 times" },
+  { value: "5", label: "5 — 5 or more" },
+];
+
+const ipssQolOptions = [
+  { value: "", label: "Select" },
+  { value: "0", label: "0 — Delighted" },
+  { value: "1", label: "1 — Pleased" },
+  { value: "2", label: "2 — Mostly satisfied" },
+  { value: "3", label: "3 — Mixed" },
+  { value: "4", label: "4 — Mostly unhappy" },
+  { value: "5", label: "5 — Unhappy" },
+  { value: "6", label: "6 — Terrible" },
+];
 
 export const PROSTATE_GROUPS: FieldGroup[] = [
   {
@@ -342,17 +443,15 @@ export const PROSTATE_GROUPS: FieldGroup[] = [
     ],
   },
   {
-    title: "Steps 2–3 — Consent, Counselling & Shared Decision-Making",
-    description: "Informed consent and counselling, then a formal consultation, must be completed before testing.",
+    title: "Step 3 — Shared Decision-Making",
+    description: "A formal consultation must be completed before testing.",
     fields: [
-      { name: "consentGiven", label: "Informed Consent Obtained", type: "select", options: yesNo, colSpan: 1, showIf: asymptomatic },
-      { name: "counsellingDone", label: "Counselling Provided", type: "select", options: yesNo, colSpan: 1, showIf: asymptomatic },
       {
         name: "sharedDecision",
         label: "Shared Decision (Formal Consultation)",
         type: "select",
         colSpan: 2,
-        showIf: (v) => asymptomatic(v) && v.consentGiven === "yes" && v.counsellingDone === "yes",
+        showIf: asymptomatic,
         options: [
           { value: "", label: "Select" },
           { value: "proceed", label: "Client chooses to proceed with PSA screening" },
@@ -425,15 +524,74 @@ export const PROSTATE_GROUPS: FieldGroup[] = [
     ],
   },
   {
-    title: "Result, Recall & Referral (Steps 5–6)",
-    description: "PSA <1.0: every 5 years · 1.0–2.5: every 2 years · >2.5: annually · ≥3.0 (confirmed), abnormal DRE or rapid rise: urology referral.",
+    title: "International Prostate Symptom Score (I-PSS)",
+    description:
+      "Seven questions about urinary symptoms over the past month, each scored 0–5. The total (0–35) is calculated once all seven are answered.",
+    fields: [
+      { name: "ipssIncompleteEmptying", label: "1. Incomplete Emptying", type: "select", options: ipssFreqOptions, colSpan: 2, help: "Over the past month, how often have you had a sensation of not emptying your bladder completely after you finish urinating?" },
+      { name: "ipssFrequency", label: "2. Frequency", type: "select", options: ipssFreqOptions, colSpan: 2, help: "Over the past month, how often have you had to urinate again less than two hours after you finished urinating?" },
+      { name: "ipssIntermittency", label: "3. Intermittency", type: "select", options: ipssFreqOptions, colSpan: 2, help: "Over the past month, how often have you found you stopped and started again several times when you urinated?" },
+      { name: "ipssUrgency", label: "4. Urgency", type: "select", options: ipssFreqOptions, colSpan: 2, help: "Over the past month, how often have you found it difficult to postpone urination?" },
+      { name: "ipssWeakStream", label: "5. Weak Stream", type: "select", options: ipssFreqOptions, colSpan: 2, help: "Over the past month, how often have you had a weak urinary stream?" },
+      { name: "ipssStraining", label: "6. Straining", type: "select", options: ipssFreqOptions, colSpan: 2, help: "Over the past month, how often have you had to push or strain to begin urination?" },
+      { name: "ipssNocturia", label: "7. Nocturia", type: "select", options: ipssNocturiaOptions, colSpan: 2, help: "Over the past month, how many times did you most typically get up each night to urinate, from the time you went to bed until you got up in the morning?" },
+      { name: "ipssScore", label: "Total I-PSS Score (0–35)", type: "text", colSpan: 1, readOnly: true, help: "Auto-calculated once all seven questions are answered." },
+      { name: "ipssSeverity", label: "Symptom Severity", type: "text", colSpan: 1, readOnly: true, help: "0–7 mild · 8–19 moderate · 20–35 severe." },
+      { name: "ipssQualityOfLife", label: "Quality of Life Due to Urinary Symptoms", type: "select", options: ipssQolOptions, colSpan: 2, help: "If you were to spend the rest of your life with your urinary condition just the way it is now, how would you feel about that?" },
+    ],
+  },
+  {
+    title: "Result & Recall (Steps 5–6)",
+    description:
+      "Guide — PSA < 1.0: every 5 years · 1.0–2.5: every 2 years · > 2.5: annually · ≥ 3.0 (confirmed on repeat), abnormal DRE or rapid rise: urology referral. These fields fill in automatically once the PSA is entered under Step 4.",
     fields: [
       { name: "screeningDate", label: "Screening Date", type: "date", colSpan: 1 },
-      { name: "ipssScore", label: "IPSS Score (0-35)", type: "number", min: 0, max: 35, colSpan: 1 },
       { name: "screeningResult", label: "Screening Result", type: "text", colSpan: 1, readOnly: true, help: "Auto-derived — not editable." },
+      { name: "psaCategory", label: "PSA Category", type: "text", colSpan: 1, readOnly: true, showIf: (v) => !!v.psaCategory },
+      { name: "recallInterval", label: "Recall Interval", type: "text", colSpan: 1, readOnly: true, showIf: (v) => !!v.recallInterval },
       { name: "treatmentReferral", label: "Urology Referral", type: "text", colSpan: 1, readOnly: true },
-      { name: "nextScreeningDate", label: "Next Screening / Repeat PSA Due", type: "date", colSpan: 2, readOnly: true, showIf: (v) => !!v.nextScreeningDate },
+      { name: "nextScreeningDate", label: "Next Screening / Repeat PSA Due", type: "date", colSpan: 1, readOnly: true, showIf: (v) => !!v.nextScreeningDate },
       { name: "recommendedAction", label: "Recommended Action", type: "textarea", colSpan: 2, readOnly: true },
+    ],
+  },
+  {
+    title: "Book Next Screening",
+    description: "Books the repeat PSA or the next routine screening. The date is pre-filled from the schedule above.",
+    fields: [
+      {
+        name: "recallBookNow",
+        label: "Book next screening / repeat PSA",
+        type: "checkbox",
+        colSpan: 2,
+        showIf: (v) => proceeded(v) && (!!v.nextScreeningDate || (v.psaEligibility === "Deferred" && !!v.recallDate)),
+      },
+      { name: "recallBookingDate", label: "Appointment Date", type: "date", colSpan: 1, showIf: (v) => !!v.recallBookNow },
+      {
+        name: "recallBookingFacilityId",
+        label: "Facility",
+        type: "select",
+        colSpan: 1,
+        options: [], // injected at render time
+        showIf: (v) => !!v.recallBookNow,
+      },
+      { name: "recallBookingNotes", label: "Booking Notes", type: "textarea", colSpan: 2, placeholder: "Any instructions for the appointment", showIf: (v) => !!v.recallBookNow },
+    ],
+  },
+  {
+    title: "Book Urology Appointment",
+    description: "Shown when the client is referred to urology.",
+    fields: [
+      { name: "urologyBookNow", label: "Book urology appointment", type: "checkbox", colSpan: 2, showIf: (v) => v.treatmentReferral === "referred" },
+      { name: "urologyBookingDate", label: "Appointment Date", type: "date", colSpan: 1, showIf: (v) => !!v.urologyBookNow },
+      {
+        name: "urologyBookingFacilityId",
+        label: "Urology Facility",
+        type: "select",
+        colSpan: 1,
+        options: [], // injected at render time
+        showIf: (v) => !!v.urologyBookNow,
+      },
+      { name: "urologyBookingNotes", label: "Referral Notes", type: "textarea", colSpan: 2, placeholder: "Reason for referral and any findings to pass on", showIf: (v) => !!v.urologyBookNow },
     ],
   },
   {

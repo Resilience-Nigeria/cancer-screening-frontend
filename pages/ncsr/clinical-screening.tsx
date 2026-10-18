@@ -32,7 +32,9 @@ import {
 } from "../../lib/screeningWizardConfig";
 import { GroupedForm, buildScreeningPayload } from "../components/ScreningWizard";
 import OtpVerificationStep from "../components/OtpVerificationService";
-
+import VisitDetailsFields, { initialVisitMeta, ageFromDob, VisitMeta } from "../components/VisitDetailsFields";
+import { CERVICAL_RISK_GROUPS, cervicalRiskPatch } from "../../lib/cervicalRisk";
+import DateOfBirthField from "../components/DateOfBirthField";
 // ---------------------------------------------------------------------------
 // Medical history confirm-checklist — Stage 2, Section C
 // ---------------------------------------------------------------------------
@@ -163,6 +165,7 @@ export default function ClinicalScreeningPage() {
   const [stepIndex, setStepIndex] = useState(0);
   const [busy, setBusy] = useState(false);
 
+const [visitMeta, setVisitMeta] = useState<VisitMeta>(initialVisitMeta());
   // Lookup
   const [lookupValue, setLookupValue] = useState("");
 
@@ -204,6 +207,8 @@ export default function ClinicalScreeningPage() {
   const [bloomReference, setBloomReference] = useState<{ registration: any; selfAssessment: any } | null>(null);
   const [duplicateMatch, setDuplicateMatch] = useState<{ field: "phone" | "email"; client: any } | null>(null);
   const [incompleteVisits, setIncompleteVisits] = useState<any[]>([]);
+  // True once the client record already existed before this session (found by lookup or matched as a duplicate).
+  const [returningClient, setReturningClient] = useState(false);
   
   // State for facilities and screening errors
   const [facilities, setFacilities] = useState<any[]>([]);
@@ -221,10 +226,16 @@ const [colposcopyFacilities, setColposcopyFacilities] = useState<any[]>([]);
     [biodata.gender]
   );
 
+  // const riskGroupsForVerify = useMemo(() => {
+  //   const primaryType = cancerTypes[0] || availableCancerTypes[0]?.value || "breast";
+  //   return getRiskGroups(primaryType as CancerType, biodata.gender);
+  // }, [cancerTypes, availableCancerTypes, biodata.gender]);
+
   const riskGroupsForVerify = useMemo(() => {
-    const primaryType = cancerTypes[0] || availableCancerTypes[0]?.value || "breast";
-    return getRiskGroups(primaryType as CancerType, biodata.gender);
-  }, [cancerTypes, availableCancerTypes, biodata.gender]);
+  const primaryType = cancerTypes[0] || availableCancerTypes[0]?.value || "breast";
+  const base = getRiskGroups(primaryType as CancerType, biodata.gender);
+  return biodata.gender === "female" ? [...base, ...CERVICAL_RISK_GROUPS] : base;
+}, [cancerTypes, availableCancerTypes, biodata.gender]);
 
   // Prefill physical exam weight/height from the risk profile
   useEffect(() => {
@@ -243,6 +254,13 @@ const [colposcopyFacilities, setColposcopyFacilities] = useState<any[]>([]);
     const bmi = w > 0 && hM > 0 ? (w / (hM * hM)).toFixed(1) : "";
     setExamination((prev) => (prev.bmi === bmi ? prev : { ...prev, bmi }));
   }, [examination.weightKg, examination.heightCm]);
+
+
+useEffect(() => {
+  const patch = cervicalRiskPatch(risk);
+  if (!patch) return;
+  setRisk((prev) => ({ ...prev, ...patch }));
+}, [risk]);
 
   // Cervical screening is female-only. `availableCancerTypes` already keeps
   // it out of the selectable buttons on the "cancerTypeSelect" step, but if
@@ -265,6 +283,26 @@ const [colposcopyFacilities, setColposcopyFacilities] = useState<any[]>([]);
       return rest;
     });
   }, [biodata.gender, cancerTypes]);
+
+  // Generalises the effect above: once the client's gender is known, drop any
+  // selected cancer type that doesn't apply to it (e.g. a stale "prostate"
+  // selection on a female client) together with that type's screening data,
+  // so its questions never render.
+  useEffect(() => {
+    if (!biodata.gender) return;
+    const allowed = new Set(availableCancerTypes.map((c) => c.value));
+    const stale = cancerTypes.filter((ct) => !allowed.has(ct));
+    if (stale.length === 0) return;
+
+    setCancerTypes((prev) => prev.filter((ct) => allowed.has(ct)));
+    const drop = <T extends Record<string, any>>(prev: T): T => {
+      const next = { ...prev };
+      stale.forEach((ct) => delete next[ct]);
+      return next;
+    };
+    setScreenings(drop);
+    setScreeningErrors(drop);
+  }, [biodata.gender, availableCancerTypes, cancerTypes]);
 
   // Prostate only: auto-derive the screening pathway, PSA eligibility,
   // screening result, referral and recommended action from the symptom
@@ -475,6 +513,14 @@ const colposcopyFacilityOptions = useMemo(() => {
       return;
     }
 
+    // Start every lookup from a clean slate so a previous client's cancer-type
+    // selection and screening data can't leak into this one. (resumeVisit
+    // re-populates these from the saved visit afterwards.)
+    setCancerTypes([]);
+    setScreenings({});
+    setScreeningErrors({});
+    setReturningClient(false);
+
     setBusy(true);
     let hasIncompleteVisit = false;
 
@@ -487,6 +533,7 @@ const colposcopyFacilityOptions = useMemo(() => {
 
       if (found) {
         setClientId(found.clientId);
+        setReturningClient(true);
         setPendingRegistrationId("");
 setPendingMaskedPhone("");
 
@@ -604,7 +651,8 @@ setPendingMaskedPhone("");
     try {
       const { data } = await api.post(`/clients/${clientId}/visits`, {
         visitDate: todayStr(),
-        visitType: "initial",
+        visitType: returningClient ? "follow_up" : "initial",
+        ...visitMeta
       });
       const newVisitId = data?.visit?.visitId ?? data?.visitId;
       setVisitId(newVisitId);
@@ -632,6 +680,14 @@ setPendingMaskedPhone("");
     if (!biodata.fullName || !biodata.gender || !biodata.phoneNumber) {
       toast.error("Full name, sex, and phone number are required.");
       return;
+    }
+
+    // A fresh visit is about to start — clear any leftover cancer-type
+    // selection and screening data from a previous client or session.
+    if (!visitId) {
+      setCancerTypes([]);
+      setScreenings({});
+      setScreeningErrors({});
     }
 
     // CASE 1: Existing client (has clientId) - update and continue, NO OTP
@@ -698,10 +754,11 @@ setPendingMaskedPhone("");
     }
   }
 
-  async function createVisitAndLoadRisk(cId: string) {
+  async function createVisitAndLoadRisk(cId: string, returning: boolean = returningClient) {
     const { data: visitData } = await api.post(`/clients/${cId}/visits`, {
       visitDate: todayStr(),
-      visitType: "initial",
+      visitType: returning ? "follow_up" : "initial",
+      ...visitMeta
     });
     setVisitId(visitData?.visit?.visitId ?? visitData?.visitId);
 
@@ -724,6 +781,7 @@ setPendingMaskedPhone("");
     if (!duplicateMatch) return;
     const c = duplicateMatch.client;
     setClientId(c.clientId);
+    setReturningClient(true);
     setPendingRegistrationId("");
 setPendingMaskedPhone("");
     setBiodata({
@@ -747,7 +805,7 @@ setPendingMaskedPhone("");
     setDuplicateMatch(null);
     setBusy(true);
     try {
-      await createVisitAndLoadRisk(c.clientId);
+      await createVisitAndLoadRisk(c.clientId, true);
       toast.success("Continuing screening for the existing client.");
       goTo("riskVerify");
     } catch (err: any) {
@@ -1002,31 +1060,18 @@ setPendingMaskedPhone("");
                   >
                     <p className="text-sm font-semibold text-gray-800 dark:text-white">
                       Visit — {(() => {
-  const date = new Date(v.visitDate);
-  const day = date.getDate();
-
-  const suffix =
-    day % 10 === 1 && day !== 11
-      ? "st"
-      : day % 10 === 2 && day !== 12
-      ? "nd"
-      : day % 10 === 3 && day !== 13
-      ? "rd"
-      : "th";
-
-  const formattedDate = date.toLocaleDateString("en-GB", {
-    month: "long",
-    year: "numeric",
-  });
-
-  const formattedTime = date.toLocaleTimeString("en-US", {
-    hour: "numeric",
-    minute: "2-digit",
-    hour12: true,
-  });
-
-  return `${day}${suffix} ${formattedDate} at ${formattedTime}`;
-})()} ({v.visitType})
+                        // visitDate is a date-only value; parse it as a LOCAL date so timezones
+                        // (e.g. WAT, UTC+1) don't shift it, and don't show a time that doesn't exist.
+                        const date = new Date(`${String(v.visitDate).slice(0, 10)}T00:00:00`);
+                        const day = date.getDate();
+                        const suffix =
+                          day % 10 === 1 && day !== 11 ? "st"
+                          : day % 10 === 2 && day !== 12 ? "nd"
+                          : day % 10 === 3 && day !== 13 ? "rd"
+                          : "th";
+                        const monthYear = date.toLocaleDateString("en-GB", { month: "long", year: "numeric" });
+                        return `${day}${suffix} ${monthYear}`;
+                      })()} ({v.visitType === "follow_up" ? "follow-up" : v.visitType})
                     </p>
                     <p className="text-xs text-gray-500 mt-0.5">
                       {v.cancerTypes?.length > 0 ? `Types: ${v.cancerTypes.join(", ")}` : "No screening started yet"}
@@ -1071,15 +1116,13 @@ setPendingMaskedPhone("");
                   onChange={(e) => setBiodata((p) => ({ ...p, fullName: e.target.value }))}
                 />
               </Label>
-              <Label>
-                <span className="text-sm font-semibold">Date of Birth</span>
-                <Input
-                  type="date"
-                  className="mt-2 rounded-2xl h-12"
-                  value={biodata.dateOfBirth}
-                  onChange={(e) => setBiodata((p) => ({ ...p, dateOfBirth: e.target.value }))}
-                />
-              </Label>
+ <div className="col-span-2">
+  <span className="text-sm font-semibold">Date of Birth</span>
+  <DateOfBirthField
+    value={biodata.dateOfBirth}
+    onChange={(v) => setBiodata((p) => ({ ...p, dateOfBirth: v }))}
+  />
+</div>
               <Label>
                 <span className="text-sm font-semibold">Sex *</span>
                 <Select
@@ -1240,6 +1283,13 @@ setPendingMaskedPhone("");
                 </Label>
               </div>
             </div>
+
+            <div className="pt-2 border-t border-gray-100 dark:border-gray-700">
+  <VisitDetailsFields
+    value={visitMeta}
+    onChange={(n, v) => setVisitMeta((p) => ({ ...p, [n]: v }))}
+  />
+</div>
           </div>
         )}
 

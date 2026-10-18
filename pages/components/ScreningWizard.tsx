@@ -37,6 +37,9 @@ import {
   computeProstateOutcome,
   prostatePatch
 } from "../../lib/screeningWizardConfig";
+import VisitDetailsFields, { initialVisitMeta, ageFromDob, VisitMeta } from "../components/VisitDetailsFields";
+import { CERVICAL_RISK_GROUPS, cervicalRiskPatch, hydrateCervicalRisk } from "../../lib/cervicalRisk";
+import DateOfBirthField from "../components/DateOfBirthField";
 
 // ---------------------------------------------------------------------------
 // Endpoints
@@ -111,6 +114,8 @@ const SCREENING_INT_FIELDS = [
   "leepBookingFacilityId",
   "colposcopyBookingFacilityId",
   "ageAtScreening",
+  "ipssIncompleteEmptying", "ipssFrequency", "ipssIntermittency", "ipssUrgency",
+"ipssWeakStream", "ipssStraining", "ipssNocturia", "ipssQualityOfLife",
 ];
 
 // const SCREENING_FLOAT_FIELDS = ["psaLevel", "afpValue"];
@@ -365,6 +370,8 @@ const initialBiodata = () => ({
   address:           "",
   landmark:          "",
   registrationDate:  today(),
+  nextOfKinName:  "",
+nextOfKinPhone: "",
 });
 
 const initialPreCounsel = () => ({
@@ -390,6 +397,8 @@ const initialReferral = () => ({
   const [cancerTypes, setCancerTypes] = useState<CancerType[]>([]);
 
   const [biodata, setBiodata] = useState<Record<string, any>>(initialBiodata());
+
+  const [visitMeta, setVisitMeta] = useState<VisitMeta>(initialVisitMeta());
 
   const [preCounsel, setPreCounsel] = useState<Record<string, any>>(initialPreCounsel());
 
@@ -470,6 +479,7 @@ const initialReferral = () => ({
     const qId = router.query.clientId as string | undefined;
 
     // Always start from a clean slate before (re)hydrating.
+    setVisitMeta(initialVisitMeta());
     setClientId("");
     setVisitId(null);
     setCancerTypes([]);
@@ -511,6 +521,8 @@ const initialReferral = () => ({
           address:           c.address           ?? "",
           landmark:          c.landmark          ?? "",
           registrationDate:  dateOnly(c.registrationDate ?? c.registration_date) || today(),
+          nextOfKinName:  c.nextOfKinName  ?? "",
+          nextOfKinPhone: c.nextOfKinPhone ?? "",
         }));
         const rp =
           (c.risk_profiles && c.risk_profiles[0]) ||
@@ -542,6 +554,7 @@ const initialReferral = () => ({
             breastfeedingHistory:   rp.breastfeedingHistory   ?? "",
             breastfeedingDuration:  rp.breastfeedingDuration  ?? "",
             previousBreastSurgery:  rp.previousBreastSurgery  ?? "",
+              ...hydrateCervicalRisk(rp),
           });
         }
         setStepIndex(1);
@@ -592,6 +605,14 @@ const initialReferral = () => ({
     const bmi = w > 0 && hM > 0 ? (w / (hM * hM)).toFixed(1) : "";
     setRisk((prev) => (prev.bmi === bmi ? prev : { ...prev, bmi }));
   }, [risk.weightKg, risk.heightCm]);
+
+
+  // Cervical only: derive the symptomatic / asymptomatic summary from the symptom checklist.
+useEffect(() => {
+  const patch = cervicalRiskPatch(risk);
+  if (!patch) return;
+  setRisk((prev) => ({ ...prev, ...patch }));
+}, [risk]);
 
   // Cervical screening is female-only. The "cancer" step's buttons already
   // only render options from `availableCancers` (gender-filtered), but if
@@ -670,15 +691,26 @@ const initialReferral = () => ({
     [biodata.gender]
   );
 
+  // const riskGroups = useMemo(() => {
+  //   if (!Array.isArray(cancerTypes) || !cancerTypes.length) return [];
+  //   return getRiskGroups(
+  //     cancerTypes.includes("liver")
+  //       ? "liver"
+  //       : (cancerTypes[0] as CancerType),
+  //     biodata.gender
+  //   );
+  // }, [cancerTypes, biodata.gender]);
+
   const riskGroups = useMemo(() => {
-    if (!Array.isArray(cancerTypes) || !cancerTypes.length) return [];
-    return getRiskGroups(
-      cancerTypes.includes("liver")
-        ? "liver"
-        : (cancerTypes[0] as CancerType),
-      biodata.gender
-    );
-  }, [cancerTypes, biodata.gender]);
+  if (!Array.isArray(cancerTypes) || !cancerTypes.length) return [];
+  const base = getRiskGroups(
+    cancerTypes.includes("liver") ? "liver" : (cancerTypes[0] as CancerType),
+    biodata.gender
+  );
+  return cancerTypes.includes("cervical") && biodata.gender !== "male"
+    ? [...base, ...CERVICAL_RISK_GROUPS]
+    : base;
+}, [cancerTypes, biodata.gender]);
 
   // ---------------------------------------------------------------------------
   // Field setters
@@ -792,12 +824,19 @@ const initialReferral = () => ({
   async function ensureVisit(): Promise<number | null> {
     if (visitId) return visitId;
     try {
+      // const { data } = await api.post(ENDPOINTS.createVisit(clientId), {
+      //   visitType:        biodata.screeningCategory === "follow_up" ? "follow_up" : "initial",
+      //   visitDate:        today(),
+      //   notes:            `${cancerTypes.map((c) => cancerLabel(c)).join(", ")} screening`,
+      //   treatmentReferral: treatmentReferral || "not_referred",
+      // });
       const { data } = await api.post(ENDPOINTS.createVisit(clientId), {
-        visitType:        biodata.screeningCategory === "follow_up" ? "follow_up" : "initial",
-        visitDate:        today(),
-        notes:            `${cancerTypes.map((c) => cancerLabel(c)).join(", ")} screening`,
-        treatmentReferral: treatmentReferral || "not_referred",
-      });
+  visitType: biodata.screeningCategory === "follow_up" ? "follow_up" : "initial",
+  visitDate: today(),
+  notes: `${cancerTypes.map((c) => cancerLabel(c)).join(", ")} screening`,
+  treatmentReferral: treatmentReferral || "not_referred",
+  ...visitMeta,
+});
       const v  = data?.visit || data?.data || data;
       let   id = v?.visitId ?? v?.id ?? data?.visitId ?? data?.id ?? null;
       if (!id) {
@@ -1175,17 +1214,15 @@ const initialReferral = () => ({
                 </Select>
               </Label>
 
-              <Label>
-                <span className="text-sm font-semibold">Date of Birth *</span>
-                <Input
-                  type="date"
-                  className={`mt-2 rounded-2xl h-12 ${biodataErrors.dateOfBirth ? "ring-2 ring-red-400 border-red-400" : ""}`}
-                  max={today()}
-                  value={biodata.dateOfBirth}
-                  onChange={(e) => setBiodataField("dateOfBirth", e.target.value)}
-                />
-              </Label>
-
+              <div>
+  <span className="text-sm font-semibold">Date of Birth *</span>
+  <DateOfBirthField
+    value={biodata.dateOfBirth}
+    onChange={(v) => setBiodataField("dateOfBirth", v)}
+    hasError={!!biodataErrors.dateOfBirth}
+  />
+</div>
+        
               <Label>
                 <span className="text-sm font-semibold">Phone Number *</span>
                 <Input
@@ -1308,6 +1345,23 @@ const initialReferral = () => ({
                   onChange={(e) => setBiodataField("registrationDate", e.target.value)}
                 />
               </Label>
+
+              <Label>
+  <span className="text-sm font-semibold">Next of Kin Name</span>
+  <Input className="mt-2 rounded-2xl h-12" value={biodata.nextOfKinName ?? ""}
+    onChange={(e) => setBiodataField("nextOfKinName", e.target.value)} />
+</Label>
+<Label>
+  <span className="text-sm font-semibold">Next of Kin Phone</span>
+  <Input type="tel" className="mt-2 rounded-2xl h-12" value={biodata.nextOfKinPhone ?? ""}
+    onChange={(e) => setBiodataField("nextOfKinPhone", e.target.value)} />
+</Label>
+<div className="sm:col-span-2">
+  <VisitDetailsFields
+    value={visitMeta}
+    onChange={(n, v) => setVisitMeta((p) => ({ ...p, [n]: v }))}
+  />
+</div>
             </div>
           </div>
         )}
