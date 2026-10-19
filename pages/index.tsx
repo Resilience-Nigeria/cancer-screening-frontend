@@ -6,16 +6,12 @@ import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { Label, Input, Button } from "@roketid/windmill-react-ui";
 import {
-  Activity,
   ShieldCheck,
   Eye,
   EyeOff,
   Loader2,
   Mail,
   Lock,
-  CheckCircle2,
-  Users,
-  FileText,
   AlertCircle,
 } from "lucide-react";
 
@@ -43,21 +39,16 @@ export default function LoginPage() {
         password,
       });
 
-      // Check if login was successful
       if (data.access_token && data.user) {
-        // Store token and user data
         setToken(data.access_token);
         setUser(data.user);
-
-        // Redirect to dashboard
         router.push("/ncsr/dashboard");
       } else {
         setError("Login failed. Please try again.");
       }
     } catch (err: any) {
-      // Handle different error scenarios
       const errorData: ErrorResponse = err?.response?.data;
-      
+
       if (errorData?.code === "USER_NOT_FOUND") {
         setError("No account found with this email or phone number");
       } else if (errorData?.code === "INVALID_CREDENTIALS") {
@@ -74,115 +65,27 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-green-50 via-emerald-50 to-teal-50 dark:from-gray-900 dark:via-gray-900 dark:to-gray-800 px-4 py-6 sm:px-6 lg:px-8">
-      <div className="max-w-6xl mx-auto">
+      <div className="max-w-7xl mx-auto">
         <div className="bg-white dark:bg-gray-800 border border-green-100 dark:border-gray-700 rounded-3xl shadow-2xl overflow-hidden">
           <div className="flex flex-col lg:flex-row min-h-[680px]">
-            {/* Left Panel - Hidden on mobile, visible on large screens */}
-            <div className="hidden lg:flex lg:w-1/2 bg-green-600 text-white p-8 xl:p-12 flex-col justify-between relative overflow-hidden">
-              {/* Decorative elements */}
-              <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(255,255,255,0.1),transparent_40%)]" />
-              <div className="absolute bottom-0 right-0 w-64 h-64 bg-green-500/10 rounded-full blur-3xl" />
-              <div className="absolute top-20 left-0 w-48 h-48 bg-emerald-400/10 rounded-full blur-3xl" />
 
-              {/* Header */}
-              <div className="relative z-10">
-                <div className="flex items-center gap-3 mb-8">
-                  <div className="flex items-center justify-center w-14 h-14 rounded-2xl bg-white/15 backdrop-blur-sm border border-white/20 shadow-lg">
-                    <ShieldCheck className="w-7 h-7" />
-                  </div>
-                  <div>
-                    <h2 className="text-2xl font-bold">NCSR Platform</h2>
-                    <p className="text-green-100 text-sm">
-                      National Cancer Screening Register
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              {/* Main content */}
-              <div className="relative z-10 space-y-8">
-                <div>
-                  <div className="inline-flex items-center gap-2 px-4 py-2 mb-6 text-sm font-medium rounded-full bg-white/10 backdrop-blur-sm border border-white/20">
-                    <Activity className="w-4 h-4" />
-                    Comprehensive Health Screening Solution
-                  </div>
-
-                  <h3 className="text-3xl font-bold mb-4 leading-tight">
-                    Streamline Cancer Screening & Patient Care
-                  </h3>
-
-                  <p className="text-base leading-relaxed text-green-50">
-                    A complete platform designed to help healthcare facilities
-                    manage cancer screening programs efficiently and
-                    effectively.
-                  </p>
-                </div>
-
-                {/* Features */}
-                <div className="space-y-4">
-                  <div className="flex items-start gap-3">
-                    <div className="flex items-center justify-center w-10 h-10 rounded-xl bg-white/10 backdrop-blur-sm border border-white/20 flex-shrink-0">
-                      <Users className="w-5 h-5" />
-                    </div>
-                    <div>
-                      <h4 className="font-semibold mb-1">
-                        Patient Registration
-                      </h4>
-                      <p className="text-sm text-green-100">
-                        Register and manage patient information with
-                        comprehensive risk profiling
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="flex items-start gap-3">
-                    <div className="flex items-center justify-center w-10 h-10 rounded-xl bg-white/10 backdrop-blur-sm border border-white/20 flex-shrink-0">
-                      <CheckCircle2 className="w-5 h-5" />
-                    </div>
-                    <div>
-                      <h4 className="font-semibold mb-1">
-                        Screening Documentation
-                      </h4>
-                      <p className="text-sm text-green-100">
-                        Record screening results and track patient outcomes in
-                        real-time
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="flex items-start gap-3">
-                    <div className="flex items-center justify-center w-10 h-10 rounded-xl bg-white/10 backdrop-blur-sm border border-white/20 flex-shrink-0">
-                      <FileText className="w-5 h-5" />
-                    </div>
-                    <div>
-                      <h4 className="font-semibold mb-1">
-                        Referral Management
-                      </h4>
-                      <p className="text-sm text-green-100">
-                        Seamlessly manage patient referrals and follow-up care
-                        coordination
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Bottom quote */}
-              <div className="relative z-10">
-                <div className="rounded-2xl bg-white/10 border border-white/20 p-5 backdrop-blur-sm">
-                  <p className="text-sm text-green-50 leading-relaxed">
-                    "Empowering healthcare professionals with the tools to
-                    detect cancer early and save lives through organized
-                    screening programs."
-                  </p>
-                </div>
-              </div>
+            {/* ── Left Panel: AI image only ───────────────────────── */}
+            <div className="hidden lg:block lg:w-3/5 relative overflow-hidden bg-green-900">
+              <Image
+                src="/assets/img/cancer-screening.png"
+                alt="Healthcare professionals reviewing cancer screening results"
+                fill
+                priority
+                sizes="60vw"
+                className="object-cover"
+              />
             </div>
 
-            {/* Right Panel - Login Form */}
-            <main className="w-full lg:w-1/2 flex items-center justify-center p-6 sm:p-8 md:p-10 lg:p-12">
+            {/* ── Right Panel: Login Form ─────────────────────────── */}
+            <main className="w-full lg:w-2/5 flex items-center justify-center p-6 sm:p-8 md:p-10 lg:p-12">
               <div className="w-full max-w-md">
-                {/* Mobile header - visible only on small screens */}
+
+                {/* Mobile header */}
                 <div className="lg:hidden mb-8 text-center">
                   <div className="flex items-center justify-center gap-2 mb-4">
                     <div className="flex items-center justify-center w-12 h-12 rounded-xl bg-green-100 dark:bg-green-900/30">
@@ -190,14 +93,14 @@ export default function LoginPage() {
                     </div>
                   </div>
                   <h2 className="text-xl font-bold text-gray-800 dark:text-gray-100 mb-1">
-                    Cancer Screening Register
+                    NCSR Platform
                   </h2>
-                  <p className="text-sm text-gray-600 dark:text-gray-400">
-                    Healthcare screening platform
+                  <p className="text-xs uppercase tracking-[0.16em] text-gray-500 dark:text-gray-400">
+                    National Cancer Screening Register
                   </p>
                 </div>
 
-                {/* Logo and welcome text */}
+                {/* Logo + welcome */}
                 <div className="mb-8 text-center lg:text-left">
                   <div className="flex justify-center lg:justify-start mb-6">
                     <Image
@@ -210,7 +113,7 @@ export default function LoginPage() {
                     />
                   </div>
 
-                  <h1 className="text-2xl sm:text-3xl lg:text-3xl font-bold tracking-tight text-gray-900 dark:text-gray-100">
+                  <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-gray-900 dark:text-gray-100">
                     Welcome Back
                   </h1>
                   <p className="mt-2 text-sm sm:text-base text-gray-600 dark:text-gray-400">
@@ -218,7 +121,7 @@ export default function LoginPage() {
                   </p>
                 </div>
 
-                {/* Login form */}
+                {/* Form card */}
                 <div className="rounded-2xl border border-green-100 dark:border-gray-700 bg-gradient-to-br from-white to-green-50/30 dark:from-gray-900/50 dark:to-gray-800/50 backdrop-blur-sm p-6 sm:p-7 shadow-lg">
                   <form onSubmit={handleLogin} className="space-y-5">
                     <Label>
@@ -282,7 +185,7 @@ export default function LoginPage() {
 
                     <Button
                       type="submit"
-                      className="w-full rounded-xl bg-green-600 border-green-600 hover:bg-green-700 hover:border-green-700 active:bg-green-800 disabled:bg-green-400 disabled:border-green-400 h-12 sm:h-13 font-semibold shadow-lg hover:shadow-xl transition-all duration-200 text-base"
+                      className="w-full rounded-xl bg-green-600 border-green-600 hover:bg-green-700 hover:border-green-700 active:bg-green-800 disabled:bg-green-400 disabled:border-green-400 h-12 font-semibold shadow-lg hover:shadow-xl transition-all duration-200 text-base"
                       disabled={submitting}
                     >
                       <span className="inline-flex items-center justify-center gap-2">
@@ -304,24 +207,37 @@ export default function LoginPage() {
                   </div>
                 </div>
 
-                {/* Powered by section */}
-                <div className="mt-8 text-center">
-                  <p className="text-sm text-gray-600 dark:text-gray-400">
-                    Powered by{" "}
-                    <a
-                      href="https://resilience.ng"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="font-semibold text-green-600 dark:text-green-400 hover:text-green-700 dark:hover:text-green-300 hover:underline transition-colors"
-                    >
-                      Resilience Nigeria
-                    </a>
-                  </p>
+                {/* Powered by — logo only */}
+                <div className="mt-8 flex flex-col items-center gap-1.5">
+                  <span className="text-[10px] uppercase tracking-[0.2em] text-gray-400 dark:text-gray-500 font-medium">
+                    Powered by
+                  </span>
+                  <a
+                    href="https://resilience.ng"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="opacity-70 hover:opacity-100 transition-opacity"
+                    aria-label="Resilience Nigeria"
+                  >
+                    <Image
+                      src="/assets/img/resilience.png"
+                      alt="Resilience Nigeria"
+                      width={220}
+                      height={52}
+                      className="object-contain h-12 w-auto"
+                    />
+                  </a>
                 </div>
+
               </div>
             </main>
           </div>
         </div>
+
+        {/* Bottom caption — page level */}
+        <p className="mt-6 text-center text-xs sm:text-sm text-gray-500 dark:text-gray-400">
+          Early detection saves lives — organized screening, better outcomes.
+        </p>
       </div>
     </div>
   );

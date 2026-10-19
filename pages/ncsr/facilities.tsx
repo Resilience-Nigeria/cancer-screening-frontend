@@ -26,6 +26,8 @@ import api from "../../lib/api";
 import { lgasByState, getStateCode } from "../../lib/nigerianstates";
 import Layout from "../containers/Layout";
 
+type Tier = "feeder" | "subhub" | "hub";
+
 interface Facility {
   id: number;
   facilityName: string;
@@ -41,7 +43,8 @@ interface Facility {
   activeUsers: number;
   totalScreenings: number;
   status: "active" | "inactive";
-  facilityLevel: "feeder" | "subhub" | "hub" | null;
+  facilityLevel: Tier | null; // highest tier held (kept in sync by the backend)
+  facilityLevels: Tier[]; // every tier this facility holds
   parentFacilityId: number | null;
   stagesSupported: string[] | null;
   latitude: number | null;
@@ -74,7 +77,7 @@ interface FormData {
   phoneNumber: string;
   email: string;
   status: "active" | "inactive";
-  facilityLevel: "feeder" | "subhub" | "hub" | "";
+  facilityLevels: Tier[];
   parentFacilityId: number | "";
   stagesSupported: string[];
   latitude: string;
@@ -119,6 +122,60 @@ function generateFacilityCode(name: string, existingCodes: string[]): string {
   return `${base}${suffix.toString().padStart(2, "0")}`;
 }
 
+// ── Referral tier helpers ───────────────────────────────────────────
+const TIER_ORDER: Tier[] = ["feeder", "subhub", "hub"]; // lowest → highest
+const TIER_LABELS: Record<Tier, string> = {
+  hub: "Hub",
+  subhub: "SubHub",
+  feeder: "Feeder",
+};
+const TIER_STYLES: Record<Tier, string> = {
+  hub: "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400",
+  subhub: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400",
+  feeder: "bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300",
+};
+const TIER_OPTIONS: { value: Tier; label: string; eg: string }[] = [
+  { value: "feeder", label: "Feeder", eg: "e.g. PHC Gwagwa" },
+  { value: "subhub", label: "SubHub", eg: "e.g. Garki District Hospital" },
+  { value: "hub", label: "Hub", eg: "e.g. FMC Jabi" },
+];
+
+/** Every tier a facility holds (falls back to the legacy single tier). */
+function levelsOf(f: Facility): Tier[] {
+  if (f.facilityLevels?.length) return f.facilityLevels;
+  return f.facilityLevel ? [f.facilityLevel] : [];
+}
+
+/** Tiers ordered highest first, for display. */
+function sortedTiers(levels: Tier[]): Tier[] {
+  return [...TIER_ORDER].reverse().filter((t) => levels.includes(t));
+}
+
+function highestTier(levels: Tier[]): Tier | null {
+  return sortedTiers(levels)[0] ?? null;
+}
+
+const EMPTY_FORM: FormData = {
+  facilityName: "",
+  facilityCode: "",
+  facilityState: "",
+  facilityLga: "",
+  facilityAddress: "",
+  clinicDays: [],
+  clinicOpenTime: "",
+  clinicCloseTime: "",
+  phoneNumber: "",
+  email: "",
+  status: "active",
+  facilityLevels: [],
+  parentFacilityId: "",
+  stagesSupported: ["stage2"],
+  latitude: "",
+  longitude: "",
+  isScreeningCenter: true,
+  isTreatmentCenter: false,
+};
+
 export default function FacilitiesManagementPage() {
   const [facilities, setFacilities] = useState<Facility[]>([]);
   const [states, setStates] = useState<string[]>([]);
@@ -143,26 +200,7 @@ export default function FacilitiesManagementPage() {
   const [showModal, setShowModal] = useState(false);
   const [modalMode, setModalMode] = useState<"view" | "add" | "edit">("view");
   const [submitting, setSubmitting] = useState(false);
-  const [formData, setFormData] = useState<FormData>({
-    facilityName: "",
-    facilityCode: "",
-    facilityState: "",
-    facilityLga: "",
-    facilityAddress: "",
-    clinicDays: [],
-    clinicOpenTime: "",
-    clinicCloseTime: "",
-    phoneNumber: "",
-    email: "",
-    status: "active",
-    facilityLevel: "",
-    parentFacilityId: "",
-    stagesSupported: ["stage2"],
-    latitude: "",
-    longitude: "",
-    isScreeningCenter: true,
-    isTreatmentCenter: false,
-  });
+  const [formData, setFormData] = useState<FormData>(EMPTY_FORM);
   const [codeManuallyEdited, setCodeManuallyEdited] = useState(false);
 
   // Fetch facilities and states on mount
@@ -176,7 +214,7 @@ export default function FacilitiesManagementPage() {
       setLoading(true);
       setError(null);
       const { data } = await api.get("/facilities");
-      
+
       if (data.status) {
         setFacilities(data.facilities);
         setStats(data.stats);
@@ -221,46 +259,30 @@ export default function FacilitiesManagementPage() {
         (filterType === "both" && facility.isScreeningCenter && facility.isTreatmentCenter);
 
       const matchesLevel =
-        filterLevel === "all" || (facility.facilityLevel || "").toLowerCase() === filterLevel;
+        filterLevel === "all" || levelsOf(facility).includes(filterLevel as Tier);
 
       return matchesSearch && matchesState && matchesStatus && matchesType && matchesLevel;
     });
   }, [facilities, searchQuery, filterState, filterStatus, filterType, filterLevel]);
 
-  const tierCounts = useMemo(() => {
-    return {
-      hub: facilities.filter((f) => (f.facilityLevel || "").toLowerCase() === "hub").length,
-      subhub: facilities.filter((f) => (f.facilityLevel || "").toLowerCase() === "subhub").length,
-      feeder: facilities.filter((f) => (f.facilityLevel || "").toLowerCase() === "feeder").length,
-    };
-  }, [facilities]);
+  // A facility holding several tiers is counted under each of them,
+  // so these can add up to more than the total.
+  const tierCounts = useMemo(
+    () => ({
+      hub: facilities.filter((f) => levelsOf(f).includes("hub")).length,
+      subhub: facilities.filter((f) => levelsOf(f).includes("subhub")).length,
+      feeder: facilities.filter((f) => levelsOf(f).includes("feeder")).length,
+    }),
+    [facilities]
+  );
 
   function openModal(mode: "view" | "add" | "edit", facility?: Facility) {
     setModalMode(mode);
     setSelectedFacility(facility || null);
-    
+
     if (mode === "add") {
       setCodeManuallyEdited(false);
-      setFormData({
-        facilityName: "",
-        facilityCode: "",
-        facilityState: "",
-        facilityLga: "",
-        facilityAddress: "",
-        clinicDays: [],
-        clinicOpenTime: "",
-        clinicCloseTime: "",
-        phoneNumber: "",
-        email: "",
-        status: "active",
-        facilityLevel: "",
-        parentFacilityId: "",
-        stagesSupported: ["stage2"],
-        latitude: "",
-        longitude: "",
-        isScreeningCenter: true,
-        isTreatmentCenter: false,
-      });
+      setFormData({ ...EMPTY_FORM });
     } else if (facility) {
       setCodeManuallyEdited(true);
       setFormData({
@@ -275,7 +297,7 @@ export default function FacilitiesManagementPage() {
         phoneNumber: facility.phoneNumber,
         email: facility.email,
         status: facility.status,
-        facilityLevel: facility.facilityLevel || "",
+        facilityLevels: levelsOf(facility),
         parentFacilityId: facility.parentFacilityId || "",
         stagesSupported: facility.stagesSupported || ["stage2"],
         latitude: facility.latitude != null ? String(facility.latitude) : "",
@@ -284,7 +306,7 @@ export default function FacilitiesManagementPage() {
         isTreatmentCenter: facility.isTreatmentCenter,
       });
     }
-    
+
     setShowModal(true);
   }
 
@@ -294,9 +316,34 @@ export default function FacilitiesManagementPage() {
     setSubmitting(false);
   }
 
+  /**
+   * Toggle a referral tier on/off. Holding the Hub tier is what allows
+   * Treatment Center status and removes the need for a parent facility,
+   * so both are reset when Hub is unticked / ticked.
+   */
+  function toggleTier(tier: Tier, checked: boolean) {
+    setFormData((prev) => {
+      const facilityLevels = checked
+        ? Array.from(new Set([...prev.facilityLevels, tier]))
+        : prev.facilityLevels.filter((t) => t !== tier);
+      const hasHub = facilityLevels.includes("hub");
+      return {
+        ...prev,
+        facilityLevels,
+        isTreatmentCenter: hasHub ? prev.isTreatmentCenter : false,
+        parentFacilityId: hasHub ? "" : prev.parentFacilityId,
+      };
+    });
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    
+
+    if (formData.facilityLevels.length === 0) {
+      alert("Please select at least one referral tier");
+      return;
+    }
+
     // Validate at least one type is selected
     if (!formData.isScreeningCenter && !formData.isTreatmentCenter) {
       alert("Please select at least one facility type");
@@ -340,6 +387,12 @@ export default function FacilitiesManagementPage() {
       alert(err?.response?.data?.message || "Failed to delete facility");
     }
   }
+
+  // Derived form state for the tier-dependent fields
+  const hasHub = formData.facilityLevels.includes("hub");
+  const topTier = highestTier(formData.facilityLevels);
+  const needsParent = topTier !== null && topTier !== "hub";
+  const parentTier: Tier = topTier === "feeder" ? "subhub" : "hub";
 
   if (loading) {
     return (
@@ -555,7 +608,7 @@ export default function FacilitiesManagementPage() {
 
         {/* Expanded Filters */}
         {showFilters && (
-          <div className="mt-6 pt-6 border-t border-gray-200 dark:border-gray-700 grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="mt-6 pt-6 border-t border-gray-200 dark:border-gray-700 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             <div>
               <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
                 State
@@ -655,21 +708,16 @@ export default function FacilitiesManagementPage() {
               </span>
             </div>
 
-            {/* Referral Tier + Facility Types */}
+            {/* Referral Tiers + Facility Types */}
             <div className="flex flex-wrap gap-2 mb-4">
-              {facility.facilityLevel && (
+              {sortedTiers(levelsOf(facility)).map((t) => (
                 <span
-                  className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold ${
-                    facility.facilityLevel === "hub"
-                      ? "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400"
-                      : facility.facilityLevel === "subhub"
-                      ? "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400"
-                      : "bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300"
-                  }`}
+                  key={t}
+                  className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold ${TIER_STYLES[t]}`}
                 >
-                  {facility.facilityLevel === "hub" ? "Hub" : facility.facilityLevel === "subhub" ? "SubHub" : "Feeder"}
+                  {TIER_LABELS[t]}
                 </span>
-              )}
+              ))}
               {facility.isScreeningCenter && (
                 <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-400">
                   <Stethoscope className="w-3 h-3" />
@@ -776,6 +824,7 @@ export default function FacilitiesManagementPage() {
               setFilterState("all");
               setFilterStatus("all");
               setFilterType("all");
+              setFilterLevel("all");
             }}
             className="px-6 py-2.5 rounded-xl bg-green-600 text-white hover:bg-green-700 transition-colors font-medium"
           >
@@ -818,28 +867,27 @@ export default function FacilitiesManagementPage() {
                     </p>
                   </div>
 
-                  {/* Referral Tier */}
+                  {/* Referral Tiers */}
                   <div>
                     <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
-                      Referral Tier
+                      Referral Tier(s)
                     </label>
-                    <span
-                      className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-semibold ${
-                        selectedFacility.facilityLevel === "hub"
-                          ? "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400"
-                          : selectedFacility.facilityLevel === "subhub"
-                          ? "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400"
-                          : "bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300"
-                      }`}
-                    >
-                      {selectedFacility.facilityLevel === "hub"
-                        ? "Hub"
-                        : selectedFacility.facilityLevel === "subhub"
-                        ? "SubHub"
-                        : selectedFacility.facilityLevel === "feeder"
-                        ? "Feeder"
-                        : "Not set"}
-                    </span>
+                    <div className="flex flex-wrap gap-2">
+                      {levelsOf(selectedFacility).length > 0 ? (
+                        sortedTiers(levelsOf(selectedFacility)).map((t) => (
+                          <span
+                            key={t}
+                            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-semibold ${TIER_STYLES[t]}`}
+                          >
+                            {TIER_LABELS[t]}
+                          </span>
+                        ))
+                      ) : (
+                        <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-semibold bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300">
+                          Not set
+                        </span>
+                      )}
+                    </div>
                   </div>
 
                   {/* Facility Types */}
@@ -1169,58 +1217,70 @@ export default function FacilitiesManagementPage() {
                       />
                     </div>
 
-                    {/* Referral Tier */}
+                    {/* Referral Tiers (multi-select) */}
                     <div className="md:col-span-2">
                       <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
-                        Referral Tier *
+                        Referral Tier(s) *{" "}
+                        <span className="text-xs font-normal text-gray-500">(Select all that apply)</span>
                       </label>
-                      <select
-                        value={formData.facilityLevel}
-                        onChange={(e) => {
-                          const level = e.target.value as FormData["facilityLevel"];
-                          setFormData({
-                            ...formData,
-                            facilityLevel: level,
-                            // A facility that's no longer a Hub can't stay a Treatment Center.
-                            isTreatmentCenter: level === "hub" ? formData.isTreatmentCenter : false,
-                          });
-                        }}
-                        className="w-full px-4 py-2.5 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                        required
-                      >
-                        <option value="">Select tier</option>
-                        <option value="feeder">Feeder (e.g. PHC Gwagwa)</option>
-                        <option value="subhub">SubHub (e.g. Garki District Hospital)</option>
-                        <option value="hub">Hub (e.g. FMC Jabi)</option>
-                      </select>
+                      <div className="flex flex-wrap gap-3">
+                        {TIER_OPTIONS.map((t) => (
+                          <label
+                            key={t.value}
+                            className="flex items-center gap-2 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-xl cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/50 text-sm text-gray-900 dark:text-white"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={formData.facilityLevels.includes(t.value)}
+                              onChange={(e) => toggleTier(t.value, e.target.checked)}
+                              className="w-4 h-4 text-green-600 border-gray-300 rounded focus:ring-green-500"
+                            />
+                            {t.label} <span className="text-xs text-gray-400">({t.eg})</span>
+                          </label>
+                        ))}
+                      </div>
                       <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
-                        Referrals escalate up this hierarchy: Feeder → SubHub → Hub. Any tier can be a screening center; only a Hub can also be a Treatment Center.
+                        Referrals escalate up this hierarchy: Feeder → SubHub → Hub. A facility can hold several tiers. Any tier can be a screening center; only a facility with the Hub tier can also be a Treatment Center.
                       </p>
+                      {formData.facilityLevels.length === 0 && (
+                        <p className="mt-2 text-sm text-red-600 dark:text-red-400">
+                          Please select at least one referral tier
+                        </p>
+                      )}
                     </div>
 
-                    {/* Parent Facility */}
-                    {formData.facilityLevel && formData.facilityLevel !== "hub" && (
+                    {/* Parent Facility — driven by the highest tier held */}
+                    {needsParent && (
                       <div className="md:col-span-2">
                         <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
-                          Parent Facility {formData.facilityLevel === "feeder" ? "(SubHub)" : "(Hub)"} *
+                          Parent Facility ({TIER_LABELS[parentTier]}) *
                         </label>
                         <select
                           value={formData.parentFacilityId}
-                          onChange={(e) => setFormData({ ...formData, parentFacilityId: e.target.value ? Number(e.target.value) : "" })}
+                          onChange={(e) =>
+                            setFormData({
+                              ...formData,
+                              parentFacilityId: e.target.value ? Number(e.target.value) : "",
+                            })
+                          }
                           className="w-full px-4 py-2.5 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-green-500 focus:border-transparent"
                           required
                         >
                           <option value="">Select parent facility</option>
                           {facilities
-                            .filter((f) => f.facilityLevel === (formData.facilityLevel === "feeder" ? "subhub" : "hub"))
+                            .filter(
+                              (f) =>
+                                levelsOf(f).includes(parentTier) &&
+                                f.id !== selectedFacility?.id
+                            )
                             .map((f) => (
-                              <option key={f.id} value={f.id}>{f.facilityName}</option>
+                              <option key={f.id} value={f.id}>
+                                {f.facilityName}
+                              </option>
                             ))}
                         </select>
                         <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
-                          {formData.facilityLevel === "feeder"
-                            ? "Which SubHub does this Feeder refer up to?"
-                            : "Which Hub does this SubHub refer up to?"}
+                          Which {TIER_LABELS[parentTier]} does this facility refer up to?
                         </p>
                       </div>
                     )}
@@ -1238,7 +1298,7 @@ export default function FacilitiesManagementPage() {
                         ].map((s) => (
                           <label
                             key={s.value}
-                            className="flex items-center gap-2 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-xl cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/50 text-sm"
+                            className="flex items-center gap-2 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-xl cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/50 text-sm text-gray-900 dark:text-white"
                           >
                             <input
                               type="checkbox"
@@ -1283,7 +1343,7 @@ export default function FacilitiesManagementPage() {
 
                         <label
                           className={`flex items-center gap-3 p-4 border border-gray-300 dark:border-gray-600 rounded-xl transition-colors ${
-                            formData.facilityLevel === "hub"
+                            hasHub
                               ? "cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/50"
                               : "cursor-not-allowed opacity-50"
                           }`}
@@ -1291,7 +1351,7 @@ export default function FacilitiesManagementPage() {
                           <input
                             type="checkbox"
                             checked={formData.isTreatmentCenter}
-                            disabled={formData.facilityLevel !== "hub"}
+                            disabled={!hasHub}
                             onChange={(e) => setFormData({ ...formData, isTreatmentCenter: e.target.checked })}
                             className="w-5 h-5 text-green-600 border-gray-300 rounded focus:ring-green-500 focus:ring-2"
                           />
@@ -1302,9 +1362,9 @@ export default function FacilitiesManagementPage() {
                             </span>
                           </div>
                         </label>
-                        {formData.facilityLevel && formData.facilityLevel !== "hub" && (
+                        {formData.facilityLevels.length > 0 && !hasHub && (
                           <p className="text-xs text-gray-500 dark:text-gray-400">
-                            Only Hub facilities can be Treatment Centers — select "Hub" above to enable this.
+                            Only facilities with the Hub tier can be Treatment Centers — tick "Hub" above to enable this.
                           </p>
                         )}
                       </div>
@@ -1342,7 +1402,11 @@ export default function FacilitiesManagementPage() {
                     </button>
                     <button
                       type="submit"
-                      disabled={submitting || (!formData.isScreeningCenter && !formData.isTreatmentCenter)}
+                      disabled={
+                        submitting ||
+                        formData.facilityLevels.length === 0 ||
+                        (!formData.isScreeningCenter && !formData.isTreatmentCenter)
+                      }
                       className="flex items-center gap-2 px-6 py-2.5 rounded-xl bg-green-600 text-white hover:bg-green-700 transition-colors font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
