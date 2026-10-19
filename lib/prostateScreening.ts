@@ -25,16 +25,20 @@ export const PSAD_THRESHOLD = 0.15; // ng/mL per cc
 export const PSAV_THRESHOLD = 0.75; // ng/mL per year
 export const PSAV_MIN_INTERVAL_DAYS = 365; // velocity only meaningful over 12–24 months
 
-/** Warning symptoms — a symptomatic man exits routine screening. */
+/**
+ * Warning symptoms — a symptomatic man exits routine screening.
+ * "Urge incontinence" and "inability to hold urine" are the same symptom and are one field.
+ */
 export const PROSTATE_SYMPTOM_FIELDS = [
   "delayStartingUrination", "poorUrinaryStream", "frequentDayUrination", "nocturia",
   "incompleteEmptying", "bloodInUrine", "inabilityToPassUrine", "urgeIncontinence",
-  "inabilityToHoldUrine", "terminalDribbling", "bonePainHipBack", "unexplainedWeightLoss",
+  "terminalDribbling",
 ] as const;
 
 /** Conditions that can transiently raise PSA and should defer testing. */
 export const PROSTATE_DEFERMENT_FIELDS = [
-  "recentDre", "recentEjaculation", "recentUrinaryInfection", "recentVigorousExercise",
+  "recentDre", "recentEjaculation", "recentUrinaryInfection", "recentCatheterisation",
+  "recentVigorousExercise",
 ] as const;
 
 export function computeProstateSymptomatic(v: Record<string, any>): boolean {
@@ -74,8 +78,9 @@ export function ageOn(dob: any, on: Date): number | null {
 }
 
 // ---------------------------------------------------------------------------
-// International Prostate Symptom Score (I-PSS)
-// 7 questions, each 0–5 (total 0–35), plus a single 0–6 quality-of-life question.
+// International Prostate Symptom Score (I-PSS) — merged into the warning symptoms.
+// Each warning symptom that has an I-PSS counterpart asks for its 0–5 score when answered "Yes".
+// A "No" counts as 0. The total (0–35) is calculated once all seven questions are resolved.
 // 0–7 mildly symptomatic · 8–19 moderately symptomatic · 20–35 severely symptomatic.
 // ---------------------------------------------------------------------------
 export const IPSS_ITEMS = [
@@ -88,6 +93,21 @@ export const IPSS_ITEMS = [
   "ipssNocturia",
 ] as const;
 
+type IpssItem = (typeof IPSS_ITEMS)[number];
+
+/** Warning symptom → the I-PSS question(s) it carries. */
+export const IPSS_SYMPTOM_LINKS: Record<string, IpssItem[]> = {
+  delayStartingUrination: ["ipssStraining"],
+  poorUrinaryStream: ["ipssWeakStream", "ipssIntermittency"],
+  frequentDayUrination: ["ipssFrequency"],
+  nocturia: ["ipssNocturia"],
+  incompleteEmptying: ["ipssIncompleteEmptying"],
+  urgeIncontinence: ["ipssUrgency"],
+};
+
+const symptomForItem = (item: IpssItem): string | undefined =>
+  Object.keys(IPSS_SYMPTOM_LINKS).find((s) => IPSS_SYMPTOM_LINKS[s].includes(item));
+
 export type IpssSeverity = "Mild" | "Moderate" | "Severe" | "";
 
 export function ipssSeverityFor(score: number | null): IpssSeverity {
@@ -98,18 +118,17 @@ export function ipssSeverityFor(score: number | null): IpssSeverity {
 }
 
 /**
- * Total is the sum of all seven answers, calculated only once every question is answered.
- * If none of the seven are answered, an existing manually-entered total (older records) is left alone.
+ * "No" on a linked symptom scores 0; "Yes" uses the score entered; an unanswered symptom
+ * (or a "Yes" with no score yet) leaves the total blank until it is completed.
  */
 export function computeIpss(v: Record<string, any>): { score: string; severity: IpssSeverity } {
-  const answers = IPSS_ITEMS.map((k) => num(v[k]));
-  const answered = answers.filter((a) => a !== null).length;
-
-  let score: number | null;
-  if (answered === 0) score = num(v.ipssScore);
-  else if (answered === IPSS_ITEMS.length) score = (answers as number[]).reduce((sum, a) => sum + a, 0);
-  else score = null;
-
+  const answers = IPSS_ITEMS.map((item) => {
+    const sv = v[symptomForItem(item) as string];
+    if (sv === "no") return 0;
+    if (sv === "yes") return num(v[item]);
+    return null;
+  });
+  const score = answers.every((a) => a !== null) ? (answers as number[]).reduce((s, a) => s + a, 0) : null;
   return { score: score === null ? "" : String(score), severity: ipssSeverityFor(score) };
 }
 
@@ -375,6 +394,9 @@ const proceeded = (v: Record<string, any>) =>
   asymptomatic(v) && v.sharedDecision === "proceed";
 const eligibleForTest = (v: Record<string, any>) => proceeded(v) && v.psaEligibility === "Eligible";
 const referred = (v: Record<string, any>) => v.treatmentReferral === "referred" && v.screeningPathway !== "Symptomatic";
+const symptomYes = (name: string) => (v: Record<string, any>) => v[name] === "yes";
+const anyIpssSymptom = (v: Record<string, any>) =>
+  Object.keys(IPSS_SYMPTOM_LINKS).some((s) => v[s] === "yes");
 
 const ipssFreqOptions = [
   { value: "", label: "Select" },
@@ -416,22 +438,74 @@ export const PROSTATE_GROUPS: FieldGroup[] = [
     ],
   },
   {
-    title: "Warning Symptoms (Red-Flag Screen)",
+    title: "Warning Symptoms & I-PSS (Red-Flag Screen)",
     description:
-      "A symptomatic man is not routed through routine screening — he exits to the clinical diagnostic / specialist pathway.",
+      "A symptomatic man is not routed through routine screening — he exits to the clinical diagnostic / specialist pathway. For each urinary symptom answered Yes, score it on the I-PSS scale (0–5) over the past month. A No counts as 0.",
     fields: [
-      { name: "delayStartingUrination", label: "Difficulty Initiating Urination", type: "select", options: yesNo, colSpan: 1 },
-      { name: "poorUrinaryStream", label: "Weak / Interrupted Urinary Stream", type: "select", options: yesNo, colSpan: 1 },
-      { name: "frequentDayUrination", label: "Increased Urinary Frequency (Day)", type: "select", options: yesNo, colSpan: 1 },
-      { name: "nocturia", label: "Frequent Urination at Night", type: "select", options: yesNo, colSpan: 1 },
-      { name: "incompleteEmptying", label: "Feeling of Incomplete Bladder Emptying", type: "select", options: yesNo, colSpan: 1 },
+      // --- Symptoms that carry an I-PSS score ---
+      { name: "delayStartingUrination", label: "Difficulty Initiating Urination", type: "select", options: yesNo, colSpan: 2 },
+      {
+        name: "ipssStraining", label: "I-PSS: Straining", type: "select", options: ipssFreqOptions, colSpan: 2,
+        showIf: symptomYes("delayStartingUrination"),
+        help: "Over the past month, how often have you had to push or strain to begin urination?",
+      },
+      { name: "poorUrinaryStream", label: "Weak / Interrupted Urinary Stream", type: "select", options: yesNo, colSpan: 2 },
+      {
+        name: "ipssWeakStream", label: "I-PSS: Weak Stream", type: "select", options: ipssFreqOptions, colSpan: 2,
+        showIf: symptomYes("poorUrinaryStream"),
+        help: "Over the past month, how often have you had a weak urinary stream?",
+      },
+      {
+        name: "ipssIntermittency", label: "I-PSS: Intermittency", type: "select", options: ipssFreqOptions, colSpan: 2,
+        showIf: symptomYes("poorUrinaryStream"),
+        help: "Over the past month, how often have you found you stopped and started again several times when you urinated?",
+      },
+      { name: "frequentDayUrination", label: "Increased Urinary Frequency (Day)", type: "select", options: yesNo, colSpan: 2 },
+      {
+        name: "ipssFrequency", label: "I-PSS: Frequency", type: "select", options: ipssFreqOptions, colSpan: 2,
+        showIf: symptomYes("frequentDayUrination"),
+        help: "Over the past month, how often have you had to urinate again less than two hours after you finished urinating?",
+      },
+      { name: "nocturia", label: "Frequent Urination at Night", type: "select", options: yesNo, colSpan: 2 },
+      {
+        name: "ipssNocturia", label: "I-PSS: Nocturia", type: "select", options: ipssNocturiaOptions, colSpan: 2,
+        showIf: symptomYes("nocturia"),
+        help: "Over the past month, how many times did you most typically get up each night to urinate, from the time you went to bed until you got up in the morning?",
+      },
+      { name: "incompleteEmptying", label: "Feeling of Incomplete Bladder Emptying", type: "select", options: yesNo, colSpan: 2 },
+      {
+        name: "ipssIncompleteEmptying", label: "I-PSS: Incomplete Emptying", type: "select", options: ipssFreqOptions, colSpan: 2,
+        showIf: symptomYes("incompleteEmptying"),
+        help: "Over the past month, how often have you had a sensation of not emptying your bladder completely after you finish urinating?",
+      },
+      { name: "urgeIncontinence", label: "Urge Incontinence / Inability to Hold Urine", type: "select", options: yesNo, colSpan: 2 },
+      {
+        name: "ipssUrgency", label: "I-PSS: Urgency", type: "select", options: ipssFreqOptions, colSpan: 2,
+        showIf: symptomYes("urgeIncontinence"),
+        help: "Over the past month, how often have you found it difficult to postpone urination?",
+      },
+
+      // --- Other red flags (no I-PSS counterpart) ---
       { name: "bloodInUrine", label: "Blood in Urine", type: "select", options: yesNo, colSpan: 1 },
       { name: "inabilityToPassUrine", label: "Inability to Pass Urine", type: "select", options: yesNo, colSpan: 1 },
-      { name: "urgeIncontinence", label: "Urge Incontinence", type: "select", options: yesNo, colSpan: 1 },
-      { name: "inabilityToHoldUrine", label: "Inability to Hold Urine", type: "select", options: yesNo, colSpan: 1 },
       { name: "terminalDribbling", label: "Terminal Dribbling", type: "select", options: yesNo, colSpan: 1 },
-      { name: "bonePainHipBack", label: "Persistent Bone, Hip or Back Pain", type: "select", options: yesNo, colSpan: 1 },
-      { name: "unexplainedWeightLoss", label: "Unexplained Weight Loss", type: "select", options: yesNo, colSpan: 1 },
+
+      // --- I-PSS summary ---
+      {
+        name: "ipssScore", label: "Total I-PSS Score (0–35)", type: "text", colSpan: 1, readOnly: true,
+        showIf: anyIpssSymptom,
+        help: "Auto-calculated once every urinary symptom above is answered and each Yes is scored.",
+      },
+      {
+        name: "ipssSeverity", label: "Symptom Severity", type: "text", colSpan: 1, readOnly: true,
+        showIf: anyIpssSymptom,
+        help: "0–7 mild · 8–19 moderate · 20–35 severe.",
+      },
+      {
+        name: "ipssQualityOfLife", label: "Quality of Life Due to Urinary Symptoms", type: "select", options: ipssQolOptions, colSpan: 2,
+        showIf: anyIpssSymptom,
+        help: "If you were to spend the rest of your life with your urinary condition just the way it is now, how would you feel about that?",
+      },
       {
         name: "screeningPathway",
         label: "Screening Pathway",
@@ -466,7 +540,8 @@ export const PROSTATE_GROUPS: FieldGroup[] = [
     fields: [
       { name: "recentDre", label: "DRE / Prostate Massage in Last 48 Hours", type: "select", options: yesNo, colSpan: 1, showIf: proceeded },
       { name: "recentEjaculation", label: "Ejaculation in Last 48 Hours", type: "select", options: yesNo, colSpan: 1, showIf: proceeded },
-      { name: "recentUrinaryInfection", label: "Active Urinary Infection / Recent Catheterisation", type: "select", options: yesNo, colSpan: 1, showIf: proceeded },
+      { name: "recentUrinaryInfection", label: "Active Urinary Tract Infection", type: "select", options: yesNo, colSpan: 1, showIf: proceeded },
+      { name: "recentCatheterisation", label: "Recent Catheterisation", type: "select", options: yesNo, colSpan: 1, showIf: proceeded },
       { name: "recentVigorousExercise", label: "Vigorous Exercise / Cycling in Last 48 Hours", type: "select", options: yesNo, colSpan: 1, showIf: proceeded },
       { name: "psaEligibility", label: "PSA Eligibility", type: "text", colSpan: 1, readOnly: true, showIf: proceeded, help: "Auto-determined." },
       {
@@ -521,23 +596,6 @@ export const PROSTATE_GROUPS: FieldGroup[] = [
       },
       { name: "previousPsaLevel", label: "Previous PSA (ng/mL, if any)", type: "number", step: "0.01", min: 0, colSpan: 1, showIf: eligibleForTest, help: "Used for PSA velocity (needs ≥12 months between tests)." },
       { name: "previousPsaDate", label: "Previous PSA Date", type: "date", colSpan: 1, showIf: eligibleForTest },
-    ],
-  },
-  {
-    title: "International Prostate Symptom Score (I-PSS)",
-    description:
-      "Seven questions about urinary symptoms over the past month, each scored 0–5. The total (0–35) is calculated once all seven are answered.",
-    fields: [
-      { name: "ipssIncompleteEmptying", label: "1. Incomplete Emptying", type: "select", options: ipssFreqOptions, colSpan: 2, help: "Over the past month, how often have you had a sensation of not emptying your bladder completely after you finish urinating?" },
-      { name: "ipssFrequency", label: "2. Frequency", type: "select", options: ipssFreqOptions, colSpan: 2, help: "Over the past month, how often have you had to urinate again less than two hours after you finished urinating?" },
-      { name: "ipssIntermittency", label: "3. Intermittency", type: "select", options: ipssFreqOptions, colSpan: 2, help: "Over the past month, how often have you found you stopped and started again several times when you urinated?" },
-      { name: "ipssUrgency", label: "4. Urgency", type: "select", options: ipssFreqOptions, colSpan: 2, help: "Over the past month, how often have you found it difficult to postpone urination?" },
-      { name: "ipssWeakStream", label: "5. Weak Stream", type: "select", options: ipssFreqOptions, colSpan: 2, help: "Over the past month, how often have you had a weak urinary stream?" },
-      { name: "ipssStraining", label: "6. Straining", type: "select", options: ipssFreqOptions, colSpan: 2, help: "Over the past month, how often have you had to push or strain to begin urination?" },
-      { name: "ipssNocturia", label: "7. Nocturia", type: "select", options: ipssNocturiaOptions, colSpan: 2, help: "Over the past month, how many times did you most typically get up each night to urinate, from the time you went to bed until you got up in the morning?" },
-      { name: "ipssScore", label: "Total I-PSS Score (0–35)", type: "text", colSpan: 1, readOnly: true, help: "Auto-calculated once all seven questions are answered." },
-      { name: "ipssSeverity", label: "Symptom Severity", type: "text", colSpan: 1, readOnly: true, help: "0–7 mild · 8–19 moderate · 20–35 severe." },
-      { name: "ipssQualityOfLife", label: "Quality of Life Due to Urinary Symptoms", type: "select", options: ipssQolOptions, colSpan: 2, help: "If you were to spend the rest of your life with your urinary condition just the way it is now, how would you feel about that?" },
     ],
   },
   {

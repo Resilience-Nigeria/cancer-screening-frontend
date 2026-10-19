@@ -20,12 +20,17 @@ import toast from "react-hot-toast";
 import Layout from "../containers/Layout";
 import PageTitle from "../components/Typography/PageTitle";
 import api from "../../lib/api";
+import { friendlyError } from "../../lib/apiError";
 import { nigerianStates, lgasByState, getStateCode } from "../../lib/nigerianstates";
 import {
   CancerType,
-  cancerTypesForGender,
+  cancerTypesForClient,
+  cancerAgeNotice,
   cancerLabel,
-  getRiskGroups,
+  getRiskGroupsFor,
+  CANCER_TYPE_SELECT_OPTIONS,
+  hydrateRiskProfile,
+  buildRiskPayload,
   SCREENING_GROUPS,
   FieldGroup,
   prostatePatch,
@@ -35,6 +40,7 @@ import OtpVerificationStep from "../components/OtpVerificationService";
 import VisitDetailsFields, { initialVisitMeta, ageFromDob, VisitMeta } from "../components/VisitDetailsFields";
 import { CERVICAL_RISK_GROUPS, cervicalRiskPatch } from "../../lib/cervicalRisk";
 import DateOfBirthField from "../components/DateOfBirthField";
+
 // ---------------------------------------------------------------------------
 // Medical history confirm-checklist — Stage 2, Section C
 // ---------------------------------------------------------------------------
@@ -71,17 +77,62 @@ const NEXT_OF_KIN_RELATIONSHIP_OPTIONS = [
   "Other",
 ];
 
+const RADIATION_TYPE_OPTIONS = [
+  { value: "", label: "Select" },
+  { value: "xray", label: "X-ray" },
+  { value: "ct_scan", label: "CT scan" },
+  { value: "other", label: "Other" },
+];
+
 const MEDICAL_HISTORY_GROUP: FieldGroup = {
   title: "Medical History — Confirm",
   description:
-    "Review and confirm with the client. Infection status, family history, and comorbidities (including diabetes/hypertension) are covered above — this section covers the rest.",
+    "Review and confirm with the client. Infection status, family history, and comorbidities are covered above — this section covers the rest.",
   fields: [
     { name: "previousCancer", label: "Previous cancer diagnosis", type: "select", options: yesNoUnknown, colSpan: 1 },
-    { name: "previousCancerDetails", label: "Details (if yes)", type: "text", colSpan: 1, showIf: (v) => v.previousCancer === "yes" },
-    { name: "previousSurgeries", label: "Previous surgeries", type: "select", options: yesNoUnknown, colSpan: 1 },
-    { name: "previousSurgeriesDetails", label: "Details (if yes)", type: "text", colSpan: 1, showIf: (v) => v.previousSurgeries === "yes" },
+    {
+      name: "previousCancerDetails",
+      label: "Type of cancer",
+      type: "select",
+      options: CANCER_TYPE_SELECT_OPTIONS,
+      colSpan: 1,
+      showIf: (v) => v.previousCancer === "yes",
+    },
+    {
+      name: "ionizingRadiationExposure",
+      label: "Previous exposure to ionizing radiation",
+      type: "select",
+      options: [
+        { value: "yes", label: "Yes" },
+        { value: "no", label: "No" },
+      ],
+      colSpan: 1,
+    },
+    {
+      name: "ionizingRadiationType",
+      label: "Type of exposure",
+      type: "select",
+      options: RADIATION_TYPE_OPTIONS,
+      colSpan: 1,
+      showIf: (v) => v.ionizingRadiationExposure === "yes",
+    },
+    {
+      name: "ionizingRadiationOther",
+      label: "Other exposure (specify)",
+      type: "text",
+      colSpan: 2,
+      placeholder: "Describe the exposure",
+      showIf: (v) => v.ionizingRadiationExposure === "yes" && v.ionizingRadiationType === "other",
+    },
     { name: "previousScreening", label: "Previous cancer screening", type: "select", options: yesNoUnknown, colSpan: 1 },
-    { name: "previousScreeningDetails", label: "Details (if yes)", type: "text", colSpan: 1, showIf: (v) => v.previousScreening === "yes" },
+    {
+      name: "previousScreeningDetails",
+      label: "Type of cancer screened",
+      type: "select",
+      options: CANCER_TYPE_SELECT_OPTIONS,
+      colSpan: 1,
+      showIf: (v) => v.previousScreening === "yes",
+    },
   ],
 };
 
@@ -96,6 +147,8 @@ const EXAM_GROUPS: FieldGroup[] = [
       { name: "weightKg", label: "Weight (kg)", type: "number", step: "0.1", colSpan: 1 },
       { name: "bmi", label: "BMI", type: "number", step: "0.1", colSpan: 1, readOnly: true, help: "Auto-calculated" },
       { name: "temperatureCelsius", label: "Temperature (°C)", type: "number", step: "0.1", colSpan: 1 },
+      { name: "bloodPressureSystolic", label: "Blood Pressure — Systolic (mmHg)", type: "number", min: 50, max: 300, colSpan: 1, placeholder: "e.g. 120" },
+      { name: "bloodPressureDiastolic", label: "Blood Pressure — Diastolic (mmHg)", type: "number", min: 30, max: 200, colSpan: 1, placeholder: "e.g. 80" },
     ],
   },
 ];
@@ -110,9 +163,10 @@ const OUTCOME_OPTIONS: { value: string; label: string; description: string; tone
   { value: "urgent_referral", label: "Urgent Referral", description: "Severe symptoms. Same-day referral.", tone: "border-red-200 bg-red-50 text-red-800" },
 ];
 
+// Cancer type(s) are chosen BEFORE the risk assessment so only the relevant risk factors are asked.
 const STEPS = [
-  "lookup", "registration", "otpConsent", "riskVerify", "physicalExam",
-  "cancerTypeSelect", "screening", "outcome", "done",
+  "lookup", "registration", "otpConsent", "cancerTypeSelect", "riskVerify",
+  "physicalExam", "screening", "outcome", "done",
 ] as const;
 type StepKey = typeof STEPS[number];
 
@@ -120,40 +174,17 @@ const STEP_LABELS: Record<StepKey, string> = {
   lookup: "A. Find Client",
   registration: "B. Registration",
   otpConsent: "C. Consent (OTP)",
-  riskVerify: "D. Risk Assessment",
-  cancerTypeSelect: "F. Cancer Type(s)",
+  cancerTypeSelect: "D. Cancer Type(s)",
+  riskVerify: "E. Risk Assessment",
+  physicalExam: "F. Physical Exam",
   screening: "G+H. Symptoms & Tests",
-  physicalExam: "E. Physical Exam",
   outcome: "I. Outcome",
   done: "Complete",
 };
 
-// Helper function to collect missing fields - NOT making anything required
-function collectMissing(group: FieldGroup[], values: Record<string, any>) {
-  const missing: Array<{ name: string; label: string }> = [];
-  
-  group.forEach((g) => {
-    g.fields.forEach((field) => {
-      // Skip fields with showIf condition that aren't met
-      if (field.showIf && !field.showIf(values)) return;
-      
-      // Only check if field explicitly has required: true
-      if (field.required) {
-        const value = values[field.name];
-        if (value === undefined || value === null || value === "") {
-          missing.push({ name: field.name, label: field.label });
-        }
-      }
-    });
-  });
-  
-  return missing;
-}
-
-// Define endpoints
 const ENDPOINTS = {
-  screening: (visitId: number, cancerType: string) => 
-    `/visits/${visitId}/${cancerType}-screening`
+  screening: (visitId: number, cancerType: string) =>
+    `/visits/${visitId}/${cancerType}-screening`,
 };
 
 function todayStr() {
@@ -165,7 +196,7 @@ export default function ClinicalScreeningPage() {
   const [stepIndex, setStepIndex] = useState(0);
   const [busy, setBusy] = useState(false);
 
-const [visitMeta, setVisitMeta] = useState<VisitMeta>(initialVisitMeta());
+  const [visitMeta, setVisitMeta] = useState<VisitMeta>(initialVisitMeta());
   // Lookup
   const [lookupValue, setLookupValue] = useState("");
 
@@ -209,33 +240,42 @@ const [visitMeta, setVisitMeta] = useState<VisitMeta>(initialVisitMeta());
   const [incompleteVisits, setIncompleteVisits] = useState<any[]>([]);
   // True once the client record already existed before this session (found by lookup or matched as a duplicate).
   const [returningClient, setReturningClient] = useState(false);
-  
-  // State for facilities and screening errors
+
+  // Facility lists and screening errors
   const [facilities, setFacilities] = useState<any[]>([]);
   const [screeningErrors, setScreeningErrors] = useState<Record<string, Record<string, boolean>>>({});
   const [treatmentReferral, setTreatmentReferral] = useState<string>("not_referred");
 
   const [ablationFacilities, setAblationFacilities] = useState<any[]>([]);
-const [leepFacilities, setLeepFacilities] = useState<any[]>([]);
-const [colposcopyFacilities, setColposcopyFacilities] = useState<any[]>([]);
+  const [leepFacilities, setLeepFacilities] = useState<any[]>([]);
+  const [colposcopyFacilities, setColposcopyFacilities] = useState<any[]>([]);
+  const [ihcFacilities, setIhcFacilities] = useState<any[]>([]);
+  const [hpvFacilities, setHpvFacilities] = useState<any[]>([]);
+
+  // Referral (suspicious / urgent) — facility is chosen manually, never auto-assigned
+  const [referralFacilities, setReferralFacilities] = useState<any[]>([]);
+  const [referralFacilityId, setReferralFacilityId] = useState("");
+  const needsReferral =
+    outcome.overallOutcome === "suspicious" || outcome.overallOutcome === "urgent_referral";
 
   const currentKey = STEPS[stepIndex];
 
+  const clientAge = useMemo(() => ageFromDob(biodata.dateOfBirth), [biodata.dateOfBirth]);
+
+  // Only the cancer types this client is eligible for (by sex and age bracket).
   const availableCancerTypes = useMemo(
-    () => cancerTypesForGender(biodata.gender),
-    [biodata.gender]
+    () => cancerTypesForClient(biodata.gender, clientAge),
+    [biodata.gender, clientAge]
   );
+  const ageNotice = cancerAgeNotice(biodata.gender, clientAge);
 
-  // const riskGroupsForVerify = useMemo(() => {
-  //   const primaryType = cancerTypes[0] || availableCancerTypes[0]?.value || "breast";
-  //   return getRiskGroups(primaryType as CancerType, biodata.gender);
-  // }, [cancerTypes, availableCancerTypes, biodata.gender]);
-
+  // Only the risk factors that apply to the selected cancer type(s).
   const riskGroupsForVerify = useMemo(() => {
-  const primaryType = cancerTypes[0] || availableCancerTypes[0]?.value || "breast";
-  const base = getRiskGroups(primaryType as CancerType, biodata.gender);
-  return biodata.gender === "female" ? [...base, ...CERVICAL_RISK_GROUPS] : base;
-}, [cancerTypes, availableCancerTypes, biodata.gender]);
+    const base = getRiskGroupsFor(cancerTypes, biodata.gender);
+    return cancerTypes.includes("cervical") && biodata.gender !== "male"
+      ? [...base, ...CERVICAL_RISK_GROUPS]
+      : base;
+  }, [cancerTypes, biodata.gender]);
 
   // Prefill physical exam weight/height from the risk profile
   useEffect(() => {
@@ -255,39 +295,15 @@ const [colposcopyFacilities, setColposcopyFacilities] = useState<any[]>([]);
     setExamination((prev) => (prev.bmi === bmi ? prev : { ...prev, bmi }));
   }, [examination.weightKg, examination.heightCm]);
 
-
-useEffect(() => {
-  const patch = cervicalRiskPatch(risk);
-  if (!patch) return;
-  setRisk((prev) => ({ ...prev, ...patch }));
-}, [risk]);
-
-  // Cervical screening is female-only. `availableCancerTypes` already keeps
-  // it out of the selectable buttons on the "cancerTypeSelect" step, but if
-  // it was picked before gender was known, or hydrated from a resumed visit,
-  // it can still be sitting in `cancerTypes` — this drops it (and its
-  // screening data) the moment the client's gender is male, so cervical
-  // questions never render.
   useEffect(() => {
-    if (biodata.gender !== "male") return;
-    if (!cancerTypes.includes("cervical")) return;
-    setCancerTypes((prev) => prev.filter((ct) => ct !== "cervical"));
-    setScreenings((prev) => {
-      if (!("cervical" in prev)) return prev;
-      const { cervical, ...rest } = prev;
-      return rest;
-    });
-    setScreeningErrors((prev) => {
-      if (!("cervical" in prev)) return prev;
-      const { cervical, ...rest } = prev;
-      return rest;
-    });
-  }, [biodata.gender, cancerTypes]);
+    const patch = cervicalRiskPatch(risk);
+    if (!patch) return;
+    setRisk((prev) => ({ ...prev, ...patch }));
+  }, [risk]);
 
-  // Generalises the effect above: once the client's gender is known, drop any
-  // selected cancer type that doesn't apply to it (e.g. a stale "prostate"
-  // selection on a female client) together with that type's screening data,
-  // so its questions never render.
+  // Once the client's gender is known, drop any selected cancer type that doesn't apply to it
+  // (e.g. cervical on a male client, or a stale prostate selection on a female client) together
+  // with that type's screening data, so its questions never render.
   useEffect(() => {
     if (!biodata.gender) return;
     const allowed = new Set(availableCancerTypes.map((c) => c.value));
@@ -304,21 +320,17 @@ useEffect(() => {
     setScreeningErrors(drop);
   }, [biodata.gender, availableCancerTypes, cancerTypes]);
 
-  // Prostate only: auto-derive the screening pathway, PSA eligibility,
-  // screening result, referral and recommended action from the symptom
-  // checklist and PSA/DRE thresholds (National Prostate Cancer Screening
-  // Algorithm — see lib/screeningWizardConfig#computeProstateOutcome).
-  // Scoped to the "prostate" key of `screenings`; every other cancer
-  // type's data and logic is untouched.
+  // Prostate only: auto-derive the screening pathway, PSA eligibility, screening result,
+  // referral and recommended action from the symptom checklist and PSA/DRE thresholds.
   useEffect(() => {
-  if (!cancerTypes.includes("prostate")) return;
-  const patch = prostatePatch(screenings.prostate || {}, biodata.dateOfBirth);
-  if (!patch) return;
-  setScreenings((prev) => ({
-    ...prev,
-    prostate: { ...(prev.prostate || {}), ...patch },
-  }));
-}, [cancerTypes, screenings.prostate, biodata.dateOfBirth]);
+    if (!cancerTypes.includes("prostate")) return;
+    const patch = prostatePatch(screenings.prostate || {}, biodata.dateOfBirth);
+    if (!patch) return;
+    setScreenings((prev) => ({
+      ...prev,
+      prostate: { ...(prev.prostate || {}), ...patch },
+    }));
+  }, [cancerTypes, screenings.prostate, biodata.dateOfBirth]);
 
   // Load facilities capable of biopsy
   useEffect(() => {
@@ -332,136 +344,100 @@ useEffect(() => {
     })();
   }, []);
 
-  // Create facility options for the dropdown
-  const facilityOptions = useMemo(() => {
-    const options = facilities.map((facility) => ({
-      value: String(facility.facilityId),
-      label: `${facility.facilityName} - ${facility.facilityState}`
-    }));
-    
-    // Add a default empty option
-    return [{ value: "", label: "Select a facility" }, ...options];
-  }, [facilities]);
+  // Facilities a suspicious / urgent client can be referred to
+  useEffect(() => {
+    (async () => {
+      try {
+        const { data } = await api.get("/facilities", { params: { types: "main_hub,treatment_center" } });
+        setReferralFacilities(data?.facilities ?? data?.data ?? []);
+      } catch (error) {
+        console.error("Failed to load referral facilities:", error);
+      }
+    })();
+  }, []);
 
-  // Function to get screening groups with facility options injected
-  // const getScreeningGroupsWithFacilities = (cancerType: CancerType): FieldGroup[] => {
-  //   const groups = SCREENING_GROUPS[cancerType] || [];
-    
-  //   // Deep clone and inject facility options
-  //   return groups.map(group => ({
-  //     ...group,
-  //     fields: group.fields.map(field => {
-  //       // If this is the biopsy facility dropdown, inject the options from API
-  //       if (field.name === 'biopsyBookingFacilityId') {
-  //         return {
-  //           ...field,
-  //           options: facilityOptions
-  //         };
-  //       }
-  //       return field;
-  //     })
-  //   }));
-  // };
+  // Each service list loads on its own, so one missing/failed endpoint doesn't blank the others.
+  useEffect(() => {
+    const load = async (path: string, set: (rows: any[]) => void) => {
+      try {
+        const { data } = await api.get(path);
+        set(data?.facilities ?? []);
+      } catch (error) {
+        console.error(`Failed to load facilities from ${path}:`, error);
+      }
+    };
+    load("/services/ablation/facilities", setAblationFacilities);
+    load("/services/leep/facilities", setLeepFacilities);
+    load("/services/colposcopy/facilities", setColposcopyFacilities);
+    load("/services/hpv/facilities", setHpvFacilities);
+    load("/services/ihc/facilities", setIhcFacilities);
+  }, []);
 
+  const toFacilityOptions = (rows: any[]) => [
+    { value: "", label: "Select a facility" },
+    ...rows.map((f) => ({
+      value: String(f.facilityId),
+      label: `${f.facilityName} - ${f.facilityState}`,
+    })),
+  ];
+
+  const facilityOptions = useMemo(() => toFacilityOptions(facilities), [facilities]);
+  const ablationFacilityOptions = useMemo(() => toFacilityOptions(ablationFacilities), [ablationFacilities]);
+  const leepFacilityOptions = useMemo(() => toFacilityOptions(leepFacilities), [leepFacilities]);
+  const colposcopyFacilityOptions = useMemo(() => toFacilityOptions(colposcopyFacilities), [colposcopyFacilities]);
+  const ihcFacilityOptions = useMemo(() => toFacilityOptions(ihcFacilities), [ihcFacilities]);
+  const hpvFacilityOptions = useMemo(() => toFacilityOptions(hpvFacilities), [hpvFacilities]);
+  // Prostate recall and urology bookings use the general referral-capable facility list.
+  const referralFacilityOptions = useMemo(() => toFacilityOptions(referralFacilities), [referralFacilities]);
 
   const getScreeningGroupsWithFacilities = (cancerType: CancerType): FieldGroup[] => {
-  const groups = SCREENING_GROUPS[cancerType] || [];
- 
-  return groups.map((group) => ({
-    ...group,
-    fields: group.fields.map((field) => {
-      if (field.name === "biopsyBookingFacilityId") {
-        return { ...field, options: facilityOptions };
-      }
-      if (field.name === "ablationBookingFacilityId") {
-        return { ...field, options: ablationFacilityOptions };
-      }
-      if (field.name === "leepBookingFacilityId") {
-        return { ...field, options: leepFacilityOptions };
-      }
-      if (field.name === "colposcopyBookingFacilityId") {
-        return { ...field, options: colposcopyFacilityOptions };
-      }
-      return field;
-    }),
-  }));
-};
+    const groups = SCREENING_GROUPS[cancerType] || [];
 
-
-
-
-  useEffect(() => {
-  (async () => {
-    try {
-      const [ablation, leep, colposcopy] = await Promise.all([
-        api.get("/services/ablation/facilities"),
-        api.get("/services/leep/facilities"),
-        api.get("/services/colposcopy/facilities"),
-      ]);
-      setAblationFacilities(ablation.data?.facilities ?? []);
-      setLeepFacilities(leep.data?.facilities ?? []);
-      setColposcopyFacilities(colposcopy.data?.facilities ?? []);
-    } catch (error) {
-      console.error("Failed to load cervical referral facilities:", error);
-    }
-  })();
-}, []);
-
-
-const ablationFacilityOptions = useMemo(() => {
-  const options = ablationFacilities.map((f) => ({
-    value: String(f.facilityId),
-    label: `${f.facilityName} - ${f.facilityState}`,
-  }));
-  return [{ value: "", label: "Select a facility" }, ...options];
-}, [ablationFacilities]);
- 
-const leepFacilityOptions = useMemo(() => {
-  const options = leepFacilities.map((f) => ({
-    value: String(f.facilityId),
-    label: `${f.facilityName} - ${f.facilityState}`,
-  }));
-  return [{ value: "", label: "Select a facility" }, ...options];
-}, [leepFacilities]);
- 
-const colposcopyFacilityOptions = useMemo(() => {
-  const options = colposcopyFacilities.map((f) => ({
-    value: String(f.facilityId),
-    label: `${f.facilityName} - ${f.facilityState}`,
-  }));
-  return [{ value: "", label: "Select a facility" }, ...options];
-}, [colposcopyFacilities]);
-
+    return groups.map((group) => ({
+      ...group,
+      fields: group.fields.map((field) => {
+        switch (field.name) {
+          case "biopsyBookingFacilityId":
+            return { ...field, options: facilityOptions };
+          case "ablationBookingFacilityId":
+            return { ...field, options: ablationFacilityOptions };
+          case "leepBookingFacilityId":
+            return { ...field, options: leepFacilityOptions };
+          case "colposcopyBookingFacilityId":
+            return { ...field, options: colposcopyFacilityOptions };
+          case "hpvBookingFacilityId":
+            return { ...field, options: hpvFacilityOptions };
+          case "ihcBookingFacilityId":
+            return { ...field, options: ihcFacilityOptions };
+          case "recallBookingFacilityId":
+          case "urologyBookingFacilityId":
+            return { ...field, options: referralFacilityOptions };
+          default:
+            return field;
+        }
+      }),
+    }));
+  };
 
   function goTo(key: StepKey) {
     setStepIndex(STEPS.indexOf(key));
   }
-  
+
   function next() {
     setStepIndex((i) => Math.min(i + 1, STEPS.length - 1));
   }
-  
-  // function back() {
-  //   setStepIndex((i) => {
-  //     const prevIndex = Math.max(i - 1, 0);
-  //     if (STEPS[prevIndex] === "otpConsent" && !pendingRegistrationId) {
-  //       return Math.max(prevIndex - 1, 0);
-  //     }
-  //     return prevIndex;
-  //   });
-  // }
 
   function back() {
-  setStepIndex((i) => {
-    let prevIndex = Math.max(i - 1, 0);
-    // SMS (OTP) consent is only for brand-new registrations. Once a client record exists
-    // (found, duplicate-matched, or just verified) it is never revisited.
-    if (STEPS[prevIndex] === "otpConsent" && (clientId || !pendingRegistrationId)) {
-      prevIndex = Math.max(prevIndex - 1, 0);
-    }
-    return prevIndex;
-  });
-}
+    setStepIndex((i) => {
+      let prevIndex = Math.max(i - 1, 0);
+      // SMS (OTP) consent is only for brand-new registrations. Once a client record exists
+      // (found, duplicate-matched, or just verified) it is never revisited.
+      if (STEPS[prevIndex] === "otpConsent" && (clientId || !pendingRegistrationId)) {
+        prevIndex = Math.max(prevIndex - 1, 0);
+      }
+      return prevIndex;
+    });
+  }
 
   // Entry points that already know it's a new client
   useEffect(() => {
@@ -514,15 +490,13 @@ const colposcopyFacilityOptions = useMemo(() => {
     }
 
     // Start every lookup from a clean slate so a previous client's cancer-type
-    // selection and screening data can't leak into this one. (resumeVisit
-    // re-populates these from the saved visit afterwards.)
+    // selection and screening data can't leak into this one.
     setCancerTypes([]);
     setScreenings({});
     setScreeningErrors({});
     setReturningClient(false);
 
     setBusy(true);
-    let hasIncompleteVisit = false;
 
     try {
       const { data } = await api.get("/clients/search/details", {
@@ -535,7 +509,7 @@ const colposcopyFacilityOptions = useMemo(() => {
         setClientId(found.clientId);
         setReturningClient(true);
         setPendingRegistrationId("");
-setPendingMaskedPhone("");
+        setPendingMaskedPhone("");
 
         setBiodata({
           fullName: found.fullName || "",
@@ -564,14 +538,13 @@ setPendingMaskedPhone("");
         if (incompleteData?.riskProfile) {
           setRisk((p) => ({
             ...p,
-            ...incompleteData.riskProfile,
+            ...hydrateRiskProfile(incompleteData.riskProfile),
           }));
         }
 
         const visits = incompleteData?.visits || [];
 
         if (visits.length > 0) {
-          hasIncompleteVisit = true;
           setIncompleteVisits(visits);
           toast.success(
             "Found an in-progress screening — pick a visit below to continue."
@@ -583,7 +556,7 @@ setPendingMaskedPhone("");
         // Go directly to registration (no OTP for existing client)
         goTo("registration");
       } else {
-        // Existing Bloom fallback
+        // Bloom fallback
         try {
           const { data: bloomData } = await api.get("/awareness/lookup", {
             params: { phone: value },
@@ -612,21 +585,18 @@ setPendingMaskedPhone("");
                 ? "Found a prior Bloom self-assessment — details pre-filled, findings shown in Risk Assessment."
                 : "Found a prior Bloom registration — details pre-filled below."
             );
-            // Go directly to registration (no OTP for Bloom registration)
             goTo("registration");
           } else {
             toast(
               "No matching client or Bloom record — continuing as a new registration.",
               { icon: "ℹ️" }
             );
-            // For new registration, go to registration (OTP will be sent later)
             goTo("registration");
           }
         } catch {
           toast("No matching client — continuing as a new registration.", {
             icon: "ℹ️",
           });
-          // For new registration, go to registration (OTP will be sent later)
           goTo("registration");
         }
       }
@@ -642,23 +612,23 @@ setPendingMaskedPhone("");
   // Helper function to ensure a visit exists
   async function ensureVisit(): Promise<number | null> {
     if (visitId) return visitId;
-    
+
     if (!clientId) {
       toast.error("No client selected.");
       return null;
     }
-    
+
     try {
       const { data } = await api.post(`/clients/${clientId}/visits`, {
         visitDate: todayStr(),
         visitType: returningClient ? "follow_up" : "initial",
-        ...visitMeta
+        ...visitMeta,
       });
       const newVisitId = data?.visit?.visitId ?? data?.visitId;
       setVisitId(newVisitId);
       return newVisitId;
     } catch (error: any) {
-      toast.error(error?.response?.data?.message ?? "Could not create visit.");
+      toast.error(friendlyError(error, "Could not create visit."));
       return null;
     }
   }
@@ -697,9 +667,9 @@ setPendingMaskedPhone("");
         await api.patch(`/clients/${clientId}`, biodata);
         await createVisitAndLoadRisk(clientId);
         toast.success("Client updated and visit created.");
-        goTo("riskVerify");
+        goTo("cancerTypeSelect");
       } catch (err: any) {
-        toast.error(err?.response?.data?.message ?? "Could not save registration.");
+        toast.error(friendlyError(err, "Could not save registration."));
       } finally {
         setBusy(false);
       }
@@ -708,16 +678,14 @@ setPendingMaskedPhone("");
 
     // CASE 2: New client - check for duplicates first
     setBusy(true);
-    
-    // Check phone duplicate
+
     const phoneMatch = await lookupDuplicate("phone", biodata.phoneNumber);
     if (phoneMatch) {
       setDuplicateMatch(phoneMatch);
       setBusy(false);
       return;
     }
-    
-    // Check email duplicate if provided
+
     if (biodata.email) {
       const emailMatch = await lookupDuplicate("email", biodata.email);
       if (emailMatch) {
@@ -742,13 +710,7 @@ setPendingMaskedPhone("");
       setPendingMaskedPhone(data.maskedPhone);
       goTo("otpConsent");
     } catch (err: any) {
-      const apiErrors = err?.response?.data?.errors;
-      const firstError = apiErrors ? Object.values(apiErrors)[0] : null;
-      toast.error(
-        (Array.isArray(firstError) ? firstError[0] : firstError) ??
-        err?.response?.data?.message ??
-        "Could not start registration."
-      );
+      toast.error(friendlyError(err, "Could not start registration."));
     } finally {
       setBusy(false);
     }
@@ -758,14 +720,14 @@ setPendingMaskedPhone("");
     const { data: visitData } = await api.post(`/clients/${cId}/visits`, {
       visitDate: todayStr(),
       visitType: returning ? "follow_up" : "initial",
-      ...visitMeta
+      ...visitMeta,
     });
     setVisitId(visitData?.visit?.visitId ?? visitData?.visitId);
 
     try {
       const { data: rp } = await api.get(`/clients/${cId}/risk-profile`);
       const profile = rp?.risk_profile ?? rp?.riskProfile ?? rp?.data ?? rp;
-      if (profile) setRisk((prev) => ({ ...prev, ...profile }));
+      if (profile) setRisk((prev) => ({ ...prev, ...hydrateRiskProfile(profile) }));
     } catch {
       // no existing profile — fine, start blank
     }
@@ -783,7 +745,7 @@ setPendingMaskedPhone("");
     setClientId(c.clientId);
     setReturningClient(true);
     setPendingRegistrationId("");
-setPendingMaskedPhone("");
+    setPendingMaskedPhone("");
     setBiodata({
       fullName: c.fullName || "",
       dateOfBirth: c.dateOfBirth?.slice(0, 10) || "",
@@ -807,9 +769,9 @@ setPendingMaskedPhone("");
     try {
       await createVisitAndLoadRisk(c.clientId, true);
       toast.success("Continuing screening for the existing client.");
-      goTo("riskVerify");
+      goTo("cancerTypeSelect");
     } catch (err: any) {
-      toast.error(err?.response?.data?.message ?? "Could not start the visit for this client.");
+      toast.error(friendlyError(err, "Could not start the visit for this client."));
     } finally {
       setBusy(false);
     }
@@ -839,9 +801,9 @@ setPendingMaskedPhone("");
       setClientId(cId);
       await createVisitAndLoadRisk(cId);
       toast.success("Client registered and visit created.");
-      goTo("riskVerify");
+      goTo("cancerTypeSelect");
     } catch (err: any) {
-      toast.error(err?.response?.data?.message ?? "Could not complete registration.");
+      toast.error(friendlyError(err, "Could not complete registration."));
       goTo("registration");
     } finally {
       setBusy(false);
@@ -853,38 +815,73 @@ setPendingMaskedPhone("");
     if (!clientId) return;
     setBusy(true);
     try {
-      await api.post(`/clients/${clientId}/risk-profile`, risk);
+      await api.post(`/clients/${clientId}/risk-profile`, buildRiskPayload(risk));
       toast.success("Risk assessment and medical history saved.");
       next();
     } catch (err: any) {
-      toast.error(err?.response?.data?.message ?? "Could not save risk assessment.");
+      toast.error(friendlyError(err, "Could not save risk assessment."));
     } finally {
       setBusy(false);
     }
   }
 
+  // Catches states where the backend would reject the record, and explains them in plain language.
+  function screeningBlocker(): string | null {
+    for (const ct of cancerTypes) {
+      if (ct !== "prostate") continue;
+      const s = screenings.prostate || {};
+
+      if (s.screeningPathway === "Not Eligible") {
+        return s.ageAtScreening
+          ? `Prostate screening isn't available for this client (age ${s.ageAtScreening}). It is for men aged 45 to under 75. Deselect Prostate to continue.`
+          : "Enter the client's date of birth to check prostate screening eligibility (men 45 to under 75), or deselect Prostate.";
+      }
+      if (!s.screeningResult) {
+        if (s.psaEligibility === "Pending Consent") {
+          return s.sharedDecision === "declined"
+            ? "The client declined prostate screening. Deselect Prostate to continue."
+            : "Record the client's shared decision for prostate screening before saving.";
+        }
+        if (s.psaEligibility === "Deferred") {
+          return "Prostate PSA testing is deferred, so there is no result to save yet. Deselect Prostate and recall the client later.";
+        }
+        if (s.psaEligibility === "Eligible") {
+          return "Enter the PSA level (and DRE finding if done) so the prostate screening result can be determined.";
+        }
+        return "Complete the prostate screening so a result can be determined.";
+      }
+    }
+    return null;
+  }
+
   // ── D + F. Symptoms & cancer-specific tests ────────────────────────
   async function submitScreenings() {
-    if (!visitId) {
-      const newVisitId = await ensureVisit();
-      if (!newVisitId) return;
-      setVisitId(newVisitId);
+    const blocker = screeningBlocker();
+    if (blocker) {
+      toast.error(blocker);
+      return;
     }
-    
+
+    let activeVisitId = visitId;
+    if (!activeVisitId) {
+      activeVisitId = await ensureVisit();
+      if (!activeVisitId) return;
+    }
+
     setBusy(true);
     try {
       for (const ct of cancerTypes) {
         const screeningData = screenings[ct] || {};
-        
+
         await api.post(
-          ENDPOINTS.screening(visitId!, ct),
+          ENDPOINTS.screening(activeVisitId, ct),
           buildScreeningPayload(screeningData, treatmentReferral)
         );
       }
       toast.success("Screening findings saved.");
       next();
     } catch (err: any) {
-      toast.error(err?.response?.data?.message ?? "Could not save one or more screening records.");
+      toast.error(friendlyError(err, "Could not save one or more screening records."));
     } finally {
       setBusy(false);
     }
@@ -892,19 +889,36 @@ setPendingMaskedPhone("");
 
   // ── E. Physical examination ────────────────────────────────────────
   async function submitExamination() {
-    if (!visitId) {
-      const newVisitId = await ensureVisit();
-      if (!newVisitId) return;
-      setVisitId(newVisitId);
+    const sys = parseFloat(examination.bloodPressureSystolic);
+    const dia = parseFloat(examination.bloodPressureDiastolic);
+    if (!Number.isNaN(sys) || !Number.isNaN(dia)) {
+      if (Number.isNaN(sys) || Number.isNaN(dia)) {
+        toast.error("Enter both the systolic and diastolic blood pressure.");
+        return;
+      }
+      if (sys < 50 || sys > 300 || dia < 30 || dia > 200) {
+        toast.error("Blood pressure looks out of range. Please check the systolic and diastolic values.");
+        return;
+      }
+      if (sys <= dia) {
+        toast.error("Systolic blood pressure must be higher than diastolic.");
+        return;
+      }
     }
-    
+
+    let activeVisitId = visitId;
+    if (!activeVisitId) {
+      activeVisitId = await ensureVisit();
+      if (!activeVisitId) return;
+    }
+
     setBusy(true);
     try {
-      await api.post(`/visits/${visitId}/examination`, examination);
+      await api.post(`/visits/${activeVisitId}/examination`, examination);
       toast.success("Physical examination saved.");
       next();
     } catch (err: any) {
-      toast.error(err?.response?.data?.message ?? "Could not save the examination.");
+      toast.error(friendlyError(err, "Could not save the examination."));
     } finally {
       setBusy(false);
     }
@@ -912,12 +926,12 @@ setPendingMaskedPhone("");
 
   // ── G. Outcome classification ──────────────────────────────────────
   async function submitOutcome() {
-    if (!visitId) {
-      const newVisitId = await ensureVisit();
-      if (!newVisitId) return;
-      setVisitId(newVisitId);
+    let activeVisitId = visitId;
+    if (!activeVisitId) {
+      activeVisitId = await ensureVisit();
+      if (!activeVisitId) return;
     }
-    
+
     if (!outcome.overallOutcome) {
       toast.error("Please select an outcome classification.");
       return;
@@ -926,19 +940,26 @@ setPendingMaskedPhone("");
       toast.error("Please set a repeat screening date for Low Suspicion outcomes.");
       return;
     }
-    
+    if (needsReferral && !referralFacilityId) {
+      toast.error("Please select the facility to refer this client to.");
+      return;
+    }
+
     setBusy(true);
     try {
-      const { data } = await api.post(`/visits/${visitId}/outcome`, outcome);
+      const { data } = await api.post(`/visits/${activeVisitId}/outcome`, {
+        ...outcome,
+        referralFacilityId: needsReferral ? Number(referralFacilityId) : null,
+      });
       if (data?.referral) {
         setAutoReferral(data.referral);
-        toast.success("Screening outcome recorded — client auto-linked to a referral facility.");
+        toast.success("Screening outcome recorded — client referred.");
       } else {
         toast.success("Screening outcome recorded.");
       }
       next();
     } catch (err: any) {
-      toast.error(err?.response?.data?.message ?? "Could not save the outcome.");
+      toast.error(friendlyError(err, "Could not save the outcome."));
     } finally {
       setBusy(false);
     }
@@ -956,6 +977,10 @@ setPendingMaskedPhone("");
       />
     );
   }
+
+  const selectedReferralFacility = referralFacilities.find(
+    (f) => String(f.facilityId) === referralFacilityId
+  );
 
   return (
     <Layout>
@@ -1003,9 +1028,8 @@ setPendingMaskedPhone("");
       {!["lookup", "registration", "otpConsent"].includes(currentKey) && (
         <div className="mb-6 flex flex-wrap gap-2">
           {STEPS.map((key, i) => {
-            // const canJump = i < stepIndex && key !== "done";
             if (key === "otpConsent" && clientId) return null;
-  const canJump = i < stepIndex && key !== "done";
+            const canJump = i < stepIndex && key !== "done";
             return (
               <button
                 key={key}
@@ -1103,10 +1127,10 @@ setPendingMaskedPhone("");
           <div className="space-y-4">
             <h3 className="text-lg font-semibold text-gray-800 dark:text-white">B. Registration</h3>
             {clientId && (
-  <p className="text-xs text-green-700">
-    Existing client — SMS consent is not required.
-  </p>
-)}
+              <p className="text-xs text-green-700">
+                Existing client — SMS consent is not required.
+              </p>
+            )}
             <div className="grid grid-cols-2 gap-4">
               <Label className="col-span-2">
                 <span className="text-sm font-semibold">Full Name *</span>
@@ -1116,13 +1140,13 @@ setPendingMaskedPhone("");
                   onChange={(e) => setBiodata((p) => ({ ...p, fullName: e.target.value }))}
                 />
               </Label>
- <div className="col-span-2">
-  <span className="text-sm font-semibold">Date of Birth</span>
-  <DateOfBirthField
-    value={biodata.dateOfBirth}
-    onChange={(v) => setBiodata((p) => ({ ...p, dateOfBirth: v }))}
-  />
-</div>
+              <div className="col-span-2">
+                <span className="text-sm font-semibold">Date of Birth</span>
+                <DateOfBirthField
+                  value={biodata.dateOfBirth}
+                  onChange={(v) => setBiodata((p) => ({ ...p, dateOfBirth: v }))}
+                />
+              </div>
               <Label>
                 <span className="text-sm font-semibold">Sex *</span>
                 <Select
@@ -1285,17 +1309,17 @@ setPendingMaskedPhone("");
             </div>
 
             <div className="pt-2 border-t border-gray-100 dark:border-gray-700">
-  <VisitDetailsFields
-    value={visitMeta}
-    onChange={(n, v) => setVisitMeta((p) => ({ ...p, [n]: v }))}
-  />
-</div>
+              <VisitDetailsFields
+                value={visitMeta}
+                onChange={(n, v) => setVisitMeta((p) => ({ ...p, [n]: v }))}
+              />
+            </div>
           </div>
         )}
 
         {currentKey === "riskVerify" && (
           <div className="space-y-4">
-            <h3 className="text-lg font-semibold text-gray-800 dark:text-white">C. Verify Risk Assessment</h3>
+            <h3 className="text-lg font-semibold text-gray-800 dark:text-white">E. Verify Risk Assessment</h3>
             <p className="text-sm text-gray-500">
               Review the responses from Stage 1 (if any) and update as needed. Also confirm medical history with the client.
             </p>
@@ -1341,6 +1365,12 @@ setPendingMaskedPhone("");
         {currentKey === "cancerTypeSelect" && (
           <div className="space-y-4">
             <h3 className="text-lg font-semibold text-gray-800 dark:text-white">Which cancer type(s) are being screened today?</h3>
+            <p className="text-sm text-gray-500">
+              Only screenings this client is eligible for are shown. The risk assessment that follows covers just the types you select.
+            </p>
+            {ageNotice && (
+              <p className="text-xs rounded-xl border border-amber-200 bg-amber-50 text-amber-800 px-3 py-2">{ageNotice}</p>
+            )}
             <div className="grid grid-cols-2 gap-3">
               {availableCancerTypes.map((ct) => {
                 const selected = cancerTypes.includes(ct.value);
@@ -1370,16 +1400,15 @@ setPendingMaskedPhone("");
         {currentKey === "screening" && (
           <div className="space-y-8">
             <h3 className="text-lg font-semibold text-gray-800 dark:text-white">G + H. Symptom Assessment & Screening Tests</h3>
-            
+
             {cancerTypes.length === 0 && (
               <p className="text-sm text-amber-600">No cancer type selected — go back and select at least one.</p>
             )}
-            
+
             {/* Cancer type specific forms with facility options injected */}
             {cancerTypes.map((ct) => {
-              // Get the groups with facility options injected
               const groupsWithFacilities = getScreeningGroupsWithFacilities(ct);
-              
+
               return (
                 <div key={ct} className="border-t border-gray-100 dark:border-gray-700 pt-6 first:border-t-0 first:pt-0">
                   <p className="text-sm font-bold text-green-700 uppercase tracking-wide mb-3">{cancerLabel(ct)}</p>
@@ -1403,7 +1432,7 @@ setPendingMaskedPhone("");
 
         {currentKey === "physicalExam" && (
           <div className="space-y-4">
-            <h3 className="text-lg font-semibold text-gray-800 dark:text-white">E. Physical Examination</h3>
+            <h3 className="text-lg font-semibold text-gray-800 dark:text-white">F. Physical Examination</h3>
             <GroupedForm
               groups={EXAM_GROUPS}
               values={examination}
@@ -1442,6 +1471,26 @@ setPendingMaskedPhone("");
                 />
               </Label>
             )}
+
+            {/* Referral — facility is chosen manually, never auto-assigned */}
+            {needsReferral && (
+              <Label>
+                <span className="text-sm font-semibold">Refer client to *</span>
+                <Select
+                  className="mt-2 rounded-2xl h-12"
+                  value={referralFacilityId}
+                  onChange={(e) => setReferralFacilityId(e.target.value)}
+                >
+                  <option value="">Select referral facility</option>
+                  {referralFacilities.map((f) => (
+                    <option key={f.facilityId} value={f.facilityId}>
+                      {f.facilityName}{f.facilityState ? ` - ${f.facilityState}` : ""}
+                    </option>
+                  ))}
+                </Select>
+              </Label>
+            )}
+
             <Label>
               <span className="text-sm font-semibold">Notes</span>
               <textarea
@@ -1460,7 +1509,7 @@ setPendingMaskedPhone("");
             <h3 className="text-xl font-bold text-gray-800 dark:text-white">Stage 2 screening complete</h3>
             <p className="text-sm font-semibold text-green-700">Client ID: {clientId}</p>
             <p className="text-sm text-gray-500">
-              {outcome.overallOutcome === "urgent_referral" || outcome.overallOutcome === "suspicious" ? (
+              {needsReferral ? (
                 <span className="inline-flex items-center gap-1.5 text-red-600 font-semibold">
                   <AlertTriangle className="w-4 h-4" /> This client needs referral — please action promptly.
                 </span>
@@ -1469,17 +1518,24 @@ setPendingMaskedPhone("");
               )}
             </p>
 
-            {autoReferral && (
+            {needsReferral && (autoReferral || selectedReferralFacility) && (
               <div className="max-w-sm mx-auto text-left rounded-2xl border border-green-100 bg-green-50 dark:bg-green-900/20 dark:border-green-800 p-4 mt-4">
                 <p className="text-xs font-semibold text-green-700 dark:text-green-400 uppercase tracking-wide mb-1">
-                  Auto-linked for referral
+                  Referred to
                 </p>
                 <p className="text-sm font-bold text-gray-800 dark:text-white">
-                  {autoReferral.toFacility?.facilityName || autoReferral.to_facility?.facilityName || "Referral facility"}
+                  {autoReferral?.toFacility?.facilityName ||
+                    autoReferral?.to_facility?.facilityName ||
+                    selectedReferralFacility?.facilityName ||
+                    "Referral facility"}
                 </p>
-                {(autoReferral.toFacility?.facilityAddress || autoReferral.to_facility?.facilityAddress) && (
+                {(autoReferral?.toFacility?.facilityAddress ||
+                  autoReferral?.to_facility?.facilityAddress ||
+                  selectedReferralFacility?.facilityAddress) && (
                   <p className="text-xs text-gray-500 mt-0.5">
-                    {autoReferral.toFacility?.facilityAddress || autoReferral.to_facility?.facilityAddress}
+                    {autoReferral?.toFacility?.facilityAddress ||
+                      autoReferral?.to_facility?.facilityAddress ||
+                      selectedReferralFacility?.facilityAddress}
                   </p>
                 )}
                 <p className="text-xs text-gray-400 mt-2">
@@ -1487,10 +1543,10 @@ setPendingMaskedPhone("");
                 </p>
               </div>
             )}
-            {(outcome.overallOutcome === "urgent_referral" || outcome.overallOutcome === "suspicious") && !autoReferral && (
+            {needsReferral && !autoReferral && !selectedReferralFacility && (
               <div className="max-w-sm mx-auto text-left rounded-2xl border border-amber-100 bg-amber-50 dark:bg-amber-900/20 dark:border-amber-800 p-4 mt-4">
                 <p className="text-sm text-amber-700 dark:text-amber-400">
-                  No secondary/tertiary facility could be auto-matched (missing address or none nearby) — please arrange the referral manually.
+                  No referral facility was recorded. Please arrange the referral manually.
                 </p>
               </div>
             )}

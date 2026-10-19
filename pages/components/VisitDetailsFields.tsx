@@ -14,7 +14,9 @@ export const ENTRY_POINT_OPTIONS = [
   { value: "art_clinic", label: "ART Clinic" },
   { value: "fp_clinic", label: "FP Clinic" },
   { value: "anc", label: "ANC" },
-  { value: "l_and_d", label: "L&D Unit" },
+  { value: "preventive_oncology", label: "Preventive Oncology" },
+  { value: "wellness_center", label: "Wellness Center" },
+  { value: "opd", label: "OPD" },
   { value: "other", label: "Other" },
 ];
 
@@ -39,12 +41,19 @@ export function ageFromDob(dob?: string | null): number | null {
   return age >= 0 ? age : null;
 }
 
+// export default function VisitDetailsFields({
+//   value,
+//   onChange,
+// }: {
+//   value: VisitMeta;
+//   onChange: (name: keyof VisitMeta, v: string) => void;
+// }) {
 export default function VisitDetailsFields({
-  value,
-  onChange,
+  value = initialVisitMeta(),
+  onChange = () => {},
 }: {
-  value: VisitMeta;
-  onChange: (name: keyof VisitMeta, v: string) => void;
+  value?: VisitMeta;
+  onChange?: (name: keyof VisitMeta, v: string) => void;
 }) {
   const set = (name: keyof VisitMeta, v: string) => {
     onChange(name, v);

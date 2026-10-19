@@ -24,18 +24,20 @@ import api from "../../lib/api";
 import { nigerianStates, lgasByState, getStateCode } from "../../lib/nigerianstates";
 import {
   CancerType,
-  cancerTypesForGender,
   cancerLabel,
   PRE_COUNSELLING_FIELDS,
-  getRiskGroups,
   RISK_FOCUS,
   SCREENING_GROUPS,
   OUTCOME_GROUPS,
   WizardField,
   FieldGroup,
   defaultScreeningFor,
-  computeProstateOutcome,
-  prostatePatch
+  prostatePatch,
+  cancerTypesForClient,
+  cancerAgeNotice,
+  getRiskGroupsFor,
+  comorbiditiesFromJson,
+  comorbiditiesToJson,
 } from "../../lib/screeningWizardConfig";
 import VisitDetailsFields, { initialVisitMeta, ageFromDob, VisitMeta } from "../components/VisitDetailsFields";
 import { CERVICAL_RISK_GROUPS, cervicalRiskPatch, hydrateCervicalRisk } from "../../lib/cervicalRisk";
@@ -92,16 +94,6 @@ const REFERRAL_STEP: Step = { key: "referral", label: "Referral", icon: Building
 const today = () => new Date().toISOString().split("T")[0];
 const dateOnly = (v?: string | null) => (v ? String(v).split("T")[0] : "");
 
-// const SCREENING_INT_FIELDS = [
-//   "ageAtFirstIntercourse",
-//   "numberOfChildbirths",
-//   "breastfeedingDuration",
-//   "ageAtFirstMenstruation",
-//   "ageAtMenopause",
-//   "ipssScore",
-//   "biopsyBookingFacilityId",
-// ];
-
 const SCREENING_INT_FIELDS = [
   "ageAtFirstIntercourse",
   "numberOfChildbirths",
@@ -115,10 +107,11 @@ const SCREENING_INT_FIELDS = [
   "colposcopyBookingFacilityId",
   "ageAtScreening",
   "ipssIncompleteEmptying", "ipssFrequency", "ipssIntermittency", "ipssUrgency",
-"ipssWeakStream", "ipssStraining", "ipssNocturia", "ipssQualityOfLife",
+  "ipssWeakStream", "ipssStraining", "ipssNocturia", "ipssQualityOfLife",
+  "ihcBookingFacilityId", "hpvBookingFacilityId",
+  "recallBookingFacilityId", "urologyBookingFacilityId",
 ];
 
-// const SCREENING_FLOAT_FIELDS = ["psaLevel", "afpValue"];
 const SCREENING_FLOAT_FIELDS = [
   "psaLevel", "afpValue",
   "repeatPsaLevel", "previousPsaLevel", "prostateVolumeCc",
@@ -134,64 +127,51 @@ function withoutReferral(groups: FieldGroup[]): FieldGroup[] {
     .filter((g) => g.fields.length > 0);
 }
 
-
 export function buildScreeningPayload(
   data: Record<string, any>,
   referralValue?: string
 ): Record<string, any> {
   const p: Record<string, any> = { ...data };
- 
+
   // Derive primary method from breast checkboxes
   if (p.methodMammography) p.method = "mammography";
   else if (p.methodUltrasound) p.method = "uss";
   else if (p.methodCbe !== undefined) p.method = "cbe";
- 
+
   delete p.methodCbe;
   delete p.methodMammography;
   delete p.methodUltrasound;
- 
+
   // Derive primary method from cervical checkboxes
   if (p.methodHpv) p.method = "hpv";
   else if (p.methodPap) p.method = "pap";
   else if (p.methodVia) p.method = "via";
- 
+
   delete p.methodVia;
   delete p.methodPap;
   delete p.methodHpv;
 
-  // Prostate: the symptom checklist + PSA/DRE thresholds determine the
-  // screening result and urology referral automatically (see
-  // lib/screeningWizardConfig#computeProstateOutcome), so — for this cancer
-  // type only — the shared "Treatment Referral" toggle on the Screening step
-  // is ignored in favour of the computed value already sitting on the record.
-  // Detected via psaLevel/dreResult/ipssScore, which only ever appear on a
-  // prostate screening payload, so every other cancer type's behaviour below
-  // is unchanged.
-  // const isProstatePayload = "psaLevel" in p || "dreResult" in p || "ipssScore" in p;
-
-const isProstatePayload = "screeningPathway" in p || "psaLevel" in p || "ipssScore" in p;
+  // Prostate: the symptom checklist + PSA/DRE thresholds determine the screening result and
+  // urology referral automatically, so for this cancer type the shared "Treatment Referral"
+  // toggle is ignored in favour of the computed value already on the record.
+  const isProstatePayload = "screeningPathway" in p || "psaLevel" in p || "ipssScore" in p;
 
   if (referralValue && !isProstatePayload) p.treatmentReferral = referralValue;
- 
+
   // result alias
   if (p.screeningResult !== undefined && p.result === undefined) p.result = p.screeningResult;
   if (p.result !== undefined && p.screeningResult === undefined) p.screeningResult = p.result;
- 
+
   // Only send treatment referral for suspicious results
   if (!isProstatePayload && p.screeningResult !== "suspicious") p.treatmentReferral = null;
 
-  // Prostate: drop the UI-only routing flag — it isn't part of the backend schema.
-  // if (isProstatePayload) {
-  //   delete p.screeningPathway;
-  // }
- 
   SCREENING_INT_FIELDS.forEach((k) => {
     if (k in p) p[k] = p[k] === "" || p[k] == null ? null : parseInt(p[k]);
   });
   SCREENING_FLOAT_FIELDS.forEach((k) => {
     if (k in p) p[k] = p[k] === "" || p[k] == null ? null : parseFloat(p[k]);
   });
- 
+
   return p;
 }
 
@@ -228,6 +208,43 @@ export function FieldRenderer({
           {field.label}
         </span>
       </label>
+    );
+  }
+
+  if (field.type === "multiselect") {
+    const selected: string[] = Array.isArray(value) ? value : [];
+    return (
+      <div className={span}>
+        <span className="text-sm font-semibold text-gray-700 dark:text-gray-300">
+          {field.label}
+          {field.required && <span className="text-red-500"> *</span>}
+        </span>
+        <div className="mt-2 flex flex-wrap gap-2">
+          {field.options?.filter((o) => o.value !== "").map((o) => {
+            const on = selected.includes(o.value);
+            return (
+              <button
+                key={o.value}
+                type="button"
+                onClick={() =>
+                  onChange(field.name, on ? selected.filter((x) => x !== o.value) : [...selected, o.value])
+                }
+                className={`px-3 py-1.5 rounded-full border text-sm transition-colors ${
+                  on
+                    ? "border-green-600 bg-green-50 text-green-800 dark:bg-green-900/30 dark:text-green-300"
+                    : "border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:border-green-300"
+                } ${errorRing}`}
+              >
+                {on && <Check className="inline w-3.5 h-3.5 mr-1" />}
+                {o.label}
+              </button>
+            );
+          })}
+        </div>
+        {field.help && (
+          <span className="mt-1 block text-xs text-gray-500 dark:text-gray-400">{field.help}</span>
+        )}
+      </div>
     );
   }
 
@@ -342,10 +359,8 @@ function collectMissing(
   groups.forEach((g) =>
     g.fields.forEach((f) => {
       if (f.showIf && !f.showIf(values)) return;
-      const empty =
-        values[f.name] === undefined ||
-        values[f.name] === ""       ||
-        values[f.name] === null;
+      const v = values[f.name];
+      const empty = v === undefined || v === "" || v === null || (Array.isArray(v) && v.length === 0);
       if (f.required && empty) missing.push({ name: f.name, label: f.label });
     })
   );
@@ -356,35 +371,35 @@ function collectMissing(
 // Wizard Component
 // ---------------------------------------------------------------------------
 export default function ScreeningWizard() {
-const initialBiodata = () => ({
-  fullName:          "",
-  nin:               "",
-  gender:            "",
-  dateOfBirth:       "",
-  phoneNumber:       "",
-  screeningCategory: "",
-  stateOfOrigin:     "",
-  lgaOfOrigin:       "",
-  stateOfResidence:  "",
-  lgaOfResidence:    "",
-  address:           "",
-  landmark:          "",
-  registrationDate:  today(),
-  nextOfKinName:  "",
-nextOfKinPhone: "",
-});
+  const initialBiodata = () => ({
+    fullName:          "",
+    nin:               "",
+    gender:            "",
+    dateOfBirth:       "",
+    phoneNumber:       "",
+    screeningCategory: "",
+    stateOfOrigin:     "",
+    lgaOfOrigin:       "",
+    stateOfResidence:  "",
+    lgaOfResidence:    "",
+    address:           "",
+    landmark:          "",
+    registrationDate:  today(),
+    nextOfKinName:     "",
+    nextOfKinPhone:    "",
+  });
 
-const initialPreCounsel = () => ({
-  preScreeningCounselingDate: today(),
-  preScreeningCounselor:      "",
-});
+  const initialPreCounsel = () => ({
+    preScreeningCounselingDate: today(),
+    preScreeningCounselor:      "",
+  });
 
-const initialReferral = () => ({
-  facilityId:   "",
-  facilityName: "",
-  referralDate: today(),
-  notes:        "",
-});
+  const initialReferral = () => ({
+    facilityId:   "",
+    facilityName: "",
+    referralDate: today(),
+    notes:        "",
+  });
 
   const router = useRouter();
 
@@ -402,7 +417,7 @@ const initialReferral = () => ({
 
   const [preCounsel, setPreCounsel] = useState<Record<string, any>>(initialPreCounsel());
 
-  const [risk,      setRisk]      = useState<Record<string, any>>({});
+  const [risk,       setRisk]       = useState<Record<string, any>>({});
   const [screenings, setScreenings] = useState<Record<string, Record<string, any>>>({});
 
   const [referral, setReferral] = useState<Record<string, any>>(initialReferral());
@@ -414,8 +429,9 @@ const initialReferral = () => ({
   const [riskErrors,      setRiskErrors]      = useState<Record<string, boolean>>({});
   const [screeningErrors, setScreeningErrors] = useState<Record<string, Record<string, boolean>>>({});
 
-  const [facilities,     setFacilities]     = useState<Facility[]>([]);
-  const [facilitySearch, setFacilitySearch] = useState("");
+  const [facilities,       setFacilities]       = useState<Facility[]>([]);
+  const [facilitySearch,   setFacilitySearch]   = useState("");
+  const [serviceFacilities, setServiceFacilities] = useState<Record<string, Facility[]>>({});
 
   // Referral state
   const [referralFacilities,  setReferralFacilities]  = useState<Facility[]>([]);
@@ -435,6 +451,14 @@ const initialReferral = () => ({
   // ---------------------------------------------------------------------------
   // Derived values — declared BEFORE any useEffect that references them
   // ---------------------------------------------------------------------------
+  const clientAge = useMemo(() => ageFromDob(biodata.dateOfBirth), [biodata.dateOfBirth]);
+
+  const availableCancers = useMemo(
+    () => cancerTypesForClient(biodata.gender ?? "", clientAge),
+    [biodata.gender, clientAge]
+  );
+  const ageNotice = cancerAgeNotice(biodata.gender, clientAge);
+
   const positiveTypes = Array.isArray(cancerTypes)
     ? cancerTypes.filter((ct) => screenings[ct]?.screeningResult === "positive")
     : [];
@@ -455,6 +479,23 @@ const initialReferral = () => ({
   // Effects
   // ---------------------------------------------------------------------------
 
+  useEffect(() => {
+    const services: Record<string, string> = {
+      ihcBookingFacilityId: "ihc",
+      hpvBookingFacilityId: "hpv",
+      ablationBookingFacilityId: "ablation",
+      leepBookingFacilityId: "leep",
+      colposcopyBookingFacilityId: "colposcopy",
+    };
+    // Each list loads independently, so one failed endpoint doesn't blank the others.
+    Object.entries(services).forEach(async ([field, service]) => {
+      try {
+        const { data } = await api.get(`/services/${service}/facilities`);
+        setServiceFacilities((prev) => ({ ...prev, [field]: data?.facilities ?? [] }));
+      } catch {}
+    });
+  }, []);
+
   // Load referral facilities when positive result exists
   useEffect(() => {
     if (!anyPositive) return;
@@ -469,16 +510,12 @@ const initialReferral = () => ({
   }, [anyPositive]);
 
   // Load existing client from query param — guard with router.isReady.
-  // Also handles the "fresh session" case: whenever this param changes
-  // (including becoming empty, e.g. navigating here for a NEW client
-  // right after finishing a previous client's screening), every piece
-  // of client-scoped state is reset first so nothing leaks between
-  // clients within the same mounted wizard instance.
+  // Whenever this param changes (including becoming empty), every piece of client-scoped
+  // state is reset first so nothing leaks between clients within the same mounted wizard.
   useEffect(() => {
     if (!router.isReady) return;
     const qId = router.query.clientId as string | undefined;
 
-    // Always start from a clean slate before (re)hydrating.
     setVisitMeta(initialVisitMeta());
     setClientId("");
     setVisitId(null);
@@ -521,8 +558,8 @@ const initialReferral = () => ({
           address:           c.address           ?? "",
           landmark:          c.landmark          ?? "",
           registrationDate:  dateOnly(c.registrationDate ?? c.registration_date) || today(),
-          nextOfKinName:  c.nextOfKinName  ?? "",
-          nextOfKinPhone: c.nextOfKinPhone ?? "",
+          nextOfKinName:     c.nextOfKinName     ?? "",
+          nextOfKinPhone:    c.nextOfKinPhone    ?? "",
         }));
         const rp =
           (c.risk_profiles && c.risk_profiles[0]) ||
@@ -533,7 +570,7 @@ const initialReferral = () => ({
             familyHistory:      rp.familyHistory      ?? "",
             smokingStatus:      rp.smokingStatus      ?? "",
             cigarettesPerDay:   rp.cigarettesPerDay   ?? "",
-            smokingDuration:    rp.smokingDuration     ?? "",
+            smokingDuration:    rp.smokingDuration    ?? "",
             alcoholFrequency:   rp.alcoholFrequency   ?? rp.alcoholConsumption ?? "",
             alcoholUnitsPerWeek:rp.alcoholUnitsPerWeek ?? "",
             weightKg:           rp.weightKg           ?? "",
@@ -546,15 +583,12 @@ const initialReferral = () => ({
             hivStatus:          rp.hivStatus          ?? "",
             hbvStatus:          rp.hbvStatus          ?? "",
             hcvStatus:          rp.hcvStatus          ?? "",
-            comorbidities: Array.isArray(rp.comorbiditiesJson)
-              ? rp.comorbiditiesJson.join(", ")
-              : "",
+            ...comorbiditiesFromJson(rp.comorbiditiesJson),
             ageAtFirstMenstruation: rp.ageAtFirstMenstruation ?? "",
             ageAtMenopause:         rp.ageAtMenopause         ?? "",
             breastfeedingHistory:   rp.breastfeedingHistory   ?? "",
             breastfeedingDuration:  rp.breastfeedingDuration  ?? "",
-            previousBreastSurgery:  rp.previousBreastSurgery  ?? "",
-              ...hydrateCervicalRisk(rp),
+            ...hydrateCervicalRisk(rp),
           });
         }
         setStepIndex(1);
@@ -577,9 +611,7 @@ const initialReferral = () => ({
     })();
   }, []);
 
-  // Dual-unit (metric/imperial) input support — the user enters weight/height
-  // in whichever unit they prefer; we convert to the canonical weightKg /
-  // heightCm fields that the BMI calc and backend already expect.
+  // Dual-unit (metric/imperial) input support — converted to the canonical weightKg / heightCm.
   useEffect(() => {
     const raw = parseFloat(risk.weightInput);
     const kg = raw > 0
@@ -606,68 +638,41 @@ const initialReferral = () => ({
     setRisk((prev) => (prev.bmi === bmi ? prev : { ...prev, bmi }));
   }, [risk.weightKg, risk.heightCm]);
 
-
   // Cervical only: derive the symptomatic / asymptomatic summary from the symptom checklist.
-useEffect(() => {
-  const patch = cervicalRiskPatch(risk);
-  if (!patch) return;
-  setRisk((prev) => ({ ...prev, ...patch }));
-}, [risk]);
-
-  // Cervical screening is female-only. The "cancer" step's buttons already
-  // only render options from `availableCancers` (gender-filtered), but if
-  // cervical was selected before gender was set, or a client record was
-  // loaded whose gender is male, it can still be sitting in `cancerTypes` —
-  // this drops it (and its screening data) the moment gender is male, so
-  // cervical questions never render.
   useEffect(() => {
-    if (biodata.gender !== "male") return;
-    if (!cancerTypes.includes("cervical")) return;
-    setCancerTypes((prev) => prev.filter((ct) => ct !== "cervical"));
-    setScreenings((prev) => {
-      if (!("cervical" in prev)) return prev;
-      const { cervical, ...rest } = prev;
-      return rest;
-    });
-    setScreeningErrors((prev) => {
-      if (!("cervical" in prev)) return prev;
-      const { cervical, ...rest } = prev;
-      return rest;
-    });
-  }, [biodata.gender, cancerTypes]);
+    const patch = cervicalRiskPatch(risk);
+    if (!patch) return;
+    setRisk((prev) => ({ ...prev, ...patch }));
+  }, [risk]);
 
-  // Prostate only: auto-derive the screening pathway, PSA eligibility,
-  // screening result, referral and recommended action from the symptom
-  // checklist and PSA/DRE thresholds (National Prostate Cancer Screening
-  // Algorithm — see lib/screeningWizardConfig#computeProstateOutcome).
-  // Scoped to the "prostate" key of `screenings`; every other cancer
-  // type's data and logic is untouched.
-  // useEffect(() => {
-  //   if (!cancerTypes.includes("prostate")) return;
-  //   const current = screenings.prostate || {};
-  //   const outcome = computeProstateOutcome(current);
-  //   const changed =
-  //     current.screeningPathway !== outcome.screeningPathway ||
-  //     current.psaEligibility   !== outcome.psaEligibility   ||
-  //     current.screeningResult  !== outcome.screeningResult  ||
-  //     current.treatmentReferral !== outcome.treatmentReferral ||
-  //     current.recommendedAction !== outcome.recommendedAction;
-  //   if (!changed) return;
-  //   setScreenings((prev) => ({
-  //     ...prev,
-  //     prostate: { ...(prev.prostate || {}), ...outcome },
-  //   }));
-  // }, [cancerTypes, screenings.prostate]);
-
+  // Once the client's gender is known, drop any selected cancer type that doesn't apply to it
+  // (or to the client's age), together with that type's screening data.
   useEffect(() => {
-  if (!cancerTypes.includes("prostate")) return;
-  const patch = prostatePatch(screenings.prostate || {}, biodata.dateOfBirth);
-  if (!patch) return;
-  setScreenings((prev) => ({
-    ...prev,
-    prostate: { ...(prev.prostate || {}), ...patch },
-  }));
-}, [cancerTypes, screenings.prostate, biodata.dateOfBirth]);
+    if (!biodata.gender) return;
+    const allowed = new Set(availableCancers.map((c) => c.value));
+    const stale = cancerTypes.filter((ct) => !allowed.has(ct));
+    if (stale.length === 0) return;
+    setCancerTypes((prev) => prev.filter((ct) => allowed.has(ct)));
+    const drop = <T extends Record<string, any>>(prev: T): T => {
+      const next = { ...prev };
+      stale.forEach((ct) => delete next[ct]);
+      return next;
+    };
+    setScreenings(drop);
+    setScreeningErrors(drop);
+  }, [biodata.gender, availableCancers, cancerTypes]);
+
+  // Prostate only: auto-derive the screening pathway, PSA eligibility, result, referral and
+  // recommended action from the symptom checklist and PSA/DRE thresholds.
+  useEffect(() => {
+    if (!cancerTypes.includes("prostate")) return;
+    const patch = prostatePatch(screenings.prostate || {}, biodata.dateOfBirth);
+    if (!patch) return;
+    setScreenings((prev) => ({
+      ...prev,
+      prostate: { ...(prev.prostate || {}), ...patch },
+    }));
+  }, [cancerTypes, screenings.prostate, biodata.dateOfBirth]);
 
   // ---------------------------------------------------------------------------
   // Memos — all guarded against empty arrays
@@ -686,31 +691,13 @@ useEffect(() => {
     return BASE_STEPS;
   }, [cancerTypes, screenings]);
 
-  const availableCancers = useMemo(
-    () => cancerTypesForGender(biodata.gender ?? ""),
-    [biodata.gender]
-  );
-
-  // const riskGroups = useMemo(() => {
-  //   if (!Array.isArray(cancerTypes) || !cancerTypes.length) return [];
-  //   return getRiskGroups(
-  //     cancerTypes.includes("liver")
-  //       ? "liver"
-  //       : (cancerTypes[0] as CancerType),
-  //     biodata.gender
-  //   );
-  // }, [cancerTypes, biodata.gender]);
-
   const riskGroups = useMemo(() => {
-  if (!Array.isArray(cancerTypes) || !cancerTypes.length) return [];
-  const base = getRiskGroups(
-    cancerTypes.includes("liver") ? "liver" : (cancerTypes[0] as CancerType),
-    biodata.gender
-  );
-  return cancerTypes.includes("cervical") && biodata.gender !== "male"
-    ? [...base, ...CERVICAL_RISK_GROUPS]
-    : base;
-}, [cancerTypes, biodata.gender]);
+    if (!Array.isArray(cancerTypes) || !cancerTypes.length) return [];
+    const base = getRiskGroupsFor(cancerTypes, biodata.gender);
+    return cancerTypes.includes("cervical") && biodata.gender !== "male"
+      ? [...base, ...CERVICAL_RISK_GROUPS]
+      : base;
+  }, [cancerTypes, biodata.gender]);
 
   // ---------------------------------------------------------------------------
   // Field setters
@@ -803,10 +790,10 @@ useEffect(() => {
       ["weightKg", "heightCm", "bmi"].forEach(
         (k) => (payload[k] = payload[k] ? parseFloat(payload[k]) : null)
       );
-      payload.comorbiditiesJson = risk.comorbidities
-        ? String(risk.comorbidities).split(",").map((s: string) => s.trim()).filter(Boolean)
-        : [];
+      payload.comorbiditiesJson = comorbiditiesToJson(risk);
       delete payload.comorbidities;
+      delete payload.comorbiditiesOther;
+
       delete payload.weightInput;
       delete payload.weightUnit;
       delete payload.heightInput;
@@ -824,19 +811,13 @@ useEffect(() => {
   async function ensureVisit(): Promise<number | null> {
     if (visitId) return visitId;
     try {
-      // const { data } = await api.post(ENDPOINTS.createVisit(clientId), {
-      //   visitType:        biodata.screeningCategory === "follow_up" ? "follow_up" : "initial",
-      //   visitDate:        today(),
-      //   notes:            `${cancerTypes.map((c) => cancerLabel(c)).join(", ")} screening`,
-      //   treatmentReferral: treatmentReferral || "not_referred",
-      // });
       const { data } = await api.post(ENDPOINTS.createVisit(clientId), {
-  visitType: biodata.screeningCategory === "follow_up" ? "follow_up" : "initial",
-  visitDate: today(),
-  notes: `${cancerTypes.map((c) => cancerLabel(c)).join(", ")} screening`,
-  treatmentReferral: treatmentReferral || "not_referred",
-  ...visitMeta,
-});
+        visitType: biodata.screeningCategory === "follow_up" ? "follow_up" : "initial",
+        visitDate: today(),
+        notes: `${cancerTypes.map((c) => cancerLabel(c)).join(", ")} screening`,
+        treatmentReferral: treatmentReferral || "not_referred",
+        ...visitMeta,
+      });
       const v  = data?.visit || data?.data || data;
       let   id = v?.visitId ?? v?.id ?? data?.visitId ?? data?.id ?? null;
       if (!id) {
@@ -905,7 +886,7 @@ useEffect(() => {
   async function persistOutcome(): Promise<boolean> {
     setBusy(true);
     try {
-      const screeningDate   = (outcomeCancerType && screenings[outcomeCancerType]?.screeningDate) || today();
+      const screeningDate    = (outcomeCancerType && screenings[outcomeCancerType]?.screeningDate) || today();
       const referredFacility = referral.facilityName || outcome.treatmentFacility;
       const payload: Record<string, any> = {
         ...preCounsel,
@@ -935,7 +916,7 @@ useEffect(() => {
     setLookupLoading(true);
     setLookupAttempted(true);
     try {
-      const { data } = await api.get(`${ENDPOINTS.findClient()}?search=${lookupValue}`);
+      const { data } = await api.get(`${ENDPOINTS.findClient()}?search=${encodeURIComponent(lookupValue.trim())}`);
       const client   = data?.client || data?.data;
       if (!client) {
         setClientFound(false);
@@ -946,19 +927,21 @@ useEffect(() => {
       setClientId(client.clientId ?? client.id);
       setBiodata((prev) => ({
         ...prev,
-        fullName:         client.fullName        ?? "",
-        nin:              client.nin             ?? "",
-        gender:           client.gender          ?? "",
-        dateOfBirth:      dateOnly(client.dateOfBirth),
-        phoneNumber:      client.phoneNumber     ?? "",
-        screeningCategory:"follow_up",
-        stateOfOrigin:    client.stateOfOrigin   ?? "",
-        lgaOfOrigin:      client.lgaOfOrigin     ?? "",
-        stateOfResidence: client.stateOfResidence ?? "",
-        lgaOfResidence:   client.lgaOfResidence   ?? "",
-        address:          client.address          ?? "",
-        landmark:         client.landmark         ?? "",
-        registrationDate: dateOnly(client.registrationDate) || today(),
+        fullName:          client.fullName         ?? "",
+        nin:               client.nin              ?? "",
+        gender:            client.gender           ?? "",
+        dateOfBirth:       dateOnly(client.dateOfBirth),
+        phoneNumber:       client.phoneNumber      ?? "",
+        screeningCategory: "follow_up",
+        stateOfOrigin:     client.stateOfOrigin    ?? "",
+        lgaOfOrigin:       client.lgaOfOrigin      ?? "",
+        stateOfResidence:  client.stateOfResidence ?? "",
+        lgaOfResidence:    client.lgaOfResidence   ?? "",
+        address:           client.address          ?? "",
+        landmark:          client.landmark         ?? "",
+        registrationDate:  dateOnly(client.registrationDate) || today(),
+        nextOfKinName:     client.nextOfKinName    ?? "",
+        nextOfKinPhone:    client.nextOfKinPhone   ?? "",
       }));
       toast.success("Client record found");
     } catch {
@@ -1022,11 +1005,8 @@ useEffect(() => {
     setStepIndex((i) => Math.max(i - 1, 0));
   }
 
-  const currentKey      = steps[stepIndex].key;
-  const isLast          = stepIndex === steps.length - 1;
-  const filteredFacilities = facilities.filter((f) =>
-    f.facilityName.toLowerCase().includes(facilitySearch.toLowerCase())
-  );
+  const currentKey = steps[stepIndex].key;
+  const isLast     = stepIndex === steps.length - 1;
 
   // ---------------------------------------------------------------------------
   // Render
@@ -1215,14 +1195,14 @@ useEffect(() => {
               </Label>
 
               <div>
-  <span className="text-sm font-semibold">Date of Birth *</span>
-  <DateOfBirthField
-    value={biodata.dateOfBirth}
-    onChange={(v) => setBiodataField("dateOfBirth", v)}
-    hasError={!!biodataErrors.dateOfBirth}
-  />
-</div>
-        
+                <span className="text-sm font-semibold">Date of Birth *</span>
+                <DateOfBirthField
+                  value={biodata.dateOfBirth}
+                  onChange={(v) => setBiodataField("dateOfBirth", v)}
+                  hasError={!!biodataErrors.dateOfBirth}
+                />
+              </div>
+
               <Label>
                 <span className="text-sm font-semibold">Phone Number *</span>
                 <Input
@@ -1347,21 +1327,28 @@ useEffect(() => {
               </Label>
 
               <Label>
-  <span className="text-sm font-semibold">Next of Kin Name</span>
-  <Input className="mt-2 rounded-2xl h-12" value={biodata.nextOfKinName ?? ""}
-    onChange={(e) => setBiodataField("nextOfKinName", e.target.value)} />
-</Label>
-<Label>
-  <span className="text-sm font-semibold">Next of Kin Phone</span>
-  <Input type="tel" className="mt-2 rounded-2xl h-12" value={biodata.nextOfKinPhone ?? ""}
-    onChange={(e) => setBiodataField("nextOfKinPhone", e.target.value)} />
-</Label>
-<div className="sm:col-span-2">
-  <VisitDetailsFields
-    value={visitMeta}
-    onChange={(n, v) => setVisitMeta((p) => ({ ...p, [n]: v }))}
-  />
-</div>
+                <span className="text-sm font-semibold">Next of Kin Name</span>
+                <Input
+                  className="mt-2 rounded-2xl h-12"
+                  value={biodata.nextOfKinName ?? ""}
+                  onChange={(e) => setBiodataField("nextOfKinName", e.target.value)}
+                />
+              </Label>
+              <Label>
+                <span className="text-sm font-semibold">Next of Kin Phone</span>
+                <Input
+                  type="tel"
+                  className="mt-2 rounded-2xl h-12"
+                  value={biodata.nextOfKinPhone ?? ""}
+                  onChange={(e) => setBiodataField("nextOfKinPhone", e.target.value)}
+                />
+              </Label>
+              <div className="sm:col-span-2">
+                <VisitDetailsFields
+                  value={visitMeta}
+                  onChange={(n, v) => setVisitMeta((p) => ({ ...p, [n]: v }))}
+                />
+              </div>
             </div>
           </div>
         )}
@@ -1373,9 +1360,12 @@ useEffect(() => {
               Select Cancer Type(s) to Screen
             </h3>
             <p className="text-sm text-gray-500 dark:text-gray-400">
-              Choose one or more — options are filtered by the client&apos;s gender.
+              Choose one or more — options are filtered by the client&apos;s gender and age.
               Each selected module gets its own screening form.
             </p>
+            {ageNotice && (
+              <p className="text-xs rounded-xl border border-amber-200 bg-amber-50 text-amber-800 px-3 py-2">{ageNotice}</p>
+            )}
             <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
               {availableCancers.map((c) => {
                 const selected = cancerTypes.includes(c.value);
@@ -1503,27 +1493,30 @@ useEffect(() => {
             <h3 className="text-lg font-semibold text-gray-800 dark:text-white">Screening</h3>
 
             {cancerTypes.map((ct) => {
-              // Inject facility options into breast biopsy booking field
-              const groups = withoutReferral(SCREENING_GROUPS[ct]).map((g) => {
-                if (ct !== "breast") return g;
-                return {
-                  ...g,
-                  fields: g.fields.map((f) =>
-                    f.name === "biopsyBookingFacilityId"
-                      ? {
-                          ...f,
-                          options: [
-                            { value: "", label: "Select facility" },
-                            ...facilities.map((fac) => ({
-                              value: String(fac.facilityId),
-                              label: fac.facilityName,
-                            })),
-                          ],
-                        }
-                      : f
-                  ),
-                };
-              });
+              const toOptions = (rows: Facility[]) => [
+                { value: "", label: "Select facility" },
+                ...rows.map((fac) => ({
+                  value: String(fac.facilityId),
+                  label: `${fac.facilityName}${fac.facilityState ? " - " + fac.facilityState : ""}`,
+                })),
+              ];
+
+              const groups = withoutReferral(SCREENING_GROUPS[ct]).map((g) => ({
+                ...g,
+                fields: g.fields.map((f) => {
+                  // Breast biopsy and prostate bookings use the general treatment-capable facility list.
+                  if (
+                    f.name === "biopsyBookingFacilityId" ||
+                    f.name === "recallBookingFacilityId" ||
+                    f.name === "urologyBookingFacilityId"
+                  ) {
+                    return { ...f, options: toOptions(facilities) };
+                  }
+                  // Everything else has its own service list.
+                  if (serviceFacilities[f.name]) return { ...f, options: toOptions(serviceFacilities[f.name]) };
+                  return f;
+                }),
+              }));
 
               return (
                 <div
