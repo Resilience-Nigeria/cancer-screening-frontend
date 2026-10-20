@@ -34,12 +34,15 @@ import {
   SCREENING_GROUPS,
   FieldGroup,
   prostatePatch,
+  dedupeFields,
+  breastfeedingPatch,
 } from "../../lib/screeningWizardConfig";
 import { GroupedForm, buildScreeningPayload } from "../components/ScreningWizard";
 import OtpVerificationStep from "../components/OtpVerificationService";
 import VisitDetailsFields, { initialVisitMeta, ageFromDob, VisitMeta } from "../components/VisitDetailsFields";
 import { CERVICAL_RISK_GROUPS, cervicalRiskPatch } from "../../lib/cervicalRisk";
 import DateOfBirthField from "../components/DateOfBirthField";
+import BiodataExtraFields from "../components/BiodataExtraFields";
 
 // ---------------------------------------------------------------------------
 // Medical history confirm-checklist — Stage 2, Section C
@@ -218,6 +221,9 @@ export default function ClinicalScreeningPage() {
     stateOfOrigin: "",
     lgaOfOrigin: "",
     occupation: "",
+    religion: "",
+    religionOther: "",
+    maritalStatus: "",
     nextOfKinName: "",
     nextOfKinPhone: "",
     nextOfKinRelationship: "",
@@ -270,11 +276,15 @@ export default function ClinicalScreeningPage() {
   const ageNotice = cancerAgeNotice(biodata.gender, clientAge);
 
   // Only the risk factors that apply to the selected cancer type(s).
+  // dedupeFields keeps shared fields (e.g. number of children) from rendering twice when both
+  // breast and cervical are selected.
   const riskGroupsForVerify = useMemo(() => {
     const base = getRiskGroupsFor(cancerTypes, biodata.gender);
-    return cancerTypes.includes("cervical") && biodata.gender !== "male"
-      ? [...base, ...CERVICAL_RISK_GROUPS]
-      : base;
+    return dedupeFields(
+      cancerTypes.includes("cervical") && biodata.gender !== "male"
+        ? [...base, ...CERVICAL_RISK_GROUPS]
+        : base
+    );
   }, [cancerTypes, biodata.gender]);
 
   // Prefill physical exam weight/height from the risk profile
@@ -300,6 +310,12 @@ export default function ClinicalScreeningPage() {
     if (!patch) return;
     setRisk((prev) => ({ ...prev, ...patch }));
   }, [risk]);
+
+  // Breast: cumulative breastfeeding (months) = number of children × average months per child.
+  useEffect(() => {
+    const patch = breastfeedingPatch(risk);
+    if (patch) setRisk((prev) => ({ ...prev, ...patch }));
+  }, [risk.numberOfChildbirths, risk.avgBreastfeedingMonthsPerChild, risk.breastfeedingHistory, risk.breastfeedingDuration]);
 
   // Once the client's gender is known, drop any selected cancer type that doesn't apply to it
   // (e.g. cervical on a male client, or a stale prostate selection on a female client) together
@@ -362,8 +378,10 @@ export default function ClinicalScreeningPage() {
       try {
         const { data } = await api.get(path);
         set(data?.facilities ?? []);
-      } catch (error) {
-        console.error(`Failed to load facilities from ${path}:`, error);
+      } catch (error: any) {
+        // warn (not error) with a plain message: Next's dev overlay treats console.error(AxiosError)
+        // as a crash, but a missing service list should just leave that dropdown empty.
+        console.warn(`Could not load facilities from ${path} (${error?.response?.status ?? "no response"})`);
       }
     };
     load("/services/ablation/facilities", setAblationFacilities);
@@ -525,6 +543,9 @@ export default function ClinicalScreeningPage() {
           stateOfOrigin: found.stateOfOrigin || "",
           lgaOfOrigin: found.lgaOfOrigin || "",
           occupation: found.occupation || "",
+          religion: found.religion || "",
+          religionOther: found.religionOther || "",
+          maritalStatus: found.maritalStatus || "",
           nextOfKinName: found.nextOfKinName || "",
           nextOfKinPhone: found.nextOfKinPhone || "",
           nextOfKinRelationship: found.nextOfKinRelationship || "",
@@ -760,6 +781,9 @@ export default function ClinicalScreeningPage() {
       stateOfOrigin: c.stateOfOrigin || "",
       lgaOfOrigin: c.lgaOfOrigin || "",
       occupation: c.occupation || "",
+      religion: c.religion || "",
+      religionOther: c.religionOther || "",
+      maritalStatus: c.maritalStatus || "",
       nextOfKinName: c.nextOfKinName || "",
       nextOfKinPhone: c.nextOfKinPhone || "",
       nextOfKinRelationship: c.nextOfKinRelationship || "",
@@ -1191,6 +1215,13 @@ export default function ClinicalScreeningPage() {
                   ))}
                 </Select>
               </Label>
+
+              {/* Religion + current marital status (+ "other religion" input when needed) */}
+              <BiodataExtraFields
+                value={biodata}
+                onChange={(n, v) => setBiodata((p) => ({ ...p, [n]: v }))}
+              />
+
               <Label>
                 <span className="text-sm font-semibold">NIN <span className="text-gray-400 font-normal">(optional)</span></span>
                 <Input
@@ -1347,9 +1378,10 @@ export default function ClinicalScreeningPage() {
                 </p>
               </div>
             )}
+            {/* maritalStatus is merged in (read-only) so the cervical "if single" question can use it */}
             <GroupedForm
               groups={riskGroupsForVerify}
-              values={risk}
+              values={{ ...risk, maritalStatus: biodata.maritalStatus }}
               errors={{}}
               onChange={(name, value) => setRisk((p) => ({ ...p, [name]: value }))}
             />

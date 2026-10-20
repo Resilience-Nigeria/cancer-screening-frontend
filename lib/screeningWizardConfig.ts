@@ -255,6 +255,35 @@ export function buildRiskPayload(risk: Record<string, any>): Record<string, any>
   } else if (payload.ionizingRadiationType !== "other") {
     payload.ionizingRadiationOther = null;
   }
+
+  // Numeric fields: "" / null → null, otherwise parse (0 is a valid answer).
+  const toInt = (k: string) => {
+    if (k in payload) payload[k] = payload[k] === "" || payload[k] == null ? null : parseInt(payload[k], 10);
+  };
+  const toFloat = (k: string) => {
+    if (k in payload) payload[k] = payload[k] === "" || payload[k] == null ? null : parseFloat(payload[k]);
+  };
+  [
+    "numberOfChildbirths",
+    "ageAtFirstIntercourse",
+    "numberOfPreviousMarriages",
+    "numberOfSexualPartners",
+    "ageAtFirstMenstruation",
+    "ageAtMenopause",
+  ].forEach(toInt);
+  ["avgBreastfeedingMonthsPerChild", "breastfeedingDuration"].forEach(toFloat);
+
+  // "More than 1 sexual partner" is derived from the partner count rather than asked separately.
+  if (typeof payload.numberOfSexualPartners === "number" && !Number.isNaN(payload.numberOfSexualPartners)) {
+    payload.moreThanOnePartner = payload.numberOfSexualPartners > 1 ? "yes" : "no";
+  }
+
+  // Dependent answers cleared when they no longer apply.
+  if (payload.previousMarriage !== "yes") payload.numberOfPreviousMarriages = null;
+  if (payload.breastfeedingHistory !== "yes") {
+    payload.avgBreastfeedingMonthsPerChild = null;
+    payload.breastfeedingDuration = null;
+  }
   return payload;
 }
 
@@ -262,7 +291,8 @@ export function buildRiskPayload(risk: Record<string, any>): Record<string, any>
 // Step 4 — Risk profile (dynamic). Posted to /risk-profile.
 // Each field can be tagged with `cancers`; it is then shown only when one of those cancer
 // types is selected (see getRiskGroupsFor). Tags follow RISK_FOCUS below:
-//   cervical   → HIV status, smoking, family history
+//   cervical   → HIV status, smoking, family history (+ sexual & reproductive history,
+//                see CERVICAL_RISK_GROUPS in cervicalRisk.ts)
 //   breast     → family history, alcohol, BMI (+ reproductive history)
 //   prostate   → family history (age comes from the date of birth)
 //   colorectal → family history, smoking, alcohol
@@ -423,15 +453,18 @@ const infectiousGroup: FieldGroup = {
 
 // Per-cancer emphasis line shown at the top of the risk step.
 export const RISK_FOCUS: Record<CancerType, string> = {
-  cervical: "Cervical risk is driven by HIV status, smoking and family history.",
-  breast: "Breast risk is driven by family history, alcohol and BMI.",
+  cervical: "Cervical risk is driven by HIV status, smoking, family history and sexual & reproductive history.",
+  breast: "Breast risk is driven by family history, alcohol, BMI and reproductive history.",
   prostate: "Prostate risk is driven by age and family history.",
   colorectal: "Colorectal risk is driven by family history, smoking and alcohol.",
   liver: "Liver risk is driven by hepatitis B/C status and alcohol — viral status is required.",
 };
 
-// Reproductive-history fields (menstruation, menopause, breastfeeding) only make sense for
-// female clients being screened for breast cancer.
+// Reproductive-history fields (menstruation, menopause, children, breastfeeding) only make sense
+// for female clients being screened for breast cancer.
+//
+// `numberOfChildbirths` deliberately shares its name with the cervical risk field, so the answer is
+// stored once. When both cancers are selected, dedupeFields() keeps only the first occurrence.
 const BREAST_REPRODUCTIVE_FIELDS: WizardField[] = [
   {
     name: "ageAtFirstMenstruation",
@@ -452,21 +485,41 @@ const BREAST_REPRODUCTIVE_FIELDS: WizardField[] = [
     cancers: ["breast"],
   },
   {
+    name: "numberOfChildbirths",
+    label: "Number of Children",
+    type: "number",
+    min: 0,
+    colSpan: 1,
+    cancers: ["breast"],
+  },
+  {
     name: "breastfeedingHistory",
-    label: "Breastfeeding History",
+    label: "Has she breastfed?",
     type: "select",
     options: yesNo,
     colSpan: 1,
     cancers: ["breast"],
   },
   {
-    name: "breastfeedingDuration",
-    label: "Breastfeeding Duration (months)",
+    name: "avgBreastfeedingMonthsPerChild",
+    label: "Average months breastfed per child",
     type: "number",
     min: 0,
+    step: "0.5",
     colSpan: 1,
     cancers: ["breast"],
     showIf: (v) => v.breastfeedingHistory === "yes",
+  },
+  {
+    name: "breastfeedingDuration", // existing column, now auto-calculated
+    label: "Cumulative Breastfeeding Duration (months)",
+    type: "number",
+    step: "0.5",
+    colSpan: 1,
+    readOnly: true,
+    cancers: ["breast"],
+    showIf: (v) => v.breastfeedingHistory === "yes",
+    help: "Auto-calculated: number of children × average months per child",
   },
 ];
 
@@ -479,7 +532,7 @@ export function getRiskGroupsFor(cancerTypes: CancerType[], gender?: string): Fi
   const selected = cancerTypes ?? [];
   const applies = (f: WizardField) => !f.cancers || f.cancers.some((c) => selected.includes(c));
 
-  const includeReproductive = selected.includes("breast") && gender !== "male";
+  const includeReproductive = selected.includes("breast") && gender === "female";
   const basicGroup: FieldGroup = includeReproductive
     ? { ...commonRiskGroup, fields: [...commonRiskGroup.fields, ...BREAST_REPRODUCTIVE_FIELDS] }
     : commonRiskGroup;
@@ -492,6 +545,44 @@ export function getRiskGroupsFor(cancerTypes: CancerType[], gender?: string): Fi
 /** Single-type convenience wrapper kept for older call sites. */
 export function getRiskGroups(cancer: CancerType, gender?: string): FieldGroup[] {
   return getRiskGroupsFor([cancer], gender);
+}
+
+/**
+ * Keeps the first occurrence of each field name, so shared fields (e.g. number of children)
+ * aren't rendered twice when both breast and cervical are selected.
+ */
+export function dedupeFields(groups: FieldGroup[]): FieldGroup[] {
+  const seen = new Set<string>();
+  return groups
+    .map((g) => ({
+      ...g,
+      fields: g.fields.filter((f) => {
+        if (seen.has(f.name)) return false;
+        seen.add(f.name);
+        return true;
+      }),
+    }))
+    .filter((g) => g.fields.length > 0);
+}
+
+/**
+ * Cumulative breastfeeding (months) = number of children × average months per child.
+ * Returns the fields to merge into state, or null when nothing changed.
+ */
+export function breastfeedingPatch(risk: Record<string, any>): Record<string, any> | null {
+  const current = String(risk.breastfeedingDuration ?? "");
+
+  if (risk.breastfeedingHistory !== "yes") {
+    return current ? { breastfeedingDuration: "" } : null;
+  }
+
+  const kids = parseInt(risk.numberOfChildbirths, 10);
+  const avg = parseFloat(risk.avgBreastfeedingMonthsPerChild);
+  // Don't wipe a saved value until both inputs exist.
+  if (!(kids >= 0) || !(avg >= 0)) return null;
+
+  const total = String(Math.round(kids * avg * 10) / 10);
+  return total === current ? null : { breastfeedingDuration: total };
 }
 
 // ---------------------------------------------------------------------------
@@ -736,28 +827,9 @@ export const SCREENING_GROUPS: Record<CancerType, FieldGroup[]> = {
         },
       ],
     },
-    {
-      title: "Cervical Risk Factors",
-      fields: [
-        { name: "moreThanOnePartner", label: "More than 1 Sexual Partner", type: "select", options: yesNo, colSpan: 1 },
-        { name: "ageAtFirstIntercourse", label: "Age at First Intercourse", type: "number", min: 0, max: 100, colSpan: 1 },
-        { name: "numberOfChildbirths", label: "Number of Childbirths", type: "number", min: 0, colSpan: 1 },
-        {
-          name: "contraceptiveUse",
-          label: "Contraceptive Use",
-          type: "select",
-          colSpan: 1,
-          options: [
-            { value: "", label: "Select" },
-            { value: "none", label: "None" },
-            { value: "oral_contraceptives", label: "Oral Contraceptives" },
-            { value: "iud", label: "IUD" },
-            { value: "barrier_methods", label: "Barrier Methods" },
-            { value: "other", label: "Other" },
-          ],
-        },
-      ],
-    },
+    // NOTE: "Cervical Risk Factors" (more than 1 partner, age at first intercourse, number of
+    // childbirths, contraceptive use) now lives in CERVICAL_RISK_GROUPS (cervicalRisk.ts),
+    // so it is asked in the Risk Assessment rather than here.
     {
       title: "Procedures & Follow-up",
       fields: [

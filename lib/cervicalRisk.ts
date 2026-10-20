@@ -36,6 +36,14 @@ export const CERVICAL_RISK_FIELDS = [
   "lastMenstrualPeriod",
   "pregnancyStatus",
   "menopausalStatus",
+  // Sexual & reproductive history (moved here from the cervical screening step)
+  "previousMarriage",
+  "numberOfPreviousMarriages",
+  "numberOfSexualPartners",
+  "moreThanOnePartner",
+  "ageAtFirstIntercourse",
+  "numberOfChildbirths",
+  "contraceptiveUse",
   ...CERVICAL_SYMPTOM_FIELDS,
   "symptomOtherDetail",
   "symptomNone",
@@ -86,7 +94,12 @@ const prevScreened = (v: Record<string, any>) => v.prevCervicalScreened === "yes
 const prevAbnormal = (v: Record<string, any>) =>
   prevScreened(v) && ["positive_precancer", "suspected_cancer"].includes(v.prevCervicalResult);
 
-/** Append to the shared risk groups when cervical is being screened and the client is female. */
+/**
+ * Append to the shared risk groups when cervical is being screened and the client is female.
+ *
+ * NOTE: `moreThanOnePartner` is no longer a form field; it is derived from `numberOfSexualPartners`
+ * when saving. It stays in CERVICAL_RISK_FIELDS so older saved values still hydrate.
+ */
 export const CERVICAL_RISK_GROUPS: FieldGroup[] = [
   {
     title: "Cervical Risk Profile",
@@ -128,6 +141,45 @@ export const CERVICAL_RISK_GROUPS: FieldGroup[] = [
           { value: "pre", label: "Pre-menopausal" },
           { value: "peri", label: "Peri-menopausal" },
           { value: "post", label: "Post-menopausal" },
+        ],
+      },
+    ],
+  },
+  {
+    title: "Sexual & Reproductive History",
+    fields: [
+      { name: "previousMarriage", label: "Any previous marriage?", type: "select", options: yesNo, colSpan: 1 },
+      {
+        name: "numberOfPreviousMarriages",
+        label: "How many previous marriages?",
+        type: "number",
+        min: 1,
+        colSpan: 1,
+        showIf: (v) => v.previousMarriage === "yes",
+      },
+      {
+        name: "numberOfSexualPartners",
+        label: "How many sexual partners?",
+        type: "number",
+        min: 0,
+        colSpan: 1,
+        // "More than 1 sexual partner" is not asked separately: it is derived from this count
+        // when the risk profile is saved (see buildRiskPayload / persistRisk).
+      },
+      { name: "ageAtFirstIntercourse", label: "Age at First Intercourse", type: "number", min: 0, max: 100, colSpan: 1 },
+      { name: "numberOfChildbirths", label: "Number of Childbirths", type: "number", min: 0, colSpan: 1 },
+      {
+        name: "contraceptiveUse",
+        label: "Contraceptive Use",
+        type: "select",
+        colSpan: 1,
+        options: [
+          { value: "", label: "Select" },
+          { value: "none", label: "None" },
+          { value: "oral_contraceptives", label: "Oral Contraceptives" },
+          { value: "iud", label: "IUD" },
+          { value: "barrier_methods", label: "Barrier Methods" },
+          { value: "other", label: "Other" },
         ],
       },
     ],

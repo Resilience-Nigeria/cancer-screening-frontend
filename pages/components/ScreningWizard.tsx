@@ -38,10 +38,13 @@ import {
   getRiskGroupsFor,
   comorbiditiesFromJson,
   comorbiditiesToJson,
+  dedupeFields,
+  breastfeedingPatch,
 } from "../../lib/screeningWizardConfig";
 import VisitDetailsFields, { initialVisitMeta, ageFromDob, VisitMeta } from "../components/VisitDetailsFields";
 import { CERVICAL_RISK_GROUPS, cervicalRiskPatch, hydrateCervicalRisk } from "../../lib/cervicalRisk";
 import DateOfBirthField from "../components/DateOfBirthField";
+import BiodataExtraFields from "../components/BiodataExtraFields";
 
 // ---------------------------------------------------------------------------
 // Endpoints
@@ -385,6 +388,9 @@ export default function ScreeningWizard() {
     address:           "",
     landmark:          "",
     registrationDate:  today(),
+    religion:          "",
+    religionOther:     "",
+    maritalStatus:     "",
     nextOfKinName:     "",
     nextOfKinPhone:    "",
   });
@@ -558,6 +564,9 @@ export default function ScreeningWizard() {
           address:           c.address           ?? "",
           landmark:          c.landmark          ?? "",
           registrationDate:  dateOnly(c.registrationDate ?? c.registration_date) || today(),
+          religion:          c.religion          ?? "",
+          religionOther:     c.religionOther     ?? "",
+          maritalStatus:     c.maritalStatus     ?? "",
           nextOfKinName:     c.nextOfKinName     ?? "",
           nextOfKinPhone:    c.nextOfKinPhone    ?? "",
         }));
@@ -588,6 +597,8 @@ export default function ScreeningWizard() {
             ageAtMenopause:         rp.ageAtMenopause         ?? "",
             breastfeedingHistory:   rp.breastfeedingHistory   ?? "",
             breastfeedingDuration:  rp.breastfeedingDuration  ?? "",
+            avgBreastfeedingMonthsPerChild: rp.avgBreastfeedingMonthsPerChild ?? "",
+            // Includes the sexual & reproductive history fields (numberOfChildbirths, etc.)
             ...hydrateCervicalRisk(rp),
           });
         }
@@ -645,6 +656,12 @@ export default function ScreeningWizard() {
     setRisk((prev) => ({ ...prev, ...patch }));
   }, [risk]);
 
+  // Breast: cumulative breastfeeding (months) = number of children × average months per child.
+  useEffect(() => {
+    const patch = breastfeedingPatch(risk);
+    if (patch) setRisk((prev) => ({ ...prev, ...patch }));
+  }, [risk.numberOfChildbirths, risk.avgBreastfeedingMonthsPerChild, risk.breastfeedingHistory, risk.breastfeedingDuration]);
+
   // Once the client's gender is known, drop any selected cancer type that doesn't apply to it
   // (or to the client's age), together with that type's screening data.
   useEffect(() => {
@@ -691,12 +708,16 @@ export default function ScreeningWizard() {
     return BASE_STEPS;
   }, [cancerTypes, screenings]);
 
+  // dedupeFields keeps shared fields (e.g. number of children) from rendering twice when both
+  // breast and cervical are selected.
   const riskGroups = useMemo(() => {
     if (!Array.isArray(cancerTypes) || !cancerTypes.length) return [];
     const base = getRiskGroupsFor(cancerTypes, biodata.gender);
-    return cancerTypes.includes("cervical") && biodata.gender !== "male"
-      ? [...base, ...CERVICAL_RISK_GROUPS]
-      : base;
+    return dedupeFields(
+      cancerTypes.includes("cervical") && biodata.gender !== "male"
+        ? [...base, ...CERVICAL_RISK_GROUPS]
+        : base
+    );
   }, [cancerTypes, biodata.gender]);
 
   // ---------------------------------------------------------------------------
@@ -742,6 +763,8 @@ export default function ScreeningWizard() {
   // Persistence
   // ---------------------------------------------------------------------------
   async function persistBiodata(): Promise<boolean> {
+    // Religion and marital status are optional. To make marital status mandatory,
+    // add "maritalStatus" to this list.
     const required = [
       "fullName", "gender", "dateOfBirth", "phoneNumber", "screeningCategory",
       "stateOfOrigin", "lgaOfOrigin", "stateOfResidence", "lgaOfResidence", "registrationDate",
@@ -783,13 +806,31 @@ export default function ScreeningWizard() {
     setBusy(true);
     try {
       const payload: Record<string, any> = { ...risk };
-      ["cigarettesPerDay", "smokingDuration", "alcoholUnitsPerWeek",
-       "ageAtFirstMenstruation", "ageAtMenopause", "breastfeedingDuration"].forEach(
-        (k) => (payload[k] = payload[k] ? parseInt(payload[k]) : null)
-      );
-      ["weightKg", "heightCm", "bmi"].forEach(
-        (k) => (payload[k] = payload[k] ? parseFloat(payload[k]) : null)
-      );
+
+      // "" / null → null; otherwise parse (0 is a valid answer, e.g. no children).
+      const toInt = (k: string) =>
+        (payload[k] = payload[k] === "" || payload[k] == null ? null : parseInt(payload[k], 10));
+      const toFloat = (k: string) =>
+        (payload[k] = payload[k] === "" || payload[k] == null ? null : parseFloat(payload[k]));
+
+      ["cigarettesPerDay", "smokingDuration", "alcoholUnitsPerWeek", "ageAtFirstMenstruation",
+       "ageAtMenopause", "numberOfChildbirths", "ageAtFirstIntercourse",
+       "numberOfPreviousMarriages", "numberOfSexualPartners"].forEach(toInt);
+      // breastfeedingDuration is now a decimal (children × average months), so it's a float.
+      ["weightKg", "heightCm", "bmi", "avgBreastfeedingMonthsPerChild", "breastfeedingDuration"].forEach(toFloat);
+
+      // "More than 1 sexual partner" is derived from the partner count rather than asked separately.
+      if (typeof payload.numberOfSexualPartners === "number" && !Number.isNaN(payload.numberOfSexualPartners)) {
+        payload.moreThanOnePartner = payload.numberOfSexualPartners > 1 ? "yes" : "no";
+      }
+
+      // Dependent answers cleared when they no longer apply.
+      if (payload.previousMarriage !== "yes") payload.numberOfPreviousMarriages = null;
+      if (payload.breastfeedingHistory !== "yes") {
+        payload.avgBreastfeedingMonthsPerChild = null;
+        payload.breastfeedingDuration = null;
+      }
+
       payload.comorbiditiesJson = comorbiditiesToJson(risk);
       delete payload.comorbidities;
       delete payload.comorbiditiesOther;
@@ -940,6 +981,9 @@ export default function ScreeningWizard() {
         address:           client.address          ?? "",
         landmark:          client.landmark         ?? "",
         registrationDate:  dateOnly(client.registrationDate) || today(),
+        religion:          client.religion         ?? "",
+        religionOther:     client.religionOther    ?? "",
+        maritalStatus:     client.maritalStatus    ?? "",
         nextOfKinName:     client.nextOfKinName    ?? "",
         nextOfKinPhone:    client.nextOfKinPhone   ?? "",
       }));
@@ -1227,6 +1271,13 @@ export default function ScreeningWizard() {
                 </Select>
               </Label>
 
+              {/* Religion + current marital status (+ "other religion" input when needed) */}
+              <BiodataExtraFields
+                value={biodata}
+                onChange={(n, v) => setBiodataField(n, v)}
+                wideClass="sm:col-span-2"
+              />
+
               {/* State + LGA of Origin */}
               <div className="sm:col-span-2 grid gap-4 grid-cols-1 sm:grid-cols-2">
                 <Label>
@@ -1478,9 +1529,10 @@ export default function ScreeningWizard() {
                 </span>
               </Label>
             </div>
+            {/* maritalStatus is merged in (read-only) so the cervical "if single" question can use it */}
             <GroupedForm
               groups={riskGroups}
-              values={risk}
+              values={{ ...risk, maritalStatus: biodata.maritalStatus }}
               errors={riskErrors}
               onChange={setRiskField}
             />
