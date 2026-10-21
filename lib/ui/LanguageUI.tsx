@@ -15,7 +15,8 @@ export function LanguageGate() {
   if (confirmed) return null;
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-gradient-to-br from-green-50 to-white">
+    // <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-gradient-to-br from-green-50 to-white">
+    <div className="min-h-screen flex items-center justify-center p-4 bg-gradient-to-br from-green-50 to-white">
       <div className="w-full max-w-md bg-white rounded-3xl shadow-lg border border-gray-100 p-6 md:p-8">
         <div className="flex flex-col items-center text-center mb-6">
           <div className="p-3 bg-green-100 rounded-full mb-3">

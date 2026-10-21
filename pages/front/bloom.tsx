@@ -6,8 +6,8 @@ import { nigerianStates, lgasByState, getStateCode } from "../../lib/nigeriansta
 import api from "@/lib/api";
 import OtpVerificationStep from "../components/OtpVerificationService";
 import { LanguageProvider, useLanguage } from "@/lib/i18n/LanguageProvider";
-import { LanguageGate, LanguageSwitcher } from "../components/LanguageUI";
-import PoweredBy from "../components/PoweredBy";
+import { LanguageGate, LanguageSwitcher } from "@/lib/ui/LanguageUI";
+import PoweredBy from "@/lib/ui/PoweredBy";
 
 
 // Assessment Result Interface
@@ -713,17 +713,25 @@ function ConsentPopup({
 }
 
 // ── Page entry: provider + first-load language prompt ───────────────────────
+// export default function BloomPage() {
+//   return (
+//     <LanguageProvider>
+//       <LanguageGate />
+//       <LanguageSwitcher />
+//       <BloomPageInner />
+//     </LanguageProvider>
+//   );
+// }
 export default function BloomPage() {
   return (
     <LanguageProvider>
-      <LanguageGate />
       <LanguageSwitcher />
       <BloomPageInner />
     </LanguageProvider>
   );
 }
-
 // Main page component
+
 function BloomPageInner() {
   const { t, language, confirmed } = useLanguage();
 
@@ -838,6 +846,7 @@ function BloomPageInner() {
   };
 
   // ── Stage gates ──────────────────────────────────────────────────────────
+  if (!confirmed) return <LanguageGate />;
   if (stage === "consent") {
     return (
       <>
