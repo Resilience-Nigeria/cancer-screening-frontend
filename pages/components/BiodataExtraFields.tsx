@@ -24,14 +24,16 @@ export const MARITAL_STATUS_OPTIONS = [
  *   "sm:col-span-2"  → ScreeningWizard (responsive grid)
  */
 export default function BiodataExtraFields({
-  value,
-  onChange,
+  value = {},
+  onChange = () => {},
   wideClass = "col-span-2",
 }: {
-  value: Record<string, any>;
-  onChange: (name: string, v: any) => void;
+  value?: Record<string, any>;
+  onChange?: (name: string, v: any) => void;
   wideClass?: string;
 }) {
+  // Defaults matter: this file lives under pages/components, so Next.js also prerenders it as a
+  // route with no props. It is only ever used as a child of the biodata forms.
   return (
     <>
       <Label>

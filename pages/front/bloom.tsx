@@ -5,6 +5,10 @@ import { AlertTriangle, CheckCircle, Loader2, X, Minimize2, Maximize2, Info, Shi
 import { nigerianStates, lgasByState, getStateCode } from "../../lib/nigerianstates";
 import api from "@/lib/api";
 import OtpVerificationStep from "../components/OtpVerificationService";
+import { LanguageProvider, useLanguage } from "@/lib/i18n/LanguageProvider";
+import { LanguageGate, LanguageSwitcher } from "../components/LanguageUI";
+import PoweredBy from "../components/PoweredBy";
+
 
 // Assessment Result Interface
 export interface AssessmentResult {
@@ -21,196 +25,162 @@ export interface AssessmentResult {
   };
 }
 
-const RISK_STYLES: Record<AssessmentResult["riskCategory"], { label: string; badge: string; icon: React.ReactNode }> = {
-  low: {
-    label: "Low Risk",
-    badge: "bg-green-100 text-green-800",
-    icon: <CheckCircle className="w-5 h-5" />,
-  },
-  average: {
-    label: "Average Risk",
-    badge: "bg-green-200 text-green-800",
-    icon: <CheckCircle className="w-5 h-5" />,
-  },
-  increased: {
-    label: "Increased Risk",
-    badge: "bg-green-400 text-green-900",
-    icon: <AlertTriangle className="w-5 h-5" />,
-  },
-  symptomatic_high: {
-    label: "Needs Prompt Evaluation",
-    badge: "bg-green-700 text-white",
-    icon: <AlertTriangle className="w-5 h-5" />,
-  },
+// Labels now come from translations (risk.<category>)
+const RISK_STYLES: Record<AssessmentResult["riskCategory"], { badge: string; icon: React.ReactNode }> = {
+  low: { badge: "bg-green-100 text-green-800", icon: <CheckCircle className="w-5 h-5" /> },
+  average: { badge: "bg-green-200 text-green-800", icon: <CheckCircle className="w-5 h-5" /> },
+  increased: { badge: "bg-green-400 text-green-900", icon: <AlertTriangle className="w-5 h-5" /> },
+  symptomatic_high: { badge: "bg-green-700 text-white", icon: <AlertTriangle className="w-5 h-5" /> },
 };
 
-// Symptom Questions for Self Assessment
+// Symptom questions. Text/description are looked up via t(`q.${id}.text`) / t(`q.${id}.desc`)
+// and the category via t(`cat.${category}`). The `category` string stays in English as a key.
 interface SymptomQuestion {
   id: string;
   category: string;
-  text: string;
-  description: string;
   gender: "all" | "female" | "male";
 }
 
 const symptomQuestions: SymptomQuestion[] = [
-  // General Symptoms - All genders
-  { id: "weight_loss", category: "General", text: "Have you noticed unexplained weight loss?", description: "Losing weight without trying", gender: "all" },
-  { id: "fatigue", category: "General", text: "Have you been experiencing persistent fatigue?", description: "Feeling unusually tired or exhausted", gender: "all" },
-  { id: "night_sweats", category: "General", text: "Have you been having night sweats?", description: "Waking up drenched in sweat", gender: "all" },
-  { id: "fever", category: "General", text: "Have you had a persistent fever?", description: "Fever that doesn't go away", gender: "all" },
+  { id: "weight_loss", category: "General", gender: "all" },
+  { id: "fatigue", category: "General", gender: "all" },
+  { id: "night_sweats", category: "General", gender: "all" },
+  { id: "fever", category: "General", gender: "all" },
 
-  // Breast Changes - All genders (men can get breast cancer too)
-  { id: "breast_lump", category: "Breast Changes", text: "Have you noticed a lump in your breast or chest area?", description: "Any new lump or mass", gender: "all" },
-  { id: "nipple_discharge", category: "Breast Changes", text: "Have you noticed any nipple discharge?", description: "Unusual fluid from the nipple", gender: "all" },
-  { id: "breast_skin_changes", category: "Breast Changes", text: "Have you noticed skin changes on your breast?", description: "Dimpling, puckering, or redness", gender: "all" },
+  { id: "breast_lump", category: "Breast Changes", gender: "all" },
+  { id: "nipple_discharge", category: "Breast Changes", gender: "all" },
+  { id: "breast_skin_changes", category: "Breast Changes", gender: "all" },
 
-  // Other Lumps - All genders
-  { id: "neck_lump", category: "Lumps", text: "Have you noticed a lump in your neck?", description: "Any swelling in the neck area", gender: "all" },
-  { id: "underarm_lump", category: "Lumps", text: "Have you noticed a lump under your arm?", description: "Any swelling in the armpit", gender: "all" },
-  { id: "groin_lump", category: "Lumps", text: "Have you noticed a lump in your groin?", description: "Any swelling in the groin area", gender: "all" },
-  { id: "lump_elsewhere", category: "Lumps", text: "Have you noticed any lump elsewhere on your body?", description: "Any other unusual lump or swelling", gender: "all" },
+  { id: "neck_lump", category: "Lumps", gender: "all" },
+  { id: "underarm_lump", category: "Lumps", gender: "all" },
+  { id: "groin_lump", category: "Lumps", gender: "all" },
+  { id: "lump_elsewhere", category: "Lumps", gender: "all" },
 
-  // Bleeding - All genders (except vaginal bleeding which is female only)
-  { id: "blood_stool", category: "Bleeding", text: "Have you noticed blood in your stool?", description: "Red, dark, or black blood", gender: "all" },
-  { id: "blood_urine", category: "Bleeding", text: "Have you noticed blood in your urine?", description: "Pink, red, or dark urine", gender: "all" },
-  { id: "vaginal_bleeding", category: "Bleeding", text: "Have you had vaginal bleeding after menopause?", description: "Bleeding after periods have stopped", gender: "female" },
-  { id: "bleeding_after_sex", category: "Bleeding", text: "Have you experienced bleeding after sex?", description: "Bleeding after intercourse", gender: "female" },
+  { id: "blood_stool", category: "Bleeding", gender: "all" },
+  { id: "blood_urine", category: "Bleeding", gender: "all" },
+  { id: "vaginal_bleeding", category: "Bleeding", gender: "female" },
+  { id: "bleeding_after_sex", category: "Bleeding", gender: "female" },
 
-  // Pain - All genders
-  { id: "breast_pain", category: "Pain", text: "Have you had persistent breast pain?", description: "Pain lasting more than 3 weeks", gender: "all" },
-  { id: "abdominal_pain", category: "Pain", text: "Have you had persistent abdominal pain?", description: "Pain lasting more than 3 weeks", gender: "all" },
-  { id: "back_pain", category: "Pain", text: "Have you had persistent back pain?", description: "Pain lasting more than 3 weeks", gender: "all" },
+  { id: "breast_pain", category: "Pain", gender: "all" },
+  { id: "abdominal_pain", category: "Pain", gender: "all" },
+  { id: "back_pain", category: "Pain", gender: "all" },
 
-  // Digestive & Urinary - All genders
-  { id: "bowel_habit_change", category: "Digestive & Urinary", text: "Have you noticed a change in your bowel habits?", description: "Constipation or diarrhea", gender: "all" },
-  { id: "persistent_diarrhea", category: "Digestive & Urinary", text: "Have you had persistent diarrhea?", description: "Diarrhea lasting more than 2 weeks", gender: "all" },
-  { id: "difficulty_urinating", category: "Digestive & Urinary", text: "Have you had difficulty passing urine?", description: "Trouble starting or maintaining urine flow", gender: "all" },
-  { id: "frequent_urination", category: "Digestive & Urinary", text: "Have you been urinating more frequently than usual?", description: "Especially at night", gender: "all" },
-  { id: "abdominal_swelling", category: "Digestive & Urinary", text: "Have you noticed persistent abdominal swelling?", description: "Bloating or swelling that doesn't go away", gender: "all" },
-  { id: "jaundice", category: "Digestive & Urinary", text: "Have you noticed yellowing of your eyes or skin?", description: "Yellowish tint to skin or eyes", gender: "all" },
+  { id: "bowel_habit_change", category: "Digestive & Urinary", gender: "all" },
+  { id: "persistent_diarrhea", category: "Digestive & Urinary", gender: "all" },
+  { id: "difficulty_urinating", category: "Digestive & Urinary", gender: "all" },
+  { id: "frequent_urination", category: "Digestive & Urinary", gender: "all" },
+  { id: "abdominal_swelling", category: "Digestive & Urinary", gender: "all" },
+  { id: "jaundice", category: "Digestive & Urinary", gender: "all" },
 
-  // Additional female-specific questions
-  { id: "abnormal_periods", category: "Female Health", text: "Have you had any abnormal or irregular periods?", description: "Unusual bleeding patterns or changes in your cycle", gender: "female" },
-  { id: "pelvic_pain", category: "Female Health", text: "Have you had any persistent pelvic pain?", description: "Pain in your lower abdomen or pelvic area", gender: "female" },
+  { id: "abnormal_periods", category: "Female Health", gender: "female" },
+  { id: "pelvic_pain", category: "Female Health", gender: "female" },
 ];
 
 // SelfAssessmentForm Component
-function SelfAssessmentForm({ 
-  registrationId, 
-  gender, 
-  onComplete 
-}: { 
-  registrationId: string; 
-  gender: "male" | "female"; 
+function SelfAssessmentForm({
+  registrationId,
+  gender,
+  onComplete,
+}: {
+  registrationId: string;
+  gender: "male" | "female";
   onComplete: (result: AssessmentResult) => void;
 }) {
+  const { t, language } = useLanguage();
   const [answers, setAnswers] = useState<Record<string, boolean>>({});
   const [submitting, setSubmitting] = useState(false);
   const [currentStep, setCurrentStep] = useState(0);
+  // Either an "err.*" translation key or a raw message from the API
   const [error, setError] = useState<string | null>(null);
   const [age, setAge] = useState<string>("");
-  const [ageError, setAgeError] = useState<string>("");
+  const [ageInvalid, setAgeInvalid] = useState(false);
+
+  const tr = (m: string) => (m.startsWith("err.") ? t(m) : m);
 
   // Filter questions based on gender
-  const filteredQuestions = symptomQuestions.filter(q => q.gender === "all" || q.gender === gender);
+  const filteredQuestions = symptomQuestions.filter((q) => q.gender === "all" || q.gender === gender);
   const questionsPerPage = 4;
   const totalPages = Math.ceil(filteredQuestions.length / questionsPerPage);
-  const currentQuestions = filteredQuestions.slice(
-    currentStep * questionsPerPage,
-    (currentStep + 1) * questionsPerPage
-  );
 
   const handleAnswer = (questionId: string, value: boolean) => {
-    setAnswers(prev => ({ ...prev, [questionId]: value }));
+    setAnswers((prev) => ({ ...prev, [questionId]: value }));
     setError(null);
   };
 
   const validateAge = () => {
     const ageNum = parseInt(age);
     if (!age || isNaN(ageNum) || ageNum < 18 || ageNum > 120) {
-      setAgeError("Please enter a valid age between 18 and 120");
+      setAgeInvalid(true);
       return false;
     }
-    setAgeError("");
+    setAgeInvalid(false);
     return true;
   };
 
   const handleNext = () => {
     setError(null);
-    
-    // If we're on the age step (step 0), validate age first
-    if (currentStep === 0) {
-      if (!validateAge()) {
-        return;
-      }
-    }
-    
-    if (currentStep < totalPages) {
-      setCurrentStep(prev => prev + 1);
-    }
+    if (currentStep === 0 && !validateAge()) return;
+    if (currentStep < totalPages) setCurrentStep((prev) => prev + 1);
   };
 
   const handlePrevious = () => {
     if (currentStep > 0) {
-      setCurrentStep(prev => prev - 1);
+      setCurrentStep((prev) => prev - 1);
       setError(null);
     }
   };
 
   const handleSubmit = async () => {
-  setSubmitting(true);
-  setError(null);
+    setSubmitting(true);
+    setError(null);
 
-  try {
-    if (!validateAge()) {
+    try {
+      if (!validateAge()) {
+        setSubmitting(false);
+        return;
+      }
+
+      const reportedSymptoms = filteredQuestions.filter((q) => answers[q.id] === true).map((q) => q.id);
+
+      const payload = {
+        age: parseInt(age),
+        language, // so the backend can localise the recommendation text
+        answers: {
+          symptoms: reportedSymptoms,
+        },
+      };
+
+      const { data } = await api.post(`/awareness/${registrationId}/self-assessment`, payload);
+
+      onComplete({
+        assessmentId: data.assessmentId,
+        riskCategory: data.riskCategory,
+        recommendation: data.recommendation,
+        flaggedReasons: data.flaggedReasons,
+        facility: data.facility ?? undefined,
+      });
+    } catch (err: any) {
+      console.error("Submission error:", err);
+      setError(
+        err?.response?.data?.message ||
+          err?.response?.data?.errors?.answers?.[0] ||
+          err?.response?.data?.errors?.age?.[0] ||
+          "err.submit"
+      );
+    } finally {
       setSubmitting(false);
-      return;
     }
-
-    const reportedSymptoms = filteredQuestions
-      .filter(q => answers[q.id] === true)
-      .map(q => q.id);
-
-    const payload = {
-      age: parseInt(age),
-      answers: {
-        symptoms: reportedSymptoms,
-      },
-    };
-
-    const { data } = await api.post(`/awareness/${registrationId}/self-assessment`, payload);
-
-    const result: AssessmentResult = {
-      assessmentId: data.assessmentId,
-      riskCategory: data.riskCategory,
-      recommendation: data.recommendation,
-      flaggedReasons: data.flaggedReasons,
-      facility: data.facility ?? undefined,
-    };
-
-    onComplete(result);
-  } catch (err: any) {
-    console.error("Submission error:", err);
-    const errorMessage = err?.response?.data?.message ||
-      err?.response?.data?.errors?.answers?.[0] ||
-      err?.response?.data?.errors?.age?.[0] ||
-      "An error occurred while submitting your assessment. Please try again.";
-    setError(errorMessage);
-  } finally {
-    setSubmitting(false);
-  }
-};
+  };
 
   const getCategoryColor = (category: string) => {
     const colors: Record<string, string> = {
-      "General": "bg-gray-100 text-gray-800",
+      General: "bg-gray-100 text-gray-800",
       "Breast Changes": "bg-pink-100 text-pink-800",
-      "Lumps": "bg-yellow-100 text-yellow-800",
-      "Bleeding": "bg-red-100 text-red-800",
-      "Pain": "bg-orange-100 text-orange-800",
+      Lumps: "bg-yellow-100 text-yellow-800",
+      Bleeding: "bg-red-100 text-red-800",
+      Pain: "bg-orange-100 text-orange-800",
       "Digestive & Urinary": "bg-green-100 text-green-800",
-      "Female Health": "bg-purple-100 text-purple-800"
+      "Female Health": "bg-purple-100 text-purple-800",
     };
     return colors[category] || "bg-gray-100 text-gray-800";
   };
@@ -222,32 +192,26 @@ function SelfAssessmentForm({
         <div className="max-w-2xl w-full">
           <div className="bg-white rounded-3xl shadow-lg border border-gray-100 p-6 md:p-8">
             <div className="mb-6">
-              <h2 className="text-xl font-bold text-gray-900">Your Age</h2>
-              <p className="text-sm text-gray-500 mt-1">
-                Please enter your age to help us assess your risk factors.
-              </p>
-              <p className="text-xs text-gray-400 mt-1 italic">
-                Age is an important factor in cancer risk assessment.
-              </p>
+              <h2 className="text-xl font-bold text-gray-900">{t("age.title")}</h2>
+              <p className="text-sm text-gray-500 mt-1">{t("age.desc")}</p>
+              <p className="text-xs text-gray-400 mt-1 italic">{t("age.note")}</p>
             </div>
 
             <div className="mb-6">
               <div className="flex justify-between text-sm text-gray-600 mb-2">
-                <span>Progress</span>
+                <span>{t("common.progress")}</span>
                 <span>0%</span>
               </div>
               <div className="w-full bg-gray-200 rounded-full h-2.5">
-                <div className="bg-green-600 h-2.5 rounded-full transition-all duration-300" style={{ width: '0%' }} />
+                <div className="bg-green-600 h-2.5 rounded-full transition-all duration-300" style={{ width: "0%" }} />
               </div>
-              <p className="text-xs text-gray-500 mt-2">
-                Page 1 of {totalPages + 1}
-              </p>
+              <p className="text-xs text-gray-500 mt-2">{t("common.pageOf", { current: 1, total: totalPages + 1 })}</p>
             </div>
 
             {error && (
               <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-2xl flex items-center gap-2 text-red-700">
                 <AlertCircle className="w-5 h-5 flex-shrink-0" />
-                <span className="text-sm">{error}</span>
+                <span className="text-sm">{tr(error)}</span>
               </div>
             )}
 
@@ -255,26 +219,22 @@ function SelfAssessmentForm({
               <div className="p-4 rounded-2xl border-2 border-gray-200">
                 <Label>
                   <span className="text-sm font-semibold">
-                    Age <span className="text-red-500">*</span>
+                    {t("age.label")} <span className="text-red-500">*</span>
                   </span>
                   <Input
                     type="number"
-                    className={`mt-2 rounded-2xl h-12 ${ageError ? "ring-2 ring-red-400" : ""}`}
+                    className={`mt-2 rounded-2xl h-12 ${ageInvalid ? "ring-2 ring-red-400" : ""}`}
                     value={age}
                     onChange={(e) => {
                       setAge(e.target.value);
-                      setAgeError("");
+                      setAgeInvalid(false);
                     }}
-                    placeholder="Enter your age (18-120)"
+                    placeholder={t("age.ph")}
                     min="18"
                     max="120"
                   />
-                  {ageError && (
-                    <span className="text-xs text-red-500 mt-1 block">{ageError}</span>
-                  )}
-                  <p className="text-xs text-gray-400 mt-2">
-                    You must be at least 18 years old to use this service.
-                  </p>
+                  {ageInvalid && <span className="text-xs text-red-500 mt-1 block">{t("err.age")}</span>}
+                  <p className="text-xs text-gray-400 mt-2">{t("age.must")}</p>
                 </Label>
               </div>
             </div>
@@ -285,21 +245,17 @@ function SelfAssessmentForm({
                 onClick={handleNext}
                 className="px-6 py-3 bg-green-700 text-white rounded-xl font-medium hover:bg-green-800 transition-colors"
               >
-                Next
+                {t("common.next")}
               </button>
             </div>
 
             <div className="mt-4 text-center">
-              <p className="text-xs text-gray-400">
-                Your age helps us provide more accurate risk assessment.
-              </p>
+              <p className="text-xs text-gray-400">{t("age.helps")}</p>
             </div>
           </div>
 
           <div className="mt-6 text-center">
-            <p className="text-xs text-gray-400">
-              Your responses are confidential and will only be used for your health assessment.
-            </p>
+            <p className="text-xs text-gray-400">{t("common.confidential")}</p>
           </div>
         </div>
       </div>
@@ -318,41 +274,35 @@ function SelfAssessmentForm({
       <div className="max-w-2xl w-full">
         <div className="bg-white rounded-3xl shadow-lg border border-gray-100 p-6 md:p-8">
           <div className="mb-6">
-            <h2 className="text-xl font-bold text-gray-900">Health Assessment</h2>
-            <p className="text-sm text-gray-500 mt-1">
-              Have you noticed any of these? Select anything you've experienced recently.
-            </p>
+            <h2 className="text-xl font-bold text-gray-900">{t("assess.title")}</h2>
+            <p className="text-sm text-gray-500 mt-1">{t("assess.desc")}</p>
+            <p className="text-xs text-gray-400 mt-1">{t("assess.important")}</p>
+            <p className="text-xs text-gray-400 mt-1 italic">{t("assess.optional")}</p>
             <p className="text-xs text-gray-400 mt-1">
-              This is the most important section — please be thorough.
-            </p>
-            <p className="text-xs text-gray-400 mt-1 italic">
-              Questions are optional. Only select &quot;Yes&quot; for symptoms you have experienced.
-            </p>
-            <p className="text-xs text-gray-400 mt-1">
-              Showing questions relevant to {gender === "female" ? "women" : "men"}.
+              {t(gender === "female" ? "assess.showingWomen" : "assess.showingMen")}
             </p>
           </div>
 
           <div className="mb-6">
             <div className="flex justify-between text-sm text-gray-600 mb-2">
-              <span>Progress</span>
-              <span>{Math.round(((currentStep) / (totalPages + 1)) * 100)}%</span>
+              <span>{t("common.progress")}</span>
+              <span>{Math.round((currentStep / (totalPages + 1)) * 100)}%</span>
             </div>
             <div className="w-full bg-gray-200 rounded-full h-2.5">
-              <div 
+              <div
                 className="bg-green-600 h-2.5 rounded-full transition-all duration-300"
-                style={{ width: `${((currentStep) / (totalPages + 1)) * 100}%` }}
+                style={{ width: `${(currentStep / (totalPages + 1)) * 100}%` }}
               />
             </div>
             <p className="text-xs text-gray-500 mt-2">
-              Page {currentStep + 1} of {totalPages + 1}
+              {t("common.pageOf", { current: currentStep + 1, total: totalPages + 1 })}
             </p>
           </div>
 
           {error && (
             <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-2xl flex items-center gap-2 text-red-700">
               <AlertCircle className="w-5 h-5 flex-shrink-0" />
-              <span className="text-sm">{error}</span>
+              <span className="text-sm">{tr(error)}</span>
             </div>
           )}
 
@@ -362,41 +312,39 @@ function SelfAssessmentForm({
               const isAnswered = answer !== undefined;
 
               return (
-                <div 
-  key={question.id} 
-  className={`p-4 rounded-2xl border-2 transition-all ${
-    isAnswered 
-      ? "border-green-300 bg-green-50"
-      : "border-gray-200"
-  }`}
->
+                <div
+                  key={question.id}
+                  className={`p-4 rounded-2xl border-2 transition-all ${
+                    isAnswered ? "border-green-300 bg-green-50" : "border-gray-200"
+                  }`}
+                >
                   <div className="flex items-start gap-3">
                     <div className="flex-1">
                       <div className="flex items-center gap-2 mb-1">
                         <span className={`text-xs px-2 py-0.5 rounded-full ${getCategoryColor(question.category)}`}>
-                          {question.category}
+                          {t(`cat.${question.category}`)}
                         </span>
                         {question.gender !== "all" && (
                           <span className="text-xs px-2 py-0.5 rounded-full bg-blue-100 text-blue-800">
-                            {question.gender === "female" ? "Women's Health" : "Men's Health"}
+                            {question.gender === "female" ? t("assess.womens") : t("assess.mens")}
                           </span>
                         )}
                       </div>
-                      <p className="text-sm font-medium text-gray-900">{question.text}</p>
-                      <p className="text-xs text-gray-500 mt-1">💡 {question.description}</p>
+                      <p className="text-sm font-medium text-gray-900">{t(`q.${question.id}.text`)}</p>
+                      <p className="text-xs text-gray-500 mt-1">💡 {t(`q.${question.id}.desc`)}</p>
                     </div>
                     <div className="flex gap-2 flex-shrink-0">
-                     <button
-  type="button"
-  onClick={() => handleAnswer(question.id, true)}
-  className={`px-4 py-2 rounded-xl text-sm font-medium transition-all ${
-    answer === true
-      ? "bg-green-600 text-white ring-2 ring-green-600 ring-offset-2"
-      : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-  }`}
->
-  Yes
-</button>
+                      <button
+                        type="button"
+                        onClick={() => handleAnswer(question.id, true)}
+                        className={`px-4 py-2 rounded-xl text-sm font-medium transition-all ${
+                          answer === true
+                            ? "bg-green-600 text-white ring-2 ring-green-600 ring-offset-2"
+                            : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                        }`}
+                      >
+                        {t("common.yes")}
+                      </button>
                       <button
                         type="button"
                         onClick={() => handleAnswer(question.id, false)}
@@ -406,7 +354,7 @@ function SelfAssessmentForm({
                             : "bg-gray-100 text-gray-600 hover:bg-gray-200"
                         }`}
                       >
-                        No
+                        {t("common.no")}
                       </button>
                       {!isAnswered && (
                         <button
@@ -418,7 +366,7 @@ function SelfAssessmentForm({
                           }}
                           className="px-3 py-2 rounded-xl text-sm font-medium text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-all"
                         >
-                          Skip
+                          {t("common.skip")}
                         </button>
                       )}
                     </div>
@@ -434,7 +382,7 @@ function SelfAssessmentForm({
               onClick={handlePrevious}
               className="px-6 py-3 bg-gray-200 text-gray-700 rounded-xl font-medium hover:bg-gray-300 transition-colors"
             >
-              Previous
+              {t("common.previous")}
             </button>
 
             {currentStep < totalPages ? (
@@ -443,7 +391,7 @@ function SelfAssessmentForm({
                 onClick={handleNext}
                 className="px-6 py-3 bg-green-700 text-white rounded-xl font-medium hover:bg-green-800 transition-colors"
               >
-                Next
+                {t("common.next")}
               </button>
             ) : (
               <button
@@ -455,26 +403,22 @@ function SelfAssessmentForm({
                 {submitting ? (
                   <span className="inline-flex items-center gap-2">
                     <Loader2 className="w-4 h-4 animate-spin" />
-                    Submitting...
+                    {t("assess.submitting")}
                   </span>
                 ) : (
-                  "Submit Assessment"
+                  t("assess.submit")
                 )}
               </button>
             )}
           </div>
 
           <div className="mt-4 text-center">
-            <p className="text-xs text-gray-400">
-              Questions you don&apos;t answer will be treated as &quot;No&quot;.
-            </p>
+            <p className="text-xs text-gray-400">{t("assess.unanswered")}</p>
           </div>
         </div>
 
         <div className="mt-6 text-center">
-          <p className="text-xs text-gray-400">
-            Your responses are confidential and will only be used for your health assessment.
-          </p>
+          <p className="text-xs text-gray-400">{t("common.confidential")}</p>
         </div>
       </div>
     </div>
@@ -483,6 +427,7 @@ function SelfAssessmentForm({
 
 // ResultsScreen Component
 function ResultsScreen({ name, result }: { name: string; result: AssessmentResult }) {
+  const { t } = useLanguage();
   const style = RISK_STYLES[result.riskCategory];
 
   return (
@@ -490,52 +435,48 @@ function ResultsScreen({ name, result }: { name: string; result: AssessmentResul
       <div className="max-w-md w-full space-y-6 flex-1 flex flex-col justify-center">
         <div className="text-center">
           <h1 className="text-2xl font-bold text-gray-900">
-            Thank you{name ? `, ${name.split(" ")[0]}` : ""}
+            {t("res.thanks")}
+            {name ? `, ${name.split(" ")[0]}` : ""}
           </h1>
-          <p className="mt-2 text-sm text-gray-500">Here's what your assessment found:</p>
+          <p className="mt-2 text-sm text-gray-500">{t("res.found")}</p>
         </div>
 
         <div className="bg-white rounded-3xl shadow-lg border border-gray-100 p-6 space-y-4">
           <div className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-semibold ${style.badge}`}>
             {style.icon}
-            {style.label}
+            {t(`risk.${result.riskCategory}`)}
           </div>
 
+          {/* Server-generated text: localised by the backend based on the `language` we send */}
           <p className="text-sm text-gray-700 leading-6">{result.recommendation}</p>
 
           {result.flaggedReasons.length > 0 && (
             <div className="rounded-xl bg-gray-50 border border-gray-100 p-4">
-              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
-                Based on
-              </p>
+              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">{t("res.basedOn")}</p>
               <ul className="text-sm text-gray-600 space-y-1 list-disc list-inside">
                 {result.flaggedReasons.map((r, i) => (
-                  <li key={i} className="capitalize">{r}</li>
+                  <li key={i} className="capitalize">
+                    {r}
+                  </li>
                 ))}
               </ul>
             </div>
           )}
 
-          <p className="text-xl text-gray-400 italic">
-            Please note that this is a decision-support tool, NOT a diagnosis. Please discuss these information with a healthcare provider.
-          </p>
+          <p className="text-xl text-gray-400 italic">{t("res.disclaimer")}</p>
         </div>
 
         {result.facility ? (
           <div className="rounded-2xl bg-white border border-green-100 shadow-md p-5 text-left space-y-3">
-            <p className="text-xs font-semibold text-green-700 uppercase tracking-wide">
-              Your Screening Centre
-            </p>
+            <p className="text-xs font-semibold text-green-700 uppercase tracking-wide">{t("res.centre")}</p>
             <p className="text-lg font-bold text-gray-900">{result.facility.facilityName}</p>
-            {result.facility.facilityAddress && (
-              <p className="text-sm text-gray-500">{result.facility.facilityAddress}</p>
-            )}
+            {result.facility.facilityAddress && <p className="text-sm text-gray-500">{result.facility.facilityAddress}</p>}
             {result.facility.clinicHoursDisplay && (
               <p className="text-sm text-gray-500">🕐 {result.facility.clinicHoursDisplay}</p>
             )}
             {result.facility.navigatorName && (
               <div className="pt-3 border-t border-gray-100">
-                <p className="text-xs text-gray-400 mb-1">Your Contact Person</p>
+                <p className="text-xs text-gray-400 mb-1">{t("res.contactPerson")}</p>
                 <p className="font-semibold text-gray-800">{result.facility.navigatorName}</p>
                 {result.facility.navigatorPhone && (
                   <a
@@ -550,58 +491,63 @@ function ResultsScreen({ name, result }: { name: string; result: AssessmentResul
           </div>
         ) : (
           <div className="rounded-xl bg-amber-50 border border-amber-100 p-4">
-            <p className="text-sm text-amber-700">
-              Our team will reach out to you shortly with your nearest screening centre.
-            </p>
+            <p className="text-sm text-amber-700">{t("res.followup")}</p>
           </div>
         )}
 
-        <p className="text-center text-xs text-gray-400">
-          Please attend your screening as soon as possible. Early detection saves lives.
-        </p>
+        <p className="text-center text-xs text-gray-400">{t("res.attend")}</p>
       </div>
 
-      <p className="mt-6 text-center text-xs text-gray-400">
-        Platform powered by Resilience Nigeria
-      </p>
+      <p className="mt-6 text-center text-xs text-gray-400">{t("common.poweredBy")}</p>
     </div>
   );
 }
 
 // Info Popup Component
-function InfoPopup({ isOpen, onClose, isMinimized, onToggleMinimize }: { 
-  isOpen: boolean; 
-  onClose: () => void; 
+function InfoPopup({
+  isOpen,
+  onClose,
+  isMinimized,
+  onToggleMinimize,
+}: {
+  isOpen: boolean;
+  onClose: () => void;
   isMinimized: boolean;
   onToggleMinimize: () => void;
 }) {
+  const { t } = useLanguage();
   if (!isOpen) return null;
+
+  const bullets = ["info.e1", "info.e2", "info.e3", "info.e4"];
+  const steps = ["info.h1", "info.h2", "info.h3", "info.h4", "info.h5"];
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-      <div className={`bg-white rounded-2xl shadow-2xl w-full max-w-2xl transition-all duration-300 ${
-        isMinimized ? 'h-auto max-h-16' : 'max-h-[90vh]'
-      }`}>
+      <div
+        className={`bg-white rounded-2xl shadow-2xl w-full max-w-2xl transition-all duration-300 ${
+          isMinimized ? "h-auto max-h-16" : "max-h-[90vh]"
+        }`}
+      >
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-gray-100">
           <div className="flex items-center gap-3">
             <div className="p-2 bg-green-100 rounded-full">
               <Info className="w-5 h-5 text-green-700" />
             </div>
-            <h2 className="text-lg font-bold text-gray-900">About This Program</h2>
+            <h2 className="text-lg font-bold text-gray-900">{t("info.title")}</h2>
           </div>
           <div className="flex items-center gap-2">
             <button
               onClick={onToggleMinimize}
               className="p-1.5 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
-              aria-label={isMinimized ? "Maximize" : "Minimize"}
+              aria-label={isMinimized ? t("info.maximize") : t("info.minimize")}
             >
               {isMinimized ? <Maximize2 className="w-4 h-4" /> : <Minimize2 className="w-4 h-4" />}
             </button>
             <button
               onClick={onClose}
               className="p-1.5 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
-              aria-label="Close"
+              aria-label={t("info.close")}
             >
               <X className="w-4 h-4" />
             </button>
@@ -612,75 +558,58 @@ function InfoPopup({ isOpen, onClose, isMinimized, onToggleMinimize }: {
         {!isMinimized && (
           <div className="p-6 overflow-y-auto max-h-[calc(90vh-80px)]">
             <div className="space-y-6">
-              {/* Program Overview */}
               <div>
-                <h3 className="text-sm font-semibold text-green-700 uppercase tracking-wide mb-2">Program Overview</h3>
+                <h3 className="text-sm font-semibold text-green-700 uppercase tracking-wide mb-2">
+                  {t("info.overviewTitle")}
+                </h3>
                 <p className="text-sm text-gray-600 leading-relaxed">
-                  The Cancer Self-Assessment section of this Portal is a free, confidential initiative by the <b>National Institute for Cancer Research and Treatment</b>. It is
-                  designed to help you understand your personal cancer risk factors and connect you with 
-                  appropriate screening services. This program is part of Nigeria's commitment to early 
-                  cancer detection and prevention.
+                  {t("info.overview1")} <b>{t("info.institute")}</b>
+                  {t("info.overview2")}
                 </p>
               </div>
 
-              {/* What to Expect */}
               <div>
-                <h3 className="text-sm font-semibold text-green-700 uppercase tracking-wide mb-2">What to Expect</h3>
+                <h3 className="text-sm font-semibold text-green-700 uppercase tracking-wide mb-2">
+                  {t("info.expectTitle")}
+                </h3>
                 <ul className="space-y-2 text-sm text-gray-600">
-                  <li className="flex items-start gap-2">
-                    <span className="text-green-600 font-bold">•</span>
-                    <span>A brief assessment of your personal and family health history</span>
-                  </li>
-                  <li className="flex items-start gap-2">
-                    <span className="text-green-600 font-bold">•</span>
-                    <span>Confidential risk analysis based on evidence-based guidelines</span>
-                  </li>
-                  <li className="flex items-start gap-2">
-                    <span className="text-green-600 font-bold">•</span>
-                    <span>Referral to your nearest screening center if needed</span>
-                  </li>
-                  <li className="flex items-start gap-2">
-                    <span className="text-green-600 font-bold">•</span>
-                    <span>Follow-up support from our patient navigators</span>
-                  </li>
+                  {bullets.map((k) => (
+                    <li key={k} className="flex items-start gap-2">
+                      <span className="text-green-600 font-bold">•</span>
+                      <span>{t(k)}</span>
+                    </li>
+                  ))}
                 </ul>
               </div>
 
-              {/* How It Works */}
               <div>
-                <h3 className="text-sm font-semibold text-green-700 uppercase tracking-wide mb-2">How It Works</h3>
+                <h3 className="text-sm font-semibold text-green-700 uppercase tracking-wide mb-2">{t("info.howTitle")}</h3>
                 <ol className="space-y-2 text-sm text-gray-600 list-decimal list-inside">
-                  <li>Fill in your personal information (name, contact details, location)</li>
-                  <li>Review and accept the consent agreement</li>
-                  <li>Complete the health assessment questionnaire (about 5 minutes)</li>
-                  <li>Receive your personalized risk assessment result</li>
-                  <li>Get connected to a nearby screening center if recommended</li>
+                  {steps.map((k) => (
+                    <li key={k}>{t(k)}</li>
+                  ))}
                 </ol>
               </div>
 
-              {/* Privacy & Security */}
               <div>
-                <h3 className="text-sm font-semibold text-green-700 uppercase tracking-wide mb-2">Privacy & Security</h3>
-                <p className="text-sm text-gray-600 leading-relaxed">
-                  Your privacy is our priority. All information you provide is encrypted and stored securely. 
-                  Data is only accessible to authorized healthcare personnel and used solely for the purpose 
-                  of cancer screening coordination. You can withdraw your consent at any time.
-                </p>
+                <h3 className="text-sm font-semibold text-green-700 uppercase tracking-wide mb-2">
+                  {t("info.privacyTitle")}
+                </h3>
+                <p className="text-sm text-gray-600 leading-relaxed">{t("info.privacy")}</p>
               </div>
 
-              {/* Need Help? */}
               <div className="bg-green-50 rounded-xl p-4">
-                <h3 className="text-sm font-semibold text-green-800 mb-2">Need Help?</h3>
-                <p className="text-sm text-gray-600">
-                  If you have questions or need assistance with the assessment:
-                </p>
+                <h3 className="text-sm font-semibold text-green-800 mb-2">{t("info.helpTitle")}</h3>
+                <p className="text-sm text-gray-600">{t("info.helpText")}</p>
                 <div className="mt-2 text-sm">
                   <p className="text-gray-700">
-                    <span className="font-medium">Call:</span>{' '}
-                    <a href="tel:08001234567" className="text-green-700 hover:underline">0800-123-4567</a>
+                    <span className="font-medium">{t("info.call")}</span>{" "}
+                    <a href="tel:08001234567" className="text-green-700 hover:underline">
+                      0800-123-4567
+                    </a>
                   </p>
                   <p className="text-gray-700">
-                    <span className="font-medium">Email:</span>{' '}
+                    <span className="font-medium">{t("info.email")}</span>{" "}
                     <a href="mailto:support@resilienceng.org" className="text-green-700 hover:underline">
                       support@ncsr.nicrat.gov.ng
                     </a>
@@ -688,13 +617,12 @@ function InfoPopup({ isOpen, onClose, isMinimized, onToggleMinimize }: {
                 </div>
               </div>
 
-              {/* Close Button */}
               <div className="pt-2">
                 <button
                   onClick={onClose}
                   className="w-full py-3 bg-green-700 text-white font-semibold rounded-xl hover:bg-green-800 transition-colors"
                 >
-                  Got it, let's begin!
+                  {t("info.gotIt")}
                 </button>
               </div>
             </div>
@@ -706,18 +634,21 @@ function InfoPopup({ isOpen, onClose, isMinimized, onToggleMinimize }: {
 }
 
 // ConsentPopup Component
-function ConsentPopup({ 
-  isOpen, 
-  onConsent, 
-  onDecline 
-}: { 
-  isOpen: boolean; 
-  onConsent: () => void; 
+function ConsentPopup({
+  isOpen,
+  onConsent,
+  onDecline,
+}: {
+  isOpen: boolean;
+  onConsent: () => void;
   onDecline: () => void;
 }) {
+  const { t } = useLanguage();
   const [isChecked, setIsChecked] = useState(false);
 
   if (!isOpen) return null;
+
+  const points = ["consent.m1", "consent.m2", "consent.m3", "consent.m4", "consent.m5"];
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
@@ -727,43 +658,25 @@ function ConsentPopup({
             <div className="p-3 bg-green-100 rounded-full">
               <Shield className="w-6 h-6 text-green-700" />
             </div>
-            <h2 className="text-2xl font-bold text-gray-900">Consent Required</h2>
+            <h2 className="text-2xl font-bold text-gray-900">{t("consent.title")}</h2>
           </div>
 
           <div className="space-y-4 mb-6">
-            <p className="text-gray-700 leading-relaxed">
-              Before you can proceed with the cancer screening assessment, we need your consent to collect and use your information.
-            </p>
+            <p className="text-gray-700 leading-relaxed">{t("consent.intro")}</p>
 
             <div className="bg-blue-50 border border-blue-200 rounded-2xl p-4 space-y-3">
-              <h3 className="text-sm font-bold text-blue-900">What This Means</h3>
+              <h3 className="text-sm font-bold text-blue-900">{t("consent.meansTitle")}</h3>
               <ul className="space-y-2 text-sm text-gray-700">
-                <li className="flex items-start gap-2">
-                  <span className="text-blue-600 font-bold">•</span>
-                  <span>Your information will be used to assess your cancer screening needs</span>
-                </li>
-                <li className="flex items-start gap-2">
-                  <span className="text-blue-600 font-bold">•</span>
-                  <span>Data will be shared with authorized healthcare personnel only</span>
-                </li>
-                <li className="flex items-start gap-2">
-                  <span className="text-blue-600 font-bold">•</span>
-                  <span>You may be contacted or referred for further assessment</span>
-                </li>
-                <li className="flex items-start gap-2">
-                  <span className="text-blue-600 font-bold">•</span>
-                  <span>All information is encrypted and stored securely</span>
-                </li>
-                <li className="flex items-start gap-2">
-                  <span className="text-blue-600 font-bold">•</span>
-                  <span>You can withdraw your consent at any time</span>
-                </li>
+                {points.map((k) => (
+                  <li key={k} className="flex items-start gap-2">
+                    <span className="text-blue-600 font-bold">•</span>
+                    <span>{t(k)}</span>
+                  </li>
+                ))}
               </ul>
             </div>
 
-            <p className="text-sm text-gray-600 italic">
-              By providing your consent, you acknowledge that this assessment is a decision-support tool, NOT a diagnosis, and you understand that you will be contacted for further screening services as needed.
-            </p>
+            <p className="text-sm text-gray-600 italic">{t("consent.note")}</p>
 
             <label className="flex items-start gap-3 cursor-pointer pt-2">
               <input
@@ -772,9 +685,7 @@ function ConsentPopup({
                 onChange={(e) => setIsChecked(e.target.checked)}
                 className="mt-1 w-4 h-4 text-green-700 border-gray-300 rounded focus:ring-green-500"
               />
-              <span className="text-sm text-gray-700">
-                I have read and understood this information. I consent to the collection and use of my information for the purpose of cancer screening linkage services.
-              </span>
+              <span className="text-sm text-gray-700">{t("consent.checkbox")}</span>
             </label>
           </div>
 
@@ -783,18 +694,16 @@ function ConsentPopup({
               onClick={onDecline}
               className="flex-1 py-3 px-4 border border-gray-300 text-gray-700 font-semibold rounded-xl hover:bg-gray-50 transition-colors"
             >
-              Decline
+              {t("consent.decline")}
             </button>
             <button
               onClick={onConsent}
               disabled={!isChecked}
               className={`flex-1 py-3 px-4 font-semibold rounded-xl transition-colors ${
-                isChecked
-                  ? "bg-green-700 text-white hover:bg-green-800"
-                  : "bg-gray-300 text-gray-500 cursor-not-allowed"
+                isChecked ? "bg-green-700 text-white hover:bg-green-800" : "bg-gray-300 text-gray-500 cursor-not-allowed"
               }`}
             >
-              I Agree & Continue
+              {t("consent.agree")}
             </button>
           </div>
         </div>
@@ -803,8 +712,21 @@ function ConsentPopup({
   );
 }
 
-// Main BloomPage Component
+// ── Page entry: provider + first-load language prompt ───────────────────────
 export default function BloomPage() {
+  return (
+    <LanguageProvider>
+      <LanguageGate />
+      <LanguageSwitcher />
+      <BloomPageInner />
+    </LanguageProvider>
+  );
+}
+
+// Main page component
+function BloomPageInner() {
+  const { t, language, confirmed } = useLanguage();
+
   const [form, setForm] = useState({
     fullName: "",
     gender: "",
@@ -814,15 +736,14 @@ export default function BloomPage() {
     lgaOfResidence: "",
     areaOfResidence: "",
     campaignSource:
-      typeof window !== "undefined"
-        ? new URLSearchParams(window.location.search).get("src") ?? "bloom"
-        : "bloom",
+      typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("src") ?? "bloom" : "bloom",
   });
 
   const [submitting, setSubmitting] = useState(false);
   const [stage, setStage] = useState<"consent" | "form" | "otp" | "assessment" | "results">("consent");
   const [registrationId, setRegistrationId] = useState<string>("");
   const [maskedPhone, setMaskedPhone] = useState<string>("");
+  // Values are either "err.*" translation keys or raw messages from the API
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [availableAreas, setAvailableAreas] = useState<string[]>([]);
   const [loadingAreas, setLoadingAreas] = useState(false);
@@ -831,6 +752,8 @@ export default function BloomPage() {
   const [showInfoPopup, setShowInfoPopup] = useState(false);
   const [isPopupMinimized, setIsPopupMinimized] = useState(false);
   const [showConsentPopup, setShowConsentPopup] = useState(true);
+
+  const tr = (m?: string) => (m ? (m.startsWith("err.") ? t(m) : m) : "");
 
   function setField(name: string, value: string) {
     setForm((prev) => {
@@ -843,12 +766,12 @@ export default function BloomPage() {
 
   function validate() {
     const e: Record<string, string> = {};
-    if (!form.fullName.trim()) e.fullName = "Full name is required.";
-    if (!form.gender) e.gender = "Please select your gender.";
-    if (!form.phoneNumber.trim()) e.phoneNumber = "Phone number is required.";
-    if (!form.stateOfResidence) e.stateOfResidence = "Please select your state.";
-    if (!form.lgaOfResidence) e.lgaOfResidence = "Please select your LGA.";
-    if (!consentChecked) e.consent = "You must agree to the terms to proceed.";
+    if (!form.fullName.trim()) e.fullName = "err.fullName";
+    if (!form.gender) e.gender = "err.gender";
+    if (!form.phoneNumber.trim()) e.phoneNumber = "err.phone";
+    if (!form.stateOfResidence) e.stateOfResidence = "err.state";
+    if (!form.lgaOfResidence) e.lgaOfResidence = "err.lga";
+    if (!consentChecked) e.consent = "err.consent";
     return e;
   }
 
@@ -884,7 +807,7 @@ export default function BloomPage() {
 
     setSubmitting(true);
     try {
-      const { data } = await api.post("/awareness/register", form);
+      const { data } = await api.post("/awareness/register", { ...form, language });
       setRegistrationId(String(data.registrationId));
       setMaskedPhone(data.maskedPhone);
       setStage("otp");
@@ -895,9 +818,7 @@ export default function BloomPage() {
         mapped[k] = Array.isArray(apiErrors[k]) ? apiErrors[k][0] : apiErrors[k];
       });
       setErrors(
-        Object.keys(mapped).length
-          ? mapped
-          : { fullName: err?.response?.data?.message ?? "Something went wrong." }
+        Object.keys(mapped).length ? mapped : { fullName: err?.response?.data?.message ?? "err.generic" }
       );
     } finally {
       setSubmitting(false);
@@ -913,18 +834,15 @@ export default function BloomPage() {
   };
 
   const handleDecline = () => {
-    alert("You must provide consent to use this service.");
+    alert(t("consent.declineAlert"));
   };
 
   // ── Stage gates ──────────────────────────────────────────────────────────
   if (stage === "consent") {
     return (
       <>
-        <ConsentPopup 
-          isOpen={showConsentPopup}
-          onConsent={handleConsent}
-          onDecline={handleDecline}
-        />
+        {/* Consent only appears after the visitor has chosen a language */}
+        <ConsentPopup isOpen={showConsentPopup && confirmed} onConsent={handleConsent} onDecline={handleDecline} />
         <div className="min-h-screen bg-gradient-to-br from-green-50 to-white flex flex-col items-center justify-center p-4">
           <div className="text-center">
             <div>
@@ -932,12 +850,14 @@ export default function BloomPage() {
                 src="/assets/img/NCSR.svg"
                 alt="NCSR Logo"
                 className="mx-auto"
-                onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+                onError={(e) => {
+                  (e.target as HTMLImageElement).style.display = "none";
+                }}
               />
             </div>
             <div className="mt-8 animate-pulse">
               <div className="w-12 h-12 border-4 border-green-700 border-t-transparent rounded-full animate-spin mx-auto"></div>
-              <p className="mt-4 text-gray-600">Loading consent form...</p>
+              <p className="mt-4 text-gray-600">{t("consent.loading")}</p>
             </div>
           </div>
         </div>
@@ -978,8 +898,7 @@ export default function BloomPage() {
   // ── Default: biodata registration form ──────────────────────────────────
   return (
     <>
-      {/* Info Popup */}
-      <InfoPopup 
+      <InfoPopup
         isOpen={showInfoPopup}
         onClose={() => setShowInfoPopup(false)}
         isMinimized={isPopupMinimized}
@@ -988,20 +907,19 @@ export default function BloomPage() {
 
       <div className="min-h-screen bg-gradient-to-br from-green-50 to-white flex flex-col items-center justify-center p-4">
         <div className="max-w-lg w-full flex-1 flex flex-col justify-center">
-          <div className="text-center mb-8">
+          <div className="text-center mb-8 mt-10">
             <div>
               <img
                 src="/assets/img/NCSR.svg"
                 alt="NCSR Logo"
                 className="mx-auto"
-                onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+                onError={(e) => {
+                  (e.target as HTMLImageElement).style.display = "none";
+                }}
               />
             </div>
-            <h1 className="text-2xl font-bold text-gray-900">Cancer Self-Assessment Portal</h1>
-            <p className="mt-2 text-sm text-gray-500">
-              Answer a few questions about your health to find out your risk level and get
-              connected to a nearby screening centre. Takes about 5 minutes.
-            </p>
+            <h1 className="text-2xl font-bold text-gray-900">{t("form.title")}</h1>
+            <p className="mt-2 text-sm text-gray-500">{t("form.subtitle")}</p>
           </div>
 
           <form
@@ -1010,41 +928,37 @@ export default function BloomPage() {
           >
             <Label>
               <span className="text-sm font-semibold">
-                Full Name <span className="text-red-500">*</span>
+                {t("form.fullName")} <span className="text-red-500">*</span>
               </span>
               <Input
                 className={`mt-2 rounded-2xl h-12 ${errors.fullName ? "ring-2 ring-red-400" : ""}`}
                 value={form.fullName}
                 onChange={(e) => setField("fullName", e.target.value)}
-                placeholder="Enter your full name"
+                placeholder={t("form.fullNamePh")}
               />
-              {errors.fullName && (
-                <span className="text-xs text-red-500 mt-1 block">{errors.fullName}</span>
-              )}
+              {errors.fullName && <span className="text-xs text-red-500 mt-1 block">{tr(errors.fullName)}</span>}
             </Label>
 
             <div className="grid grid-cols-2 gap-4">
               <Label>
                 <span className="text-sm font-semibold">
-                  Gender <span className="text-red-500">*</span>
+                  {t("form.gender")} <span className="text-red-500">*</span>
                 </span>
                 <Select
                   className={`mt-2 rounded-2xl h-12 ${errors.gender ? "ring-2 ring-red-400" : ""}`}
                   value={form.gender}
                   onChange={(e) => setField("gender", e.target.value)}
                 >
-                  <option value="">Select</option>
-                  <option value="female">Female</option>
-                  <option value="male">Male</option>
+                  <option value="">{t("form.select")}</option>
+                  <option value="female">{t("form.female")}</option>
+                  <option value="male">{t("form.male")}</option>
                 </Select>
-                {errors.gender && (
-                  <span className="text-xs text-red-500 mt-1 block">{errors.gender}</span>
-                )}
+                {errors.gender && <span className="text-xs text-red-500 mt-1 block">{tr(errors.gender)}</span>}
               </Label>
 
               <Label>
                 <span className="text-sm font-semibold">
-                  Phone Number <span className="text-red-500">*</span>
+                  {t("form.phone")} <span className="text-red-500">*</span>
                 </span>
                 <Input
                   type="tel"
@@ -1053,15 +967,13 @@ export default function BloomPage() {
                   onChange={(e) => setField("phoneNumber", e.target.value)}
                   placeholder="080xxxxxxxx"
                 />
-                {errors.phoneNumber && (
-                  <span className="text-xs text-red-500 mt-1 block">{errors.phoneNumber}</span>
-                )}
+                {errors.phoneNumber && <span className="text-xs text-red-500 mt-1 block">{tr(errors.phoneNumber)}</span>}
               </Label>
             </div>
 
             <Label>
               <span className="text-sm font-semibold">
-                Email <span className="text-gray-400 font-normal">(optional)</span>
+                {t("form.email")} <span className="text-gray-400 font-normal">{t("form.optional")}</span>
               </span>
               <Input
                 type="email"
@@ -1071,32 +983,32 @@ export default function BloomPage() {
                 placeholder="you@example.com"
               />
             </Label>
-            <p className="text-sm leading-relaxed mb-2 italic text-red-500">
-              Current location information helps us connect you to the nearest screening centre.
-            </p> 
+            <p className="text-sm leading-relaxed mb-2 italic text-red-500">{t("form.locationNote")}</p>
             <div className="grid grid-cols-2 gap-4">
               <Label>
                 <span className="text-sm font-semibold">
-                  State of Residence <span className="text-red-500">*</span>
+                  {t("form.state")} <span className="text-red-500">*</span>
                 </span>
                 <Select
                   className={`mt-2 rounded-2xl h-12 ${errors.stateOfResidence ? "ring-2 ring-red-400" : ""}`}
                   value={form.stateOfResidence}
                   onChange={(e) => setField("stateOfResidence", e.target.value)}
                 >
-                  <option value="">Select state</option>
+                  <option value="">{t("form.selectState")}</option>
                   {nigerianStates.map((s) => (
-                    <option key={s.code} value={s.name}>{s.name}</option>
+                    <option key={s.code} value={s.name}>
+                      {s.name}
+                    </option>
                   ))}
                 </Select>
                 {errors.stateOfResidence && (
-                  <span className="text-xs text-red-500 mt-1 block">{errors.stateOfResidence}</span>
+                  <span className="text-xs text-red-500 mt-1 block">{tr(errors.stateOfResidence)}</span>
                 )}
               </Label>
 
               <Label>
                 <span className="text-sm font-semibold">
-                  LGA of Residence <span className="text-red-500">*</span>
+                  {t("form.lga")} <span className="text-red-500">*</span>
                 </span>
                 <Select
                   className={`mt-2 rounded-2xl h-12 ${errors.lgaOfResidence ? "ring-2 ring-red-400" : ""}`}
@@ -1104,22 +1016,23 @@ export default function BloomPage() {
                   disabled={!form.stateOfResidence}
                   onChange={(e) => setField("lgaOfResidence", e.target.value)}
                 >
-                  <option value="">Select LGA</option>
+                  <option value="">{t("form.selectLga")}</option>
                   {form.stateOfResidence &&
                     lgasByState[getStateCode(form.stateOfResidence)]?.map((lga) => (
-                      <option key={lga} value={lga}>{lga}</option>
+                      <option key={lga} value={lga}>
+                        {lga}
+                      </option>
                     ))}
                 </Select>
                 {errors.lgaOfResidence && (
-                  <span className="text-xs text-red-500 mt-1 block">{errors.lgaOfResidence}</span>
+                  <span className="text-xs text-red-500 mt-1 block">{tr(errors.lgaOfResidence)}</span>
                 )}
               </Label>
 
-              {(form.stateOfResidence && form.lgaOfResidence) && (
+              {form.stateOfResidence && form.lgaOfResidence && (
                 <Label className="col-span-2">
                   <span className="text-sm font-semibold">
-                    Area / District{" "}
-                    <span className="text-gray-400 font-normal">(helps us find the closest centre)</span>
+                    {t("form.area")} <span className="text-gray-400 font-normal">{t("form.areaHint")}</span>
                   </span>
                   {availableAreas.length > 0 ? (
                     <Select
@@ -1127,9 +1040,11 @@ export default function BloomPage() {
                       value={form.areaOfResidence}
                       onChange={(e) => setField("areaOfResidence", e.target.value)}
                     >
-                      <option value="">Select your area</option>
+                      <option value="">{t("form.selectArea")}</option>
                       {availableAreas.map((a) => (
-                        <option key={a} value={a}>{a}</option>
+                        <option key={a} value={a}>
+                          {a}
+                        </option>
                       ))}
                     </Select>
                   ) : (
@@ -1137,7 +1052,7 @@ export default function BloomPage() {
                       className="mt-2 rounded-2xl h-12"
                       value={form.areaOfResidence}
                       onChange={(e) => setField("areaOfResidence", e.target.value)}
-                      placeholder="Type your area, ward, or district"
+                      placeholder={t("form.areaPh")}
                     />
                   )}
                 </Label>
@@ -1147,11 +1062,9 @@ export default function BloomPage() {
             {/* Consent indicator */}
             <div className="bg-green-50 border border-green-200 rounded-2xl p-3 flex items-center gap-3">
               <CheckCircle className="w-5 h-5 text-green-700 flex-shrink-0" />
-              <p className="text-sm text-green-800">
-                ✓ You have provided consent to proceed with this assessment.
-              </p>
+              <p className="text-sm text-green-800">{t("form.consentGiven")}</p>
             </div>
-            
+
             <Button
               type="submit"
               disabled={submitting}
@@ -1160,22 +1073,20 @@ export default function BloomPage() {
               {submitting ? (
                 <span className="inline-flex items-center gap-2">
                   <Loader2 className="w-4 h-4 animate-spin" />
-                  Getting started...
+                  {t("form.starting")}
                 </span>
               ) : (
-                "Start My Assessment"
+                t("form.start")
               )}
             </Button>
 
-            <p className="text-center text-xs text-gray-400">
-              We'll text you a verification code to confirm your identity for cancer screening linkage. Your information is kept confidential.
-            </p>
+            <p className="text-center text-xs text-gray-400">{t("form.otpNote")}</p>
           </form>
         </div>
 
-        <p className="mt-6 text-center text-xs text-gray-400">
-          Platform powered by Resilience Nigeria
-        </p>
+        {/*<p className="mt-6 text-center text-xs text-gray-400">{t("common.poweredBy")}</p>*/}
+        <PoweredBy />
+
       </div>
     </>
   );
