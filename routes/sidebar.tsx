@@ -13,6 +13,7 @@ import {
   Activity,
   MapPinned,
   HeartHandshake,
+  FlaskConical,
 } from "lucide-react";
 import { ComponentType } from "react";
 
@@ -46,50 +47,16 @@ export function routeIsActive(pathname: string, route: IRoute): boolean {
 }
 
 const routes: IRoute[] = [
-  {
-    path: "/ncsr/dashboard",
-    icon: HomeIcon,
-    name: "Dashboard",
-    exact: true,
-    // No roles = visible to everyone
-  },
-  {
-    path: "/ncsr/clients",
-    name: "Clients",
-    icon: Users,
-    // Visible to all authenticated users
-  },
-  {
-    path: "/ncsr/all-visits",
-    icon: HospitalIcon,
-    name: "Visits",
-    // Visible to all authenticated users
-  },
-  {
-    path: "/ncsr/screenings",
-    icon: MicroscopeIcon,
-    name: "Screenings",
-    // Visible to all authenticated users
-  },
-  {
-    path: "/ncsr/outcomes",
-    icon: SheetIcon,
-    name: "Outcomes",
-    // Visible to all authenticated users
-  },
-
-  {
-    path: "/ncsr/referred",
-    icon: LinkIcon,
-    name: "Linked Clients",
-    // Visible to all authenticated users
-  },
+  { path: "/ncsr/dashboard", icon: HomeIcon, name: "Dashboard", exact: true },
+  { path: "/ncsr/clients", name: "Clients", icon: Users },
+  { path: "/ncsr/all-visits", icon: HospitalIcon, name: "Visits" },
+  { path: "/ncsr/screenings", icon: MicroscopeIcon, name: "Screenings" },
+  { path: "/ncsr/outcomes", icon: SheetIcon, name: "Outcomes" },
+  { path: "/ncsr/referred", icon: LinkIcon, name: "Linked Clients" },
   {
     path: "/ncsr/self-assessments",
     icon: MicroscopeIcon,
     name: "Stage 1: Self-Assessment Records",
-    // Visible to all authenticated users — Bloom self-assessment is a
-    // public, universal tool, not gated by facility stage capability.
   },
   {
     path: "/ncsr/clinical-screening",
@@ -97,6 +64,24 @@ const routes: IRoute[] = [
     name: "Stage 2: Clinical Screening",
     requiresStage: "stage2",
   },
+
+    {
+    // Sample collection + result entry for all five cancer types (breast, cervical, prostate, liver, colorectal).
+    // Not stage-gated: samples are often collected at a feeder and read at a lab/hub.
+    // Use Settings > Menu Visibility to limit it by role.
+    path: "/ncsr/screening-tests-page",
+    icon: FlaskConical,
+    name: "Samples & Test Results",
+  },
+
+  // {
+  //   // HPV sample collection + result entry (Collect sample / Enter results tabs).
+  //   // Not stage-gated: samples are often collected at a feeder and read at a lab/hub.
+  //   // Use Settings > Menu Visibility to limit it by role.
+  //   path: "/ncsr/hpv-sample-page",
+  //   icon: FlaskConical,
+  //   name: "HPV Samples & Results",
+  // },
   {
     path: "/ncsr/diagnostic-evaluation",
     icon: MicroscopeIcon,
@@ -109,61 +94,19 @@ const routes: IRoute[] = [
     name: "Stage 4: Treatment & Care",
     requiresStage: "stage4",
   },
-  {
-    path: "/ncsr/treatments",
-    icon: Activity,
-    name: "Treatment Tracking",
-    // Visible to all authenticated users
-  },
-  {
-    path: "/ncsr/follow-up-schedules",
-    icon: LinkIcon,
-    name: "Follow-up Schedules",
-    // Visible to all authenticated users
-  },
-  
-  // Admin-only routes — visibility now comes from menu_visibility_rules
+  { path: "/ncsr/treatments", icon: Activity, name: "Treatment Tracking" },
+  { path: "/ncsr/follow-up-schedules", icon: LinkIcon, name: "Follow-up Schedules" },
+
+  // Admin-only routes — visibility comes from menu_visibility_rules
   // (Settings > Menu Visibility), not hardcoded here.
-  {
-    path: "/ncsr/analytics",
-    icon: ChartBar,
-    name: "Analytics",
-  },
-  {
-    path: "/ncsr/navigator-clients",
-    icon: Users,
-    name: "My Clients",
-  },
-  {
-    path: "/ncsr/indigency-support",
-    icon: HeartHandshake,
-    name: "Indigency Support",
-  },
-  {
-    path: "/ncsr/users",
-    icon: UserCog,
-    name: "User Management",
-  },
-  {
-    path: "/ncsr/facilities",
-    icon: Building2,
-    name: "Facilities",
-  },
-  {
-    path: "/ncsr/facility-map",
-    icon: MapPinned,
-    name: "Facility Map",
-  },
-  {
-    path: "/ncsr/roles",
-    icon: Settings,
-    name: "Role Data Scope",
-  },
-  {
-    path: "/ncsr/settings",
-    icon: Settings,
-    name: "Settings",
-  },
+  { path: "/ncsr/analytics", icon: ChartBar, name: "Analytics" },
+  { path: "/ncsr/navigator-clients", icon: Users, name: "My Clients" },
+  { path: "/ncsr/indigency-support", icon: HeartHandshake, name: "Indigency Support" },
+  { path: "/ncsr/users", icon: UserCog, name: "User Management" },
+  { path: "/ncsr/facilities", icon: Building2, name: "Facilities" },
+  { path: "/ncsr/facility-map", icon: MapPinned, name: "Facility Map" },
+  { path: "/ncsr/roles", icon: Settings, name: "Role Data Scope" },
+  { path: "/ncsr/settings", icon: Settings, name: "Settings" },
 ];
 
 export type { IRoute };

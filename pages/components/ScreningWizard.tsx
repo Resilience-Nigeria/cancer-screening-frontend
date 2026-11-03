@@ -393,6 +393,9 @@ export default function ScreeningWizard() {
     maritalStatus:     "",
     nextOfKinName:     "",
     nextOfKinPhone:    "",
+    phoneNotClients:   false,
+    caregiverName:     "",
+    caregiverPhoneNumber: "",
   });
 
   const initialPreCounsel = () => ({
@@ -569,6 +572,9 @@ export default function ScreeningWizard() {
           maritalStatus:     c.maritalStatus     ?? "",
           nextOfKinName:     c.nextOfKinName     ?? "",
           nextOfKinPhone:    c.nextOfKinPhone    ?? "",
+          phoneNotClients:   c.phoneNotClients   ?? false,
+          caregiverName:     c.caregiverName     ?? "",
+          caregiverPhoneNumber: c.caregiverPhoneNumber ?? "",
         }));
         const rp =
           (c.risk_profiles && c.risk_profiles[0]) ||
@@ -766,22 +772,37 @@ export default function ScreeningWizard() {
     // Religion and marital status are optional. To make marital status mandatory,
     // add "maritalStatus" to this list.
     const required = [
-      "fullName", "gender", "dateOfBirth", "phoneNumber", "screeningCategory",
+      "fullName", "gender", "dateOfBirth", "screeningCategory",
       "stateOfOrigin", "lgaOfOrigin", "stateOfResidence", "lgaOfResidence", "registrationDate",
     ];
     const missing = required.filter((k) => !biodata[k]);
+    // A phone number is required, but it may be the client's or a caregiver's.
+    if (!String(biodata.phoneNumber || "").trim() && !String(biodata.caregiverPhoneNumber || "").trim()) {
+      missing.push("phoneNumber");
+    }
     if (missing.length) {
       setBiodataErrors(Object.fromEntries(missing.map((k) => [k, true])));
       toast.error("Please complete all required biodata fields.");
       return false;
     }
+
+    // If the client has no phone, the caregiver's number becomes the contact number.
+    const clientPhone = String(biodata.phoneNumber || "").trim();
+    const caregiverPhone = String(biodata.caregiverPhoneNumber || "").trim();
+    const payload = {
+      ...biodata,
+      phoneNumber: clientPhone || caregiverPhone,
+      phoneNotClients: !!biodata.phoneNotClients || (!clientPhone && !!caregiverPhone),
+      caregiverName: String(biodata.caregiverName || "").trim() || null,
+      caregiverPhoneNumber: caregiverPhone || null,
+    };
     setBiodataErrors({});
     setBusy(true);
     try {
       if (clientId) {
-        await api.patch(ENDPOINTS.updateClient(clientId), biodata);
+        await api.patch(ENDPOINTS.updateClient(clientId), payload);
       } else {
-        const { data } = await api.post(ENDPOINTS.createClient(), biodata);
+        const { data } = await api.post(ENDPOINTS.createClient(), payload);
         const created  = data?.client || data?.data;
         setClientId(created.clientId ?? created.id);
       }
@@ -898,6 +919,16 @@ export default function ScreeningWizard() {
       toast.error(`Required: ${firstMsg}`);
       return false;
     }
+    const cx = screenings.cervical;
+    if (
+      cancerTypes.includes("cervical") &&
+      cx?.hpvSampleDate &&
+      cx?.hpvResultDate &&
+      cx.hpvResultDate < cx.hpvSampleDate
+    ) {
+      toast.error("The HPV result date can't be earlier than the date the sample was taken.");
+      return false;
+    }
     setScreeningErrors({});
     setBusy(true);
     try {
@@ -986,6 +1017,9 @@ export default function ScreeningWizard() {
         maritalStatus:     client.maritalStatus    ?? "",
         nextOfKinName:     client.nextOfKinName    ?? "",
         nextOfKinPhone:    client.nextOfKinPhone   ?? "",
+        phoneNotClients:   client.phoneNotClients  ?? false,
+        caregiverName:     client.caregiverName    ?? "",
+        caregiverPhoneNumber: client.caregiverPhoneNumber ?? "",
       }));
       toast.success("Client record found");
     } catch {
@@ -1247,16 +1281,56 @@ export default function ScreeningWizard() {
                 />
               </div>
 
-              <Label>
-                <span className="text-sm font-semibold">Phone Number *</span>
-                <Input
-                  type="tel"
-                  className={`mt-2 rounded-2xl h-12 ${biodataErrors.phoneNumber ? "ring-2 ring-red-400 border-red-400" : ""}`}
-                  value={biodata.phoneNumber}
-                  onChange={(e) => setBiodataField("phoneNumber", e.target.value)}
-                  placeholder="Enter phone number"
-                />
-              </Label>
+              <div>
+                <Label>
+                  <span className="text-sm font-semibold">
+                    Phone Number{biodata.caregiverPhoneNumber ? "" : " *"}
+                  </span>
+                  <Input
+                    type="tel"
+                    className={`mt-2 rounded-2xl h-12 ${biodataErrors.phoneNumber ? "ring-2 ring-red-400 border-red-400" : ""}`}
+                    value={biodata.phoneNumber}
+                    onChange={(e) => setBiodataField("phoneNumber", e.target.value)}
+                    placeholder="Enter phone number"
+                  />
+                </Label>
+                <label className="mt-2 flex items-center gap-2 text-xs text-gray-600 dark:text-gray-300">
+                  <input
+                    type="checkbox"
+                    checked={!!biodata.phoneNotClients}
+                    onChange={(e) => setBiodataField("phoneNotClients", e.target.checked)}
+                  />
+                  This number doesn't belong to the client
+                </label>
+              </div>
+
+              <div className="sm:col-span-2 rounded-2xl border border-gray-100 dark:border-gray-700 p-4">
+                <p className="text-sm font-semibold text-gray-700 dark:text-gray-300">Caregiver</p>
+                <p className="text-xs text-gray-500 mb-3">
+                  Use this if the client has no phone. With no client phone number, the caregiver's number is used for contact.
+                </p>
+                <div className="grid gap-4 grid-cols-1 sm:grid-cols-2">
+                  <Label>
+                    <span className="text-sm font-semibold">Caregiver's Name</span>
+                    <Input
+                      id="caregiverName"
+                      className="mt-2 rounded-2xl h-12"
+                      value={biodata.caregiverName}
+                      onChange={(e) => setBiodataField("caregiverName", e.target.value)}
+                    />
+                  </Label>
+                  <Label>
+                    <span className="text-sm font-semibold">Caregiver's Phone Number</span>
+                    <Input
+                      id="caregiverPhoneNumber"
+                      type="tel"
+                      className={`mt-2 rounded-2xl h-12 ${biodataErrors.phoneNumber ? "ring-2 ring-red-400 border-red-400" : ""}`}
+                      value={biodata.caregiverPhoneNumber}
+                      onChange={(e) => setBiodataField("caregiverPhoneNumber", e.target.value)}
+                    />
+                  </Label>
+                </div>
+              </div>
 
               <Label>
                 <span className="text-sm font-semibold">Screening Category *</span>

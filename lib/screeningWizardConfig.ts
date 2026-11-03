@@ -591,12 +591,12 @@ export function breastfeedingPatch(risk: Record<string, any>): Record<string, an
 // colposcopy, as the old "Others" option did.
 // ---------------------------------------------------------------------------
 const HPV_GENOTYPES = ["16", "18", "31", "33", "35", "39", "45", "51", "52", "56", "58", "59", "66", "68"];
-const HPV_GENOTYPE_OPTIONS = [
+export const HPV_GENOTYPE_OPTIONS = [
   { value: "", label: "Select" },
   ...HPV_GENOTYPES.map((g) => ({ value: g, label: g })),
   { value: "other", label: "Other" },
 ];
-const ABLATION_GENOTYPES = ["16", "18", "35", "45"];
+export const ABLATION_GENOTYPES = ["16", "18", "35", "45"];
 const needsColposcopy = (v: Record<string, any>) =>
   !!v.hpvGenotype && !ABLATION_GENOTYPES.includes(v.hpvGenotype);
 
@@ -656,6 +656,20 @@ export const SCREENING_GROUPS: Record<CancerType, FieldGroup[]> = {
           colSpan: 1,
           showIf: (v) => !!v.methodHpv,
           options: HPV_GENOTYPE_OPTIONS,
+        },
+        {
+          name: "hpvSampleDate",
+          label: "Date Sample Taken",
+          type: "date",
+          colSpan: 1,
+          showIf: (v) => !!v.methodHpv,
+        },
+        {
+          name: "hpvResultDate",
+          label: "Date Result Released",
+          type: "date",
+          colSpan: 1,
+          showIf: (v) => !!v.methodHpv,
         },
       ],
     },

@@ -41,6 +41,8 @@ import {
   Microscope,
   UserPlus,
   HeartHandshake,
+  FlaskConical,
+  FileCheck2,
 } from "lucide-react";
 
 type ScreeningActivity = {
@@ -95,36 +97,36 @@ function StatCard({
 }: StatCardProps) {
   return (
     <div
-      className={`rounded-2xl bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 shadow-sm p-4 sm:p-5 transition-all ${
+      className={`rounded-2xl bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 shadow-sm p-3 sm:p-5 transition-all ${
         clickable
           ? "cursor-pointer hover:shadow-lg hover:border-green-300 dark:hover:border-green-600 hover:-translate-y-1"
           : ""
       }`}
       onClick={onClick}
     >
-      <div className="flex items-start justify-between gap-3">
+      <div className="flex items-start justify-between gap-2 sm:gap-3">
         <div className="min-w-0 flex-1">
-          <p className="text-sm font-medium text-gray-600 dark:text-gray-400 leading-5">
+          <p className="text-xs sm:text-sm font-medium text-gray-600 dark:text-gray-400 leading-4 sm:leading-5">
             {title}
           </p>
-          <h3 className="mt-2 text-xl sm:text-2xl font-bold text-gray-800 dark:text-white break-words">
+          <h3 className="mt-1.5 sm:mt-2 text-xl sm:text-2xl font-bold text-gray-800 dark:text-white break-words">
             {value}
           </h3>
           {note ? (
-            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400 leading-5">
+            <p className="mt-1 text-[11px] sm:text-xs text-gray-500 dark:text-gray-400 leading-4 sm:leading-5">
               {note}
             </p>
           ) : null}
         </div>
 
         <div
-          className={`shrink-0 w-11 h-11 sm:w-12 sm:h-12 rounded-xl flex items-center justify-center ${iconWrapperClass}`}
+          className={`shrink-0 w-9 h-9 sm:w-12 sm:h-12 rounded-xl flex items-center justify-center ${iconWrapperClass}`}
         >
           {icon}
         </div>
       </div>
       {clickable && (
-        <div className="mt-3 flex items-center text-xs font-medium text-green-600 dark:text-green-400">
+        <div className="mt-2 sm:mt-3 flex items-center text-xs font-medium text-green-600 dark:text-green-400">
           <span>View details</span>
           <ArrowUpRight className="w-3 h-3 ml-1" />
         </div>
@@ -150,23 +152,23 @@ function ModuleCard({
 }) {
   return (
     <div
-      className={`p-4 sm:p-5 bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 transition-all ${
+      className={`p-3 sm:p-5 bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 transition-all ${
         onClick
           ? "cursor-pointer hover:shadow-lg hover:border-green-300 dark:hover:border-green-600 hover:-translate-y-1"
           : ""
       }`}
       onClick={onClick}
     >
-      <div className="flex items-center justify-between gap-3">
-        <p className="text-sm font-medium text-gray-600 dark:text-gray-400 leading-5">
+      <div className="flex items-center justify-between gap-2 sm:gap-3">
+        <p className="text-xs sm:text-sm font-medium text-gray-600 dark:text-gray-400 leading-4 sm:leading-5">
           {title}
         </p>
         <div className="shrink-0">{icon}</div>
       </div>
-      <h3 className="mt-3 text-xl sm:text-2xl font-bold text-gray-800 dark:text-white">
+      <h3 className="mt-2 sm:mt-3 text-xl sm:text-2xl font-bold text-gray-800 dark:text-white">
         {value}
       </h3>
-      <p className={`mt-1 text-xs ${noteColor}`}>{note}</p>
+      <p className={`mt-1 text-[11px] sm:text-xs leading-4 ${noteColor}`}>{note}</p>
       {onClick && (
         <div className="mt-2 flex items-center text-xs font-medium text-green-600 dark:text-green-400">
           <span>View screenings</span>
@@ -188,25 +190,25 @@ function ActivityCard({
     <div className="rounded-2xl bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 shadow-sm p-4">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <h3 className="text-sm font-semibold text-gray-800 dark:text-white">
+          <h3 className="text-sm font-semibold text-gray-800 dark:text-white break-words">
             {item.clientName}
           </h3>
-          <p className="mt-1 text-xs font-medium text-green-700 dark:text-green-400">
+          <p className="mt-1 text-xs font-medium text-green-700 dark:text-green-400 break-all">
             {item.screeningId}
           </p>
         </div>
-        <Badge type={getBadgeType(item.status) as any}>{item.status}</Badge>
+        <div className="shrink-0"><Badge type={getBadgeType(item.status) as any}>{item.status}</Badge></div>
       </div>
 
       <div className="mt-4 space-y-3">
         <div className="flex items-start gap-2 text-sm text-gray-600 dark:text-gray-300">
           <FileText className="w-4 h-4 mt-0.5 shrink-0" />
-          <span>{item.screeningType}</span>
+          <span className="min-w-0 break-words">{item.screeningType}</span>
         </div>
 
         <div className="flex items-start gap-2 text-sm text-gray-600 dark:text-gray-300">
           <Building2 className="w-4 h-4 mt-0.5 shrink-0" />
-          <span>{item.facility}</span>
+          <span className="min-w-0 break-words">{item.facility}</span>
         </div>
 
         <div className="flex items-start gap-2 text-sm text-gray-600 dark:text-gray-300">
@@ -515,7 +517,7 @@ function Dashboard() {
   if (loading && activities.length === 0) {
     return (
       <Layout>
-        <div className="flex items-center justify-center h-96">
+        <div className="flex items-center justify-center h-64 sm:h-96">
           <div className="text-center">
             <Loader2 className="w-8 h-8 animate-spin text-green-600 mx-auto" />
             <p className="mt-4 text-sm text-gray-600 dark:text-gray-400">
@@ -534,7 +536,7 @@ function Dashboard() {
 
         <div className="mt-4 rounded-2xl bg-gradient-to-r from-green-800 via-green-700 to-green-600 text-white shadow-lg p-4 sm:p-6 md:p-8">
           <div className="max-w-3xl">
-            <div className="flex items-center gap-2 mb-3">
+            <div className="flex flex-wrap items-center gap-2 mb-3">
               <p className="inline-flex items-center px-3 py-1 text-[10px] sm:text-xs font-semibold tracking-wide uppercase rounded-full bg-white/15">
                 {hasNationalAccess && (
                   <Globe className="w-3 h-3 mr-1.5" />
@@ -565,73 +567,90 @@ function Dashboard() {
         {/* Filters Section - Only for National Users */}
         {hasNationalAccess && (
           <div className="mt-4">
-           <div className="flex items-center gap-3">
-  <button
-    onClick={() => setShowFilters(!showFilters)}
-    className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-750 transition-colors shadow-sm"
-  >
-    <Filter className="w-4 h-4" />
-    <span className="font-medium">Filters</span>
-    {filtersApplied && (
-      <span className="ml-1 px-2 py-0.5 text-xs bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300 rounded-full">
-        Active
-      </span>
-    )}
-  </button>
+<div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-center gap-2 sm:gap-3">
+              <button
+                onClick={() => setShowFilters(!showFilters)}
+                className="flex items-center justify-center sm:justify-start gap-2 px-4 h-11 sm:h-12 rounded-xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-750 transition-colors shadow-sm"
+              >
+                <Filter className="w-4 h-4" />
+                <span className="font-medium">Filters</span>
+                {filtersApplied && (
+                  <span className="ml-1 px-2 py-0.5 text-xs bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300 rounded-full">
+                    Active
+                  </span>
+                )}
+              </button>
 
-  {/* <Button
-    className="rounded-2xl h-12 bg-green-700 border-green-700 hover:bg-green-800 hover:border-green-800"
-    // onClick={openModal}
-  >
-    <span className="inline-flex items-center gap-2">
-      <Plus className="w-4 h-4" />
-      Add Client
-    </span>
-  </Button> */}
+              <Link href={`/ncsr/clinical-screening`} className="block w-full sm:w-auto">
+                <Button
+                  layout="outline"
+                  className="w-full sm:w-auto text-white rounded-2xl min-h-[44px] sm:h-12 bg-green-700 border-green-700 hover:bg-green-800 hover:border-green-800"
+                >
+                  <span className="inline-flex items-center justify-center gap-2">
+                    <StethoscopeIcon className="w-4 h-4 shrink-0" />
+                    New Screening
+                  </span>
+                </Button>
+              </Link>
 
-  <Link
-                          href={`/ncsr/clinical-screening`}
-                        >
-                          <Button layout="outline" className="text-white rounded-2xl h-12 bg-green-700 border-green-700 hover:bg-green-800 hover:border-green-800">
-                            <span className="inline-flex items-center gap-2">
-                              <StethoscopeIcon className="w-4 h-4" />
-                              New Screening
-                            </span>
-                          </Button>
-                        </Link>
+              {facilitySupportsStage("stage2") && (
+                <Link href={`/ncsr/clinical-screening`} className="block w-full sm:w-auto">
+                  <Button
+                    layout="outline"
+                    className="w-full sm:w-auto text-green-700 dark:text-green-400 rounded-2xl min-h-[44px] sm:h-12 border-green-700 hover:bg-green-50 dark:hover:bg-green-900/20"
+                  >
+                    <span className="inline-flex items-center justify-center gap-2">
+                      <ClipboardCheck className="w-4 h-4 shrink-0" />
+                      Stage 2: Clinical Screening
+                    </span>
+                  </Button>
+                </Link>
+              )}
 
-  {facilitySupportsStage("stage2") && (
-  <Link
-                          href={`/ncsr/clinical-screening`}
-                        >
-                          <Button layout="outline" className="text-green-700 dark:text-green-400 rounded-2xl h-12 border-green-700 hover:bg-green-50 dark:hover:bg-green-900/20">
-                            <span className="inline-flex items-center gap-2">
-                              <ClipboardCheck className="w-4 h-4" />
-                              Stage 2: Clinical Screening
-                            </span>
-                          </Button>
-                        </Link>
-  )}
+              <Link href="/ncsr/screening-tests" className="block w-full sm:w-auto">
+                <Button
+                  layout="outline"
+                  className="w-full sm:w-auto text-emerald-700 dark:text-emerald-400 rounded-2xl min-h-[44px] sm:h-12 border-emerald-700 hover:bg-emerald-50 dark:hover:bg-emerald-900/20"
+                >
+                  <span className="inline-flex items-center justify-center gap-2">
+                    <FlaskConical className="w-4 h-4 shrink-0" />
+                    Collect Sample
+                  </span>
+                </Button>
+              </Link>
 
-  {facilitySupportsStage("stage3") && (
-  <Link
-                          href={`/ncsr/diagnostic-evaluation`}
-                        >
-                          <Button layout="outline" className="text-teal-700 dark:text-teal-400 rounded-2xl h-12 border-teal-700 hover:bg-teal-50 dark:hover:bg-teal-900/20">
-                            <span className="inline-flex items-center gap-2">
-                              <Microscope className="w-4 h-4" />
-                              Stage 3: Diagnostic Evaluation
-                            </span>
-                          </Button>
-                        </Link>
-  )}
+              <Link href="/ncsr/screening-tests?tab=results" className="block w-full sm:w-auto">
+                <Button
+                  layout="outline"
+                  className="w-full sm:w-auto text-emerald-700 dark:text-emerald-400 rounded-2xl min-h-[44px] sm:h-12 border-emerald-700 hover:bg-emerald-50 dark:hover:bg-emerald-900/20"
+                >
+                  <span className="inline-flex items-center justify-center gap-2">
+                    <FileCheck2 className="w-4 h-4 shrink-0" />
+                    Submit Test Result
+                  </span>
+                </Button>
+              </Link>
+
+              {facilitySupportsStage("stage3") && (
+                <Link href={`/ncsr/diagnostic-evaluation`} className="block w-full sm:w-auto">
+                  <Button
+                    layout="outline"
+                    className="w-full sm:w-auto text-teal-700 dark:text-teal-400 rounded-2xl min-h-[44px] sm:h-12 border-teal-700 hover:bg-teal-50 dark:hover:bg-teal-900/20"
+                  >
+                    <span className="inline-flex items-center justify-center gap-2">
+                      <Microscope className="w-4 h-4 shrink-0" />
+                      Stage 3: Diagnostic Evaluation
+                    </span>
+                  </Button>
+                </Link>
+              )}
 
 </div>
 
             {showFilters && (
-              <div className="mt-4 p-6 rounded-2xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 shadow-lg">
+              <div className="mt-4 p-4 sm:p-6 rounded-2xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 shadow-lg">
                 <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+                  <h3 className="text-base sm:text-lg font-semibold text-gray-900 dark:text-white">
                     Filter Dashboard Data
                   </h3>
                   <button
@@ -642,7 +661,7 @@ function Dashboard() {
                   </button>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3 sm:gap-4 mb-4 sm:mb-6">
                   {/* Facility Filter */}
                   <div>
                     <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
@@ -651,7 +670,7 @@ function Dashboard() {
                     <select
                       value={selectedFacility}
                       onChange={(e) => setSelectedFacility(e.target.value)}
-                      className="w-full px-4 py-2.5 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                      className="w-full min-w-0 px-3 sm:px-4 py-2.5 text-base sm:text-sm rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-green-500 focus:border-transparent"
                     >
                       <option value="all">All Facilities</option>
                       {facilities.map((facility) => (
@@ -671,7 +690,7 @@ function Dashboard() {
                       type="date"
                       value={dateFrom}
                       onChange={(e) => setDateFrom(e.target.value)}
-                      className="w-full px-4 py-2.5 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                      className="w-full min-w-0 px-3 sm:px-4 py-2.5 text-base sm:text-sm rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-green-500 focus:border-transparent"
                     />
                   </div>
 
@@ -684,17 +703,17 @@ function Dashboard() {
                       type="date"
                       value={dateTo}
                       onChange={(e) => setDateTo(e.target.value)}
-                      className="w-full px-4 py-2.5 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                      className="w-full min-w-0 px-3 sm:px-4 py-2.5 text-base sm:text-sm rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-green-500 focus:border-transparent"
                     />
                   </div>
                 </div>
 
                 {/* Clear Filters Button and Help Text */}
                 {filtersApplied ? (
-                  <div className="flex items-center gap-3">
+                  <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
                     <button
                       onClick={clearFilters}
-                      className="flex items-center gap-2 px-6 py-2.5 rounded-xl border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors font-medium"
+                      className="flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors font-medium"
                     >
                       <X className="w-4 h-4" />
                       Clear All Filters
@@ -722,10 +741,10 @@ function Dashboard() {
       {showActionCards && (
         <div className="mb-6 sm:mb-8">
           {isFeederOnlyUser && <PageTitle>Quick Actions</PageTitle>}
-          <div className="grid gap-4 sm:gap-5 mt-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-5">
+          <div className="grid gap-3 sm:gap-5 mt-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
             {facilitySupportsStage("stage2") && (
-            <Link href="/ncsr/clinical-screening?new=1">
-              <div className="cursor-pointer rounded-2xl bg-green-700 hover:bg-green-800 transition-colors p-6 text-white shadow-sm h-full">
+            <Link className="block h-full" href="/ncsr/clinical-screening?new=1">
+              <div className="cursor-pointer rounded-2xl bg-green-700 hover:bg-green-800 transition-colors p-4 sm:p-6 text-white shadow-sm h-full">
                 <UserPlus className="w-6 h-6 mb-3" />
                 <p className="font-semibold">Register & Screen New Client</p>
                 <p className="text-xs text-green-100 mt-1">Start Stage 2 biodata + screening</p>
@@ -733,17 +752,31 @@ function Dashboard() {
             </Link>
             )}
             {facilitySupportsStage("stage2") && (
-            <Link href="/ncsr/clinical-screening">
-              <div className="cursor-pointer rounded-2xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-750 transition-colors p-6 shadow-sm h-full">
+            <Link className="block h-full" href="/ncsr/clinical-screening">
+              <div className="cursor-pointer rounded-2xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-750 transition-colors p-4 sm:p-6 shadow-sm h-full">
                 <ClipboardCheck className="w-6 h-6 mb-3 text-green-700" />
                 <p className="font-semibold text-gray-800 dark:text-white">Stage 2: Clinical Screening</p>
                 <p className="text-xs text-gray-500 mt-1">Find an existing client to screen</p>
               </div>
             </Link>
             )}
+            <Link className="block h-full" href="/ncsr/screening-tests">
+              <div className="cursor-pointer rounded-2xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-750 transition-colors p-4 sm:p-6 shadow-sm h-full">
+                <FlaskConical className="w-6 h-6 mb-3 text-emerald-700" />
+                <p className="font-semibold text-gray-800 dark:text-white">Collect Sample</p>
+                <p className="text-xs text-gray-500 mt-1">HPV, Pap, PSA, AFP, FIT and more</p>
+              </div>
+            </Link>
+            <Link className="block h-full" href="/ncsr/screening-tests?tab=results">
+              <div className="cursor-pointer rounded-2xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-750 transition-colors p-4 sm:p-6 shadow-sm h-full">
+                <FileCheck2 className="w-6 h-6 mb-3 text-emerald-700" />
+                <p className="font-semibold text-gray-800 dark:text-white">Submit Test Result</p>
+                <p className="text-xs text-gray-500 mt-1">Enter results for collected samples</p>
+              </div>
+            </Link>
             {facilitySupportsStage("stage3") && (
-            <Link href="/ncsr/diagnostic-evaluation">
-              <div className="cursor-pointer rounded-2xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-750 transition-colors p-6 shadow-sm h-full">
+            <Link className="block h-full" href="/ncsr/diagnostic-evaluation">
+              <div className="cursor-pointer rounded-2xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-750 transition-colors p-4 sm:p-6 shadow-sm h-full">
                 <Microscope className="w-6 h-6 mb-3 text-teal-700" />
                 <p className="font-semibold text-gray-800 dark:text-white">Stage 3: Diagnostic Evaluation</p>
                 <p className="text-xs text-gray-500 mt-1">For facilities configured for Stage 3</p>
@@ -751,16 +784,16 @@ function Dashboard() {
             </Link>
             )}
             {facilitySupportsStage("stage4") && (
-            <Link href="/ncsr/treatment-plan">
-              <div className="cursor-pointer rounded-2xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-750 transition-colors p-6 shadow-sm h-full">
+            <Link className="block h-full" href="/ncsr/treatment-plan">
+              <div className="cursor-pointer rounded-2xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-750 transition-colors p-4 sm:p-6 shadow-sm h-full">
                 <HeartHandshake className="w-6 h-6 mb-3 text-purple-700" />
                 <p className="font-semibold text-gray-800 dark:text-white">Stage 4: Treatment & Care</p>
                 <p className="text-xs text-gray-500 mt-1">For facilities configured for Stage 4</p>
               </div>
             </Link>
             )}
-            <Link href="/ncsr/referred">
-              <div className="cursor-pointer rounded-2xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-750 transition-colors p-6 shadow-sm h-full">
+            <Link className="block h-full" href="/ncsr/referred">
+              <div className="cursor-pointer rounded-2xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-750 transition-colors p-4 sm:p-6 shadow-sm h-full">
                 <ArrowUpRight className="w-6 h-6 mb-3 text-blue-700" />
                 <p className="font-semibold text-gray-800 dark:text-white">Linked Clients</p>
                 <p className="text-xs text-gray-500 mt-1">Clients referred to your facility</p>
@@ -773,7 +806,7 @@ function Dashboard() {
       {showStatsCards && (
         <>
       {/* Rest of the dashboard remains the same - Stats cards, Module cards, Charts, etc. */}
-      <div className="grid gap-4 sm:gap-5 mb-6 sm:mb-8 grid-cols-1 sm:grid-cols-2 xl:grid-cols-6">
+      <div className="grid gap-3 sm:gap-5 mb-4 sm:mb-8 grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
         <StatCard
           title="Total Registered Clients"
           value={stats.totalClients.toLocaleString()}
@@ -848,7 +881,7 @@ function Dashboard() {
       </div>
 
       {/* Module Cards Grid */}
-      <div className="grid gap-4 sm:gap-5 mb-6 sm:mb-8 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+      <div className="grid gap-3 sm:gap-5 mb-6 sm:mb-8 grid-cols-2 md:grid-cols-3 xl:grid-cols-6">
         <ModuleCard
           title="Cervical Screening"
           value={stats.cervicalScreenings.toLocaleString()}
@@ -901,14 +934,14 @@ function Dashboard() {
         <PageTitle>Recent Screening Activity</PageTitle>
 
         {loading ? (
-          <div className="mt-4 rounded-2xl bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 p-12 text-center">
+          <div className="mt-4 rounded-2xl bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 p-8 sm:p-12 text-center">
             <Loader2 className="w-8 h-8 animate-spin text-green-600 mx-auto" />
             <p className="mt-4 text-sm text-gray-600 dark:text-gray-400">
               Loading activities...
             </p>
           </div>
         ) : activities.length === 0 ? (
-          <div className="mt-4 rounded-2xl bg-white dark:bg-gray-800 border border-dashed border-gray-300 dark:border-gray-600 p-12 text-center">
+          <div className="mt-4 rounded-2xl bg-white dark:bg-gray-800 border border-dashed border-gray-300 dark:border-gray-600 p-8 sm:p-12 text-center">
             <ClipboardList className="w-12 h-12 mx-auto text-gray-400" />
             <h4 className="mt-4 text-lg font-semibold text-gray-800 dark:text-gray-100">
               No recent activity
@@ -1001,7 +1034,7 @@ function Dashboard() {
               </div>
 
               {totalResults > resultsPerPage && (
-                <div className="mt-6">
+                <div className="mt-4 sm:mt-6 overflow-x-auto">
                   <Pagination
                     totalResults={totalResults}
                     resultsPerPage={resultsPerPage}
@@ -1017,13 +1050,13 @@ function Dashboard() {
 
       {/* Dense analytics moved to a dedicated page to keep this view focused
           on high-priority actions (patient lists, recent activity). */}
-      <Link href="/ncsr/analytics">
+      <Link className="block h-full" href="/ncsr/analytics">
         <div className="mb-8 rounded-2xl bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 shadow-sm p-4 sm:p-5 flex items-center justify-between gap-3 cursor-pointer hover:shadow-lg hover:border-green-300 dark:hover:border-green-600 transition-all">
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 min-w-0">
             <div className="shrink-0 w-11 h-11 rounded-xl flex items-center justify-center bg-green-50 dark:bg-green-900/30 text-green-700 dark:text-green-400">
               <Activity className="w-5 h-5" />
             </div>
-            <div>
+            <div className="min-w-0">
               <h3 className="text-sm font-semibold text-gray-800 dark:text-white">
                 Analytics &amp; Trends
               </h3>

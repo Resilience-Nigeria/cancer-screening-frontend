@@ -20,6 +20,16 @@ import toast from "react-hot-toast";
 import Layout from "../containers/Layout";
 import PageTitle from "../components/Typography/PageTitle";
 import api from "../../lib/api";
+import {
+  sendOrQueue,
+  newTempClientId,
+  newTempVisitId,
+  isTempId,
+  resolveId,
+  saveLocalClient,
+  findLocalClient,
+  useSyncStatus,
+} from "../../lib/offlineSync";
 import { friendlyError } from "../../lib/apiError";
 import { nigerianStates, lgasByState, getStateCode } from "../../lib/nigerianstates";
 import {
@@ -186,7 +196,7 @@ const STEP_LABELS: Record<StepKey, string> = {
 };
 
 const ENDPOINTS = {
-  screening: (visitId: number, cancerType: string) =>
+  screening: (visitId: number | string, cancerType: string) =>
     `/visits/${visitId}/${cancerType}-screening`,
 };
 
@@ -198,6 +208,9 @@ export default function ClinicalScreeningPage() {
   const router = useRouter();
   const [stepIndex, setStepIndex] = useState(0);
   const [busy, setBusy] = useState(false);
+  const sync = useSyncStatus();
+  // Shows the real Client ID once a provisional (offline) one has been synced.
+  const displayId = (id: string) => (id ? resolveId(id, sync.idMap) : id);
 
   const [visitMeta, setVisitMeta] = useState<VisitMeta>(initialVisitMeta());
   // Lookup
@@ -205,7 +218,7 @@ export default function ClinicalScreeningPage() {
 
   // Client / visit
   const [clientId, setClientId] = useState<string>("");
-  const [visitId, setVisitId] = useState<number | null>(null);
+  const [visitId, setVisitId] = useState<number | string | null>(null);
 
   const [biodata, setBiodata] = useState<Record<string, any>>({
     fullName: "",
@@ -227,6 +240,9 @@ export default function ClinicalScreeningPage() {
     nextOfKinName: "",
     nextOfKinPhone: "",
     nextOfKinRelationship: "",
+    phoneNotClients: false,
+    caregiverName: "",
+    caregiverPhoneNumber: "",
   });
 
   const [risk, setRisk] = useState<Record<string, any>>({});
@@ -246,6 +262,10 @@ export default function ClinicalScreeningPage() {
   const [incompleteVisits, setIncompleteVisits] = useState<any[]>([]);
   // True once the client record already existed before this session (found by lookup or matched as a duplicate).
   const [returningClient, setReturningClient] = useState(false);
+  // OTP skip/override (client can't receive an SMS) and the Client ID screen shown right after OTP.
+  const [otpSkipOpen, setOtpSkipOpen] = useState(false);
+  const [otpSkipReason, setOtpSkipReason] = useState("");
+  const [newClientId, setNewClientId] = useState("");
 
   // Facility lists and screening errors
   const [facilities, setFacilities] = useState<any[]>([]);
@@ -517,11 +537,26 @@ export default function ClinicalScreeningPage() {
     setBusy(true);
 
     try {
-      const { data } = await api.get("/clients/search/details", {
-        params: { search: value },
-      });
+      let data: any;
+      try {
+        ({ data } = await api.get("/clients/search/details", {
+          params: { search: value },
+        }));
+      } catch (e: any) {
+        if (e?.response) throw e;
+        // No network: search only clients registered or opened on this device.
+        const local = await findLocalClient(value);
+        if (!local) {
+          toast("You're offline and this client isn't saved on this device. Continuing as a new registration.", { icon: "ℹ️" });
+          goTo("registration");
+          return;
+        }
+        data = { client: local, offline: true };
+        toast("Offline — client loaded from this device.", { icon: "📴" });
+      }
 
       const found = data?.client;
+      if (found && !data?.offline) saveLocalClient(found);
 
       if (found) {
         setClientId(found.clientId);
@@ -549,12 +584,20 @@ export default function ClinicalScreeningPage() {
           nextOfKinName: found.nextOfKinName || "",
           nextOfKinPhone: found.nextOfKinPhone || "",
           nextOfKinRelationship: found.nextOfKinRelationship || "",
+          phoneNotClients: !!found.phoneNotClients,
+          caregiverName: found.caregiverName || "",
+          caregiverPhoneNumber: found.caregiverPhoneNumber || "",
         });
 
         // Check for an in-progress visit
-        const { data: incompleteData } = await api.get(
-          `/clients/${found.clientId}/visits/incomplete`
-        );
+        let incompleteData: any = null;
+        if (!data?.offline) {
+          try {
+            ({ data: incompleteData } = await api.get(`/clients/${found.clientId}/visits/incomplete`));
+          } catch (e: any) {
+            if (e?.response) throw e;
+          }
+        }
 
         if (incompleteData?.riskProfile) {
           setRisk((p) => ({
@@ -640,10 +683,18 @@ export default function ClinicalScreeningPage() {
     }
 
     try {
-      const { data } = await api.post(`/clients/${clientId}/visits`, {
-        visitDate: todayStr(),
-        visitType: returningClient ? "follow_up" : "initial",
-        ...visitMeta,
+      const tempVisit = newTempVisitId();
+      const { data } = await sendOrQueue({
+        method: "post",
+        path: `/clients/${clientId}/visits`,
+        body: {
+          visitDate: todayStr(),
+          visitType: returningClient ? "follow_up" : "initial",
+          ...visitMeta,
+        },
+        label: "Start visit",
+        produces: [{ temp: tempVisit, from: ["visit.visitId", "visitId"] }],
+        provisional: { visit: { visitId: tempVisit } },
       });
       const newVisitId = data?.visit?.visitId ?? data?.visitId;
       setVisitId(newVisitId);
@@ -667,10 +718,29 @@ export default function ClinicalScreeningPage() {
     }
   }
 
+  // The exact client payload sent to the API. If the client has no phone of their own, the
+  // caregiver's number becomes the contact number and is flagged as not belonging to the client.
+  function clientPayload() {
+    const clientPhone = (biodata.phoneNumber || "").trim();
+    const caregiverPhone = (biodata.caregiverPhoneNumber || "").trim();
+    const usingCaregiverAsContact = !clientPhone && !!caregiverPhone;
+    return {
+      ...biodata,
+      phoneNumber: clientPhone || caregiverPhone,
+      phoneNotClients: !!biodata.phoneNotClients || usingCaregiverAsContact,
+      caregiverName: (biodata.caregiverName || "").trim() || null,
+      caregiverPhoneNumber: caregiverPhone || null,
+    };
+  }
+
   async function submitRegistration() {
-    if (!biodata.fullName || !biodata.gender || !biodata.phoneNumber) {
-      toast.error("Full name, sex, and phone number are required.");
+    const contact = clientPayload();
+    if (!biodata.fullName || !biodata.gender || !contact.phoneNumber) {
+      toast.error("Full name, sex, and a phone number (the client's or a caregiver's) are required.");
       return;
+    }
+    if (contact.phoneNumber !== biodata.phoneNumber || contact.phoneNotClients !== !!biodata.phoneNotClients) {
+      setBiodata((p) => ({ ...p, phoneNumber: contact.phoneNumber, phoneNotClients: contact.phoneNotClients }));
     }
 
     // A fresh visit is about to start — clear any leftover cancer-type
@@ -685,8 +755,15 @@ export default function ClinicalScreeningPage() {
     if (clientId) {
       setBusy(true);
       try {
-        await api.patch(`/clients/${clientId}`, biodata);
+        const { queued } = await sendOrQueue({
+          method: "patch",
+          path: `/clients/${clientId}`,
+          body: contact,
+          label: `Update ${contact.fullName || "client"} details`,
+        });
+        saveLocalClient({ ...contact, clientId });
         await createVisitAndLoadRisk(clientId);
+        if (queued) toast("Saved on this device — will sync when the network returns.", { icon: "📴" });
         toast.success("Client updated and visit created.");
         goTo("cancerTypeSelect");
       } catch (err: any) {
@@ -700,7 +777,24 @@ export default function ClinicalScreeningPage() {
     // CASE 2: New client - check for duplicates first
     setBusy(true);
 
-    const phoneMatch = await lookupDuplicate("phone", biodata.phoneNumber);
+    // No network: no duplicate lookup or OTP is possible. Check this device's own clients, then register offline.
+    if (!navigator.onLine) {
+      const localDup = contact.phoneNotClients ? null : await findLocalClient(contact.phoneNumber);
+      if (localDup) {
+        setDuplicateMatch({ field: "phone", client: localDup });
+        setBusy(false);
+        return;
+      }
+      setBusy(false);
+      goTo("otpConsent");
+      await completeNewClientRegistration({ reason: "Registered offline – no network" });
+      return;
+    }
+
+    // A caregiver's number can legitimately be shared by several clients, so skip the duplicate check.
+    const phoneMatch = contact.phoneNotClients
+      ? null
+      : await lookupDuplicate("phone", contact.phoneNumber);
     if (phoneMatch) {
       setDuplicateMatch(phoneMatch);
       setBusy(false);
@@ -721,7 +815,7 @@ export default function ClinicalScreeningPage() {
       const { data } = await api.post(`/awareness/register`, {
         fullName: biodata.fullName,
         gender: biodata.gender,
-        phoneNumber: biodata.phoneNumber,
+        phoneNumber: contact.phoneNumber,
         email: biodata.email || undefined,
         stateOfResidence: biodata.stateOfResidence,
         lgaOfResidence: biodata.lgaOfResidence,
@@ -731,6 +825,12 @@ export default function ClinicalScreeningPage() {
       setPendingMaskedPhone(data.maskedPhone);
       goTo("otpConsent");
     } catch (err: any) {
+      if (!err?.response) {
+        toast("Network lost — registering offline instead.", { icon: "📴" });
+        goTo("otpConsent");
+        await completeNewClientRegistration({ reason: "Registered offline – no network" });
+        return;
+      }
       toast.error(friendlyError(err, "Could not start registration."));
     } finally {
       setBusy(false);
@@ -738,13 +838,22 @@ export default function ClinicalScreeningPage() {
   }
 
   async function createVisitAndLoadRisk(cId: string, returning: boolean = returningClient) {
-    const { data: visitData } = await api.post(`/clients/${cId}/visits`, {
-      visitDate: todayStr(),
-      visitType: returning ? "follow_up" : "initial",
-      ...visitMeta,
+    const tempVisit = newTempVisitId();
+    const { data: visitData } = await sendOrQueue({
+      method: "post",
+      path: `/clients/${cId}/visits`,
+      body: {
+        visitDate: todayStr(),
+        visitType: returning ? "follow_up" : "initial",
+        ...visitMeta,
+      },
+      label: "Start visit",
+      produces: [{ temp: tempVisit, from: ["visit.visitId", "visitId"] }],
+      provisional: { visit: { visitId: tempVisit } },
     });
     setVisitId(visitData?.visit?.visitId ?? visitData?.visitId);
 
+    if (isTempId(cId) || !navigator.onLine) return; // nothing to load for a client that isn't on the server yet
     try {
       const { data: rp } = await api.get(`/clients/${cId}/risk-profile`);
       const profile = rp?.risk_profile ?? rp?.riskProfile ?? rp?.data ?? rp;
@@ -787,6 +896,9 @@ export default function ClinicalScreeningPage() {
       nextOfKinName: c.nextOfKinName || "",
       nextOfKinPhone: c.nextOfKinPhone || "",
       nextOfKinRelationship: c.nextOfKinRelationship || "",
+      phoneNotClients: !!c.phoneNotClients,
+      caregiverName: c.caregiverName || "",
+      caregiverPhoneNumber: c.caregiverPhoneNumber || "",
     });
     setDuplicateMatch(null);
     setBusy(true);
@@ -811,21 +923,37 @@ export default function ClinicalScreeningPage() {
     setDuplicateMatch(null);
   }
 
-  async function completeNewClientRegistration() {
+  async function completeNewClientRegistration(skip?: { reason: string }) {
     setBusy(true);
     try {
-      const { data } = await api.post(`/clients`, {
-        ...biodata,
+      const tempClient = newTempClientId();
+      const body = {
+        ...clientPayload(),
         stateOfOrigin: biodata.stateOfOrigin || biodata.stateOfResidence,
         lgaOfOrigin: biodata.lgaOfOrigin || biodata.lgaOfResidence,
         registrationDate: todayStr(),
         screeningCategory: "new_client",
+        otpSkipped: !!skip,
+        otpSkipReason: skip?.reason ?? null,
+      };
+      const { data, queued } = await sendOrQueue({
+        method: "post",
+        path: `/clients`,
+        body,
+        label: `Register ${biodata.fullName || "new client"}`,
+        produces: [{ temp: tempClient, from: ["client.clientId", "clientId"] }],
+        provisional: { client: { clientId: tempClient } },
       });
       const cId = data?.client?.clientId ?? data?.clientId;
       setClientId(cId);
+      saveLocalClient({ ...body, clientId: cId }, queued ? cId : undefined);
       await createVisitAndLoadRisk(cId);
-      toast.success("Client registered and visit created.");
-      goTo("cancerTypeSelect");
+      if (queued) {
+        toast("Registered on this device. A real Client ID is assigned when the network returns.", { icon: "📴", duration: 6000 });
+      } else {
+        toast.success("Client registered and visit created.");
+      }
+      setNewClientId(cId); // show the Client ID screen before moving on
     } catch (err: any) {
       toast.error(friendlyError(err, "Could not complete registration."));
       goTo("registration");
@@ -839,8 +967,13 @@ export default function ClinicalScreeningPage() {
     if (!clientId) return;
     setBusy(true);
     try {
-      await api.post(`/clients/${clientId}/risk-profile`, buildRiskPayload(risk));
-      toast.success("Risk assessment and medical history saved.");
+      const { queued } = await sendOrQueue({
+        method: "post",
+        path: `/clients/${clientId}/risk-profile`,
+        body: buildRiskPayload(risk),
+        label: "Risk assessment & medical history",
+      });
+      toast.success(queued ? "Saved on this device — will sync later." : "Risk assessment and medical history saved.");
       next();
     } catch (err: any) {
       toast.error(friendlyError(err, "Could not save risk assessment."));
@@ -851,6 +984,16 @@ export default function ClinicalScreeningPage() {
 
   // Catches states where the backend would reject the record, and explains them in plain language.
   function screeningBlocker(): string | null {
+    const cx = screenings.cervical;
+    if (
+      cancerTypes.includes("cervical") &&
+      cx?.hpvSampleDate &&
+      cx?.hpvResultDate &&
+      cx.hpvResultDate < cx.hpvSampleDate
+    ) {
+      return "The HPV result date can't be earlier than the date the sample was taken.";
+    }
+
     for (const ct of cancerTypes) {
       if (ct !== "prostate") continue;
       const s = screenings.prostate || {};
@@ -894,15 +1037,19 @@ export default function ClinicalScreeningPage() {
 
     setBusy(true);
     try {
+      let anyQueued = false;
       for (const ct of cancerTypes) {
         const screeningData = screenings[ct] || {};
 
-        await api.post(
-          ENDPOINTS.screening(activeVisitId, ct),
-          buildScreeningPayload(screeningData, treatmentReferral)
-        );
+        const r = await sendOrQueue({
+          method: "post",
+          path: ENDPOINTS.screening(activeVisitId, ct),
+          body: buildScreeningPayload(screeningData, treatmentReferral),
+          label: `${cancerLabel(ct as CancerType)} screening`,
+        });
+        if (r.queued) anyQueued = true;
       }
-      toast.success("Screening findings saved.");
+      toast.success(anyQueued ? "Saved on this device — will sync later." : "Screening findings saved.");
       next();
     } catch (err: any) {
       toast.error(friendlyError(err, "Could not save one or more screening records."));
@@ -938,8 +1085,13 @@ export default function ClinicalScreeningPage() {
 
     setBusy(true);
     try {
-      await api.post(`/visits/${activeVisitId}/examination`, examination);
-      toast.success("Physical examination saved.");
+      const { queued } = await sendOrQueue({
+        method: "post",
+        path: `/visits/${activeVisitId}/examination`,
+        body: examination,
+        label: "Physical examination",
+      });
+      toast.success(queued ? "Saved on this device — will sync later." : "Physical examination saved.");
       next();
     } catch (err: any) {
       toast.error(friendlyError(err, "Could not save the examination."));
@@ -971,11 +1123,22 @@ export default function ClinicalScreeningPage() {
 
     setBusy(true);
     try {
-      const { data } = await api.post(`/visits/${activeVisitId}/outcome`, {
-        ...outcome,
-        referralFacilityId: needsReferral ? Number(referralFacilityId) : null,
+      const { data, queued } = await sendOrQueue({
+        method: "post",
+        path: `/visits/${activeVisitId}/outcome`,
+        body: {
+          ...outcome,
+          referralFacilityId: needsReferral ? Number(referralFacilityId) : null,
+        },
+        label: "Screening outcome",
       });
-      if (data?.referral) {
+      if (queued) {
+        toast.success(
+          needsReferral
+            ? "Outcome saved on this device — the referral is created when it syncs."
+            : "Outcome saved on this device — will sync later."
+        );
+      } else if (data?.referral) {
         setAutoReferral(data.referral);
         toast.success("Screening outcome recorded — client referred.");
       } else {
@@ -989,16 +1152,119 @@ export default function ClinicalScreeningPage() {
     }
   }
 
+  // Shown right after OTP verification (or an OTP skip) so the admin can copy / share the Client ID.
+  if (newClientId && currentKey === "otpConsent") {
+    return (
+      <Layout>
+        <div className="max-w-md mx-auto mt-10 bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700 shadow-sm p-8 text-center space-y-4">
+          <CheckCircle className="w-12 h-12 text-green-600 mx-auto" />
+          <h3 className="text-xl font-bold text-gray-800 dark:text-white">Client registered</h3>
+          <p className="text-sm text-gray-500">
+            Copy this Client ID to document it or share it with the client.
+          </p>
+          <div className="rounded-xl bg-green-50 border border-green-200 px-4 py-3 text-2xl font-bold tracking-wider text-green-800 select-all">
+            {displayId(newClientId)}
+          </div>
+          {isTempId(displayId(newClientId)) && (
+            <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">
+              Provisional ID — registered offline. The real Client ID is assigned when the device reconnects
+              (check the sync panel). Note this ID down for now.
+            </p>
+          )}
+          <div className="flex gap-3 justify-center">
+            <Button
+              layout="outline"
+              className="rounded-xl"
+              onClick={async () => {
+                try {
+                  await navigator.clipboard.writeText(displayId(newClientId));
+                  toast.success("Client ID copied.");
+                } catch {
+                  toast.error("Could not copy. Select the ID and copy it manually.");
+                }
+              }}
+            >
+              Copy ID
+            </Button>
+            <Button
+              className="rounded-xl bg-green-700 border-green-700 hover:bg-green-800"
+              onClick={() => {
+                setNewClientId("");
+                goTo("cancerTypeSelect");
+              }}
+            >
+              Continue <ChevronRight className="w-4 h-4 ml-1" />
+            </Button>
+          </div>
+        </div>
+      </Layout>
+    );
+  }
+
   if (currentKey === "otpConsent" && pendingRegistrationId) {
     return (
-      <OtpVerificationStep
-        phoneNumber={biodata.phoneNumber}
-        maskedPhone={pendingMaskedPhone}
-        registrationId={pendingRegistrationId}
-        email={biodata.email || undefined}
-        name={biodata.fullName || undefined}
-        onVerified={() => completeNewClientRegistration()}
-      />
+      <>
+        <OtpVerificationStep
+          phoneNumber={biodata.phoneNumber}
+          maskedPhone={pendingMaskedPhone}
+          registrationId={pendingRegistrationId}
+          email={biodata.email || undefined}
+          name={biodata.fullName || undefined}
+          onVerified={() => completeNewClientRegistration()}
+        />
+        {/* Spacer so the fixed skip bar never covers the OTP form on short screens */}
+        <div className="h-32" aria-hidden="true" />
+        {/* Fixed to the bottom of the screen so it is visible whatever layout the OTP component uses */}
+        <div
+          className="fixed bottom-0 left-0 right-0 bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 shadow-lg px-4 py-3"
+          style={{ zIndex: 60 }}
+        >
+          <div className="max-w-md mx-auto text-center">
+          {!otpSkipOpen ? (
+            <div className="space-y-1">
+              <p className="text-xs text-gray-500">Client can't receive the code (phone off, no phone, no network)?</p>
+              <Button
+                type="button"
+                onClick={() => setOtpSkipOpen(true)}
+                className="w-full h-12 rounded-2xl bg-amber-600 border-amber-600 hover:bg-amber-700 text-white font-bold text-base"
+              >
+                Skip OTP verification
+              </Button>
+            </div>
+          ) : (
+            <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 space-y-3 text-left">
+              <p className="text-sm font-semibold text-amber-800">Skip OTP verification</p>
+              <p className="text-xs text-amber-700">
+                Only do this if the client has given consent in person. The skip and reason will be recorded.
+              </p>
+              <Select
+                className="rounded-2xl h-11"
+                value={otpSkipReason}
+                onChange={(e) => setOtpSkipReason(e.target.value)}
+              >
+                <option value="">Select reason</option>
+                <option value="Device switched off">Device switched off</option>
+                <option value="Client has no mobile device">Client has no mobile device</option>
+                <option value="OTP not delivered">OTP not delivered</option>
+                <option value="Other">Other</option>
+              </Select>
+              <div className="flex gap-2 justify-end">
+                <Button layout="outline" className="rounded-xl" onClick={() => setOtpSkipOpen(false)}>
+                  Cancel
+                </Button>
+                <Button
+                  className="rounded-xl bg-green-700 border-green-700 hover:bg-green-800"
+                  disabled={busy || !otpSkipReason}
+                  onClick={() => completeNewClientRegistration({ reason: otpSkipReason })}
+                >
+                  {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : "Skip & register client"}
+                </Button>
+              </div>
+            </div>
+          )}
+          </div>
+        </div>
+      </>
     );
   }
 
@@ -1043,7 +1309,7 @@ export default function ClinicalScreeningPage() {
         </div>
         {clientId && (
           <span className="inline-flex items-center px-3 py-1.5 rounded-full text-xs font-bold bg-green-100 text-green-800">
-            Client ID: {clientId}
+            Client ID: {displayId(clientId)}
           </span>
         )}
       </div>
@@ -1183,15 +1449,57 @@ export default function ClinicalScreeningPage() {
                   <option value="female">Female</option>
                 </Select>
               </Label>
-              <Label>
-                <span className="text-sm font-semibold">Phone Number *</span>
-                <Input
-                  className="mt-2 rounded-2xl h-12"
-                  value={biodata.phoneNumber}
-                  onChange={(e) => setBiodata((p) => ({ ...p, phoneNumber: e.target.value }))}
-                  onBlur={(e) => checkDuplicate("phone", e.target.value)}
-                />
-              </Label>
+              <div>
+                <Label>
+                  <span className="text-sm font-semibold">
+                    Phone Number{biodata.caregiverPhoneNumber ? "" : " *"}
+                  </span>
+                  <Input
+                    className="mt-2 rounded-2xl h-12"
+                    value={biodata.phoneNumber}
+                    onChange={(e) => setBiodata((p) => ({ ...p, phoneNumber: e.target.value }))}
+                    onBlur={(e) => {
+                      if (!biodata.phoneNotClients) checkDuplicate("phone", e.target.value);
+                    }}
+                  />
+                </Label>
+                <label className="mt-2 flex items-center gap-2 text-xs text-gray-600 dark:text-gray-300">
+                  <input
+                    type="checkbox"
+                    checked={!!biodata.phoneNotClients}
+                    onChange={(e) => setBiodata((p) => ({ ...p, phoneNotClients: e.target.checked }))}
+                  />
+                  This number doesn't belong to the client
+                </label>
+              </div>
+
+              <div className="col-span-2 rounded-2xl border border-gray-100 dark:border-gray-700 p-4">
+                <p className="text-sm font-semibold text-gray-700 dark:text-gray-300">Caregiver</p>
+                <p className="text-xs text-gray-500 mb-3">
+                  Use this if the client has no phone. With no client phone number, the caregiver's number is used for contact.
+                </p>
+                <div className="grid grid-cols-2 gap-4">
+                  <Label>
+                    <span className="text-sm font-semibold">Caregiver's Name</span>
+                    <Input
+                      id="caregiverName"
+                      className="mt-2 rounded-2xl h-12"
+                      value={biodata.caregiverName}
+                      onChange={(e) => setBiodata((p) => ({ ...p, caregiverName: e.target.value }))}
+                    />
+                  </Label>
+                  <Label>
+                    <span className="text-sm font-semibold">Caregiver's Phone Number</span>
+                    <Input
+                      id="caregiverPhoneNumber"
+                      type="tel"
+                      className="mt-2 rounded-2xl h-12"
+                      value={biodata.caregiverPhoneNumber}
+                      onChange={(e) => setBiodata((p) => ({ ...p, caregiverPhoneNumber: e.target.value }))}
+                    />
+                  </Label>
+                </div>
+              </div>
               <Label>
                 <span className="text-sm font-semibold">Email Address <span className="text-gray-400 font-normal">(optional)</span></span>
                 <Input
@@ -1539,7 +1847,7 @@ export default function ClinicalScreeningPage() {
           <div className="text-center py-10 space-y-3">
             <CheckCircle className="w-14 h-14 text-green-600 mx-auto" />
             <h3 className="text-xl font-bold text-gray-800 dark:text-white">Stage 2 screening complete</h3>
-            <p className="text-sm font-semibold text-green-700">Client ID: {clientId}</p>
+            <p className="text-sm font-semibold text-green-700">Client ID: {displayId(clientId)}</p>
             <p className="text-sm text-gray-500">
               {needsReferral ? (
                 <span className="inline-flex items-center gap-1.5 text-red-600 font-semibold">
