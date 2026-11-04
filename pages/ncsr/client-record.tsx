@@ -32,7 +32,7 @@ import {
   CancerType,
 } from "../../lib/screeningWizardConfig";
 import { CERVICAL_RISK_GROUPS } from "../../lib/cervicalRisk";
-import RecordFields from "../components/RecordFields";
+import RecordFields from "../../components/RecordFields";
 import ResultAttachmentViewer from "../components/ResultAttachmentViewer";
 import { buildSections } from "../../lib/recordDisplay";
 import { findTest, resultLabel, cancerName } from "../../lib/screeningTests";

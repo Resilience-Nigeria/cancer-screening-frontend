@@ -54,7 +54,7 @@ import { CERVICAL_RISK_GROUPS, cervicalRiskPatch } from "../../lib/cervicalRisk"
 import DateOfBirthField from "../components/DateOfBirthField";
 import BiodataExtraFields from "../components/BiodataExtraFields";
 import LabTestsPanel from "../components/LabTestsPanel";
-import SearchableSelect from "../components/SearchableSelect";
+import SearchableSelect from "../../components/SearchableSelect";
 import { getPreviousRoute, routeLabel } from "../../lib/routeHistory";
 
 // ---------------------------------------------------------------------------
