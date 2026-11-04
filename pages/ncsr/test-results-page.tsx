@@ -10,6 +10,7 @@ import api from "../../lib/api";
 import { friendlyError } from "../../lib/apiError";
 import ResultAttachmentViewer from "../components/ResultAttachmentViewer";
 import TestResultModal from "../../components/TestResultModal";
+import { hpvRiskLabel } from "../../lib/hpvRisk";
 import { CANCER_TYPES, cancerName, findTest, resultLabel, testsFor } from "../../lib/screeningTests";
 
 // Stage 2 clinical screening page (reads ?search= on load) and the sample/result entry page. Change if yours differ.
@@ -48,6 +49,7 @@ function describe(s: any) {
     const opt = t.detail.options.find((o) => o.value === s.resultDetail);
     parts.push(`${t.detail.label}: ${opt?.label ?? s.resultDetail}`);
   }
+  if (s.resultMeta?.riskCategory) parts.push(hpvRiskLabel(s.resultMeta.riskCategory));
   return parts;
 }
 

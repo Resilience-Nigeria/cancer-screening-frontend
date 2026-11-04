@@ -3,6 +3,7 @@ import { X, Loader2, Building2, Download, ExternalLink } from "lucide-react";
 import { Button } from "@roketid/windmill-react-ui";
 
 import api from "../lib/api";
+import { hpvRiskLabel } from "../lib/hpvRisk";
 import { findTest, resultLabel, cancerName } from "../lib/screeningTests";
 
 const chip: Record<string, string> = {
@@ -153,7 +154,13 @@ export default function TestResultModal({
             <Row label="Value" value={sample.resultValue != null && t?.value ? `${sample.resultValue} ${t.value.unit}` : null} />
             <Row label={t?.detail?.label ?? "Detail"} value={detailOpt} />
             <Row label="Result released" value={sample.resultDate ? fmt(sample.resultDate) : null} />
-            {Object.entries(m).map(([k, v]) => (
+            {m.riskCategory && (
+              <Row
+                label="HPV risk category"
+                value={`${hpvRiskLabel(String(m.riskCategory))}${m.riskOverridden === "yes" && m.riskSuggested ? ` (changed from suggested ${hpvRiskLabel(String(m.riskSuggested)).toLowerCase()})` : ""}`}
+              />
+            )}
+            {Object.entries(m).filter(([k]) => !["riskCategory", "riskSuggested", "riskOverridden"].includes(k)).map(([k, v]) => (
               <Row key={k} label={human(k.replace(/([a-z])([A-Z])/g, "$1 $2"))} value={String(v)} />
             ))}
             {sample.resultNotes && <div className="sm:col-span-2"><Row label="Notes" value={sample.resultNotes} /></div>}

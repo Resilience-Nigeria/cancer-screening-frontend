@@ -10,6 +10,7 @@ import api from "../../lib/api";
 import { friendlyError } from "../../lib/apiError";
 import { ageFromDob } from "../components/VisitDetailsFields";
 import ResultAttachmentViewer from "../components/ResultAttachmentViewer";
+import { HPV_RISK_OPTIONS, suggestHpvRisk, hpvRiskLabel, hpvRiskTone } from "../../lib/hpvRisk";
 import { ACCEPTED_ATTACHMENTS, MAX_ATTACHMENT_MB, prepareImage } from "../../lib/imageUpload";
 import {
   CANCER_TYPES,
@@ -283,6 +284,9 @@ export default function ScreeningTestsPage() {
     : null;
   const runInvalid = !!selectedTest && inconclusiveRun(selectedTest, resultForm.meta);
   const effectiveResult = runInvalid ? "" : selectedTest?.value ? derived || "" : resultForm.result;
+  const isHpvPositive = selectedTest?.key === "hpv_dna" && effectiveResult === "positive";
+  const suggestedRisk = isHpvPositive ? suggestHpvRisk(resultForm.detail) : "";
+  const riskOverridden = !!suggestedRisk && !!resultForm.meta.riskCategory && resultForm.meta.riskCategory !== suggestedRisk;
   const needsDetail = !!selectedTest?.detail && selectedTest.detail.requiredFor.includes(effectiveResult);
 
   async function saveResult() {
@@ -316,6 +320,14 @@ export default function ScreeningTestsPage() {
       toast.error(`Select the ${selectedTest.detail!.label.toLowerCase()}.`);
       return;
     }
+    if (isHpvPositive && !resultForm.meta.riskCategory) {
+      toast.error("Select the HPV risk category (low, medium or high).");
+      return;
+    }
+    if (riskOverridden && resultForm.meta.riskOverridden !== "yes") {
+      toast.error("Tick the box to confirm you are changing the suggested risk category.");
+      return;
+    }
     if (!resultForm.resultDate) {
       toast.error("Enter the date the result was released.");
       return;
@@ -335,7 +347,13 @@ export default function ScreeningTestsPage() {
         resultDate: resultForm.resultDate,
         resultNotes: resultForm.resultNotes.trim() || null,
       };
-      if (selectedTest.extraFields?.length) payload.resultMeta = resultForm.meta;
+      if (selectedTest.extraFields?.length || isHpvPositive) {
+        const meta: Record<string, any> = { ...resultForm.meta };
+        if (!isHpvPositive) { delete meta.riskCategory; delete meta.riskSuggested; delete meta.riskOverridden; }
+        else if (riskOverridden) meta.riskSuggested = suggestedRisk;     // keep a record of what the system suggested
+        else { delete meta.riskSuggested; delete meta.riskOverridden; }
+        payload.resultMeta = meta;
+      }
       if (runInvalid) payload.result = null;
       else if (selectedTest.value) payload.resultValue = parseFloat(resultForm.resultValue);
       else payload.result = resultForm.result;
@@ -795,7 +813,7 @@ export default function ScreeningTestsPage() {
                       <Select
                         className={inputClass}
                         value={resultForm.result}
-                        onChange={(e) => setResultForm((p) => ({ ...p, result: e.target.value, detail: "" }))}
+                        onChange={(e) => setResultForm((p) => ({ ...p, result: e.target.value, detail: "", meta: { ...p.meta, riskCategory: "" } }))}
                       >
                         <option value="">Select</option>
                         {selectedTest.results.map((o) => (
@@ -821,14 +839,81 @@ export default function ScreeningTestsPage() {
                       <Select
                         className={inputClass}
                         value={resultForm.detail}
-                        onChange={(e) => setResultForm((p) => ({ ...p, detail: e.target.value }))}
+                        onChange={(e) =>
+                          setResultForm((p) => ({
+                            ...p,
+                            detail: e.target.value,
+                            // Suggest the risk category from the genotype; it can still be changed below.
+                            meta: isHpvPositive ? { ...p.meta, riskCategory: suggestHpvRisk(e.target.value), riskOverridden: "" } : p.meta,
+                          }))
+                        }
                       >
                         <option value="">Select</option>
-                        {selectedTest.detail.options.map((o) => (
-                          <option key={o.value} value={o.value}>{o.label}</option>
-                        ))}
+                        {(() => {
+                          const opts = selectedTest.detail!.options as { value: string; label: string; group?: string }[];
+                          const groups = Array.from(new Set(opts.map((o) => o.group || "")));
+                          return groups.map((g) =>
+                            g ? (
+                              <optgroup key={g} label={g}>
+                                {opts.filter((o) => o.group === g).map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                              </optgroup>
+                            ) : (
+                              opts.filter((o) => !o.group).map((o) => <option key={o.value} value={o.value}>{o.label}</option>)
+                            )
+                          );
+                        })()}
                       </Select>
                     </Label>
+                  )}
+
+                  {isHpvPositive && (
+                    <div className="sm:col-span-2">
+                      <span className="text-sm font-semibold block mb-1">HPV risk category *</span>
+                      <div className="grid grid-cols-3 gap-2" role="radiogroup" aria-label="HPV risk category">
+                        {HPV_RISK_OPTIONS.map((o) => {
+                          const on = resultForm.meta.riskCategory === o.value;
+                          return (
+                            <button
+                              key={o.value}
+                              type="button"
+                              role="radio"
+                              aria-checked={on}
+                              onClick={() => setResultForm((p) => ({ ...p, meta: { ...p.meta, riskCategory: o.value, riskOverridden: "" } }))}
+                              className={`rounded-xl border-2 px-2 py-2.5 text-sm font-semibold transition ${
+                                on ? hpvRiskTone[o.value] + " border-current" : "border-gray-200 text-gray-600 hover:border-gray-300"
+                              }`}
+                            >
+                              {o.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                      <p className="text-xs text-gray-500 mt-1.5">
+                        {resultForm.detail && suggestHpvRisk(resultForm.detail)
+                          ? `Suggested from HPV ${resultForm.detail}. Change it if the clinical picture says otherwise.`
+                          : "High: HPV 16, 18, 45 · Medium: other oncogenic types · Low: non-oncogenic types."}
+                      </p>
+                      {riskOverridden && (
+                        <div className="mt-2 rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 flex gap-2" role="alert">
+                          <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
+                          <div className="min-w-0">
+                            <p>
+                              HPV {resultForm.detail} is normally <strong>{hpvRiskLabel(suggestedRisk).toLowerCase()}</strong>. You have set it to{" "}
+                              <strong>{hpvRiskLabel(resultForm.meta.riskCategory).toLowerCase()}</strong>. This will be recorded as a change to the suggested category.
+                            </p>
+                            <label className="mt-2 flex items-start gap-2 cursor-pointer">
+                              <input
+                                type="checkbox"
+                                className="mt-1"
+                                checked={resultForm.meta.riskOverridden === "yes"}
+                                onChange={(e) => setResultForm((p) => ({ ...p, meta: { ...p.meta, riskOverridden: e.target.checked ? "yes" : "" } }))}
+                              />
+                              <span>I confirm this change is intended.</span>
+                            </label>
+                          </div>
+                        </div>
+                      )}
+                    </div>
                   )}
 
                   <Label className="sm:col-span-2">
@@ -901,7 +986,8 @@ export default function ScreeningTestsPage() {
                   <p className="text-sm text-gray-500 break-words">
                     {selected.client?.fullName || selected.clientId} · {selectedTest.label}: {resultLabel(selectedTest, resultSaved.result)}
                     {resultSaved.resultValue != null && selectedTest.value ? ` (${resultSaved.resultValue} ${selectedTest.value.unit})` : ""}
-                    {resultSaved.resultDetail ? ` · ${resultSaved.resultDetail}` : ""} · released {prettyDate(resultSaved.resultDate)}
+                    {resultSaved.resultDetail ? ` · ${resultSaved.resultDetail}` : ""}
+                    {resultSaved.resultMeta?.riskCategory ? ` · ${hpvRiskLabel(resultSaved.resultMeta.riskCategory)}` : (isHpvPositive && resultForm.meta.riskCategory ? ` · ${hpvRiskLabel(resultForm.meta.riskCategory)}` : "")} · released {prettyDate(resultSaved.resultDate)}
                   </p>
                   <div className={`text-left text-sm rounded-xl border p-3 flex gap-2 ${toneClass[step.tone]}`}>
                     {step.tone === "warn" && <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />}

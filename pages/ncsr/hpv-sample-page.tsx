@@ -8,11 +8,12 @@ import Layout from "../containers/Layout";
 import PageTitle from "../components/Typography/PageTitle";
 import api from "../../lib/api";
 import { friendlyError } from "../../lib/apiError";
+import { isLowRiskType } from "../../lib/hpvRisk";
 import { HPV_GENOTYPE_OPTIONS, ABLATION_GENOTYPES } from "../../lib/screeningWizardConfig";
 import { ageFromDob } from "../components/VisitDetailsFields";
 
 // Route of the Stage 2 clinical screening page (it reads ?search= on load). Change if yours differs.
-const CLINICAL_SCREENING_PATH = "/ncsr/clinical-screening";
+const CLINICAL_SCREENING_PATH = "/clinical-screening";
 
 const COLLECTION_METHODS = [
   { value: "clinician_collected", label: "Clinician-collected" },
@@ -45,6 +46,9 @@ function prettyDate(dateStr?: string | null) {
 // What the existing cervical pathway does with each result, mirrored from the screening config.
 function nextStepFor(result: string, genotype: string): { tone: "ok" | "warn" | "info"; text: string } {
   if (result === "positive") {
+    if (isLowRiskType(genotype)) {
+      return { tone: "info", text: `HPV ${genotype} is a low-risk (non-oncogenic) type. No colposcopy or ablation is needed; counsel the client and re-screen at the routine interval.` };
+    }
     if (ABLATION_GENOTYPES.includes(genotype)) {
       return { tone: "warn", text: `HPV ${genotype} is positive. Continue to ablation eligibility in the clinical screening.` };
     }

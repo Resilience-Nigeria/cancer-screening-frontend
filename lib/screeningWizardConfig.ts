@@ -1,3 +1,4 @@
+import { HIGH_RISK_TYPES, MEDIUM_RISK_TYPES, LOW_RISK_TYPES, suggestHpvRisk, isLowRiskType } from "./hpvRisk";
 // Central configuration for the guided screening wizard.
 // Everything that changes per cancer type lives here, so the wizard UI stays generic.
 
@@ -590,10 +591,16 @@ export function breastfeedingPatch(risk: Record<string, any>): Record<string, an
 // 16/18/35/45 route to ablation eligibility; every other genotype (and "Other") routes to
 // colposcopy, as the old "Others" option did.
 // ---------------------------------------------------------------------------
-const HPV_GENOTYPES = ["16", "18", "31", "33", "35", "39", "45", "51", "52", "56", "58", "59", "66", "68"];
+const riskSuffix = (g: string) => {
+  const r = suggestHpvRisk(g);
+  return r ? ` (${r} risk)` : "";
+};
 export const HPV_GENOTYPE_OPTIONS = [
   { value: "", label: "Select" },
-  ...HPV_GENOTYPES.map((g) => ({ value: g, label: g })),
+  ...[...HIGH_RISK_TYPES, ...[...MEDIUM_RISK_TYPES].sort((a, b) => Number(a) - Number(b)), ...[...LOW_RISK_TYPES].sort((a, b) => Number(a) - Number(b))].map((g) => ({
+    value: g,
+    label: `${g}${riskSuffix(g)}`,
+  })),
   // Group results as printed by the Truenat HPV-HR Plus machine (it does not name individual genotypes)
   { value: "grp_16_18", label: "16/18 (Truenat group)" },
   { value: "grp_both", label: "16/18 and 31/33/35/45/52/58 (Truenat)" },
@@ -602,8 +609,9 @@ export const HPV_GENOTYPE_OPTIONS = [
 ];
 // Ablation-eligible results. Truenat's 31/33/35/45/52/58 group can't isolate 35/45, so it goes to colposcopy.
 export const ABLATION_GENOTYPES = ["16", "18", "35", "45", "grp_16_18", "grp_both"];
+// Low-risk (non-oncogenic) types need neither ablation nor colposcopy.
 const needsColposcopy = (v: Record<string, any>) =>
-  !!v.hpvGenotype && !ABLATION_GENOTYPES.includes(v.hpvGenotype);
+  !!v.hpvGenotype && !ABLATION_GENOTYPES.includes(v.hpvGenotype) && !isLowRiskType(v.hpvGenotype);
 
 // ---------------------------------------------------------------------------
 // Step 5 — Screening modules (dynamic, posted to /visits/{id}/{type}-screening)
@@ -812,7 +820,7 @@ export const SCREENING_GROUPS: Record<CancerType, FieldGroup[]> = {
     },
     {
       title: "Colposcopy (Other High-Risk HPV)",
-      description: "Shown for any HPV genotype other than 16/18/35/45.",
+      description: "Shown for any oncogenic HPV genotype other than 16/18/35/45 (not for low-risk types such as 6 and 11).",
       fields: [
         {
           name: "colposcopyBookNow",

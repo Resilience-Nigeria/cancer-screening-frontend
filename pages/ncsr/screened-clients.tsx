@@ -15,8 +15,10 @@ const PER_PAGE = 20;
 const resultStyle: Record<string, string> = {
   suspicious: "bg-red-100 text-red-700",
   non_suspicious: "bg-green-100 text-green-800",
+  negative: "bg-green-100 text-green-800",
+  positive: "bg-red-100 text-red-700",
 };
-const resultText: Record<string, string> = { suspicious: "Suspicious", non_suspicious: "Non-suspicious" };
+const resultText: Record<string, string> = { suspicious: "Suspicious", non_suspicious: "Non-suspicious", negative: "Negative", positive: "Positive" };
 
 const fmt = (d?: string | null) =>
   d ? new Date(`${String(d).slice(0, 10)}T00:00:00`).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : "—";
@@ -26,7 +28,7 @@ type Tile = { key: string; label: string; value: number; tone: string; apply: ()
 export default function ScreenedClientsPage() {
   const router = useRouter();
   const [rows, setRows] = useState<any[]>([]);
-  const [summary, setSummary] = useState({ screened: 0, suspicious: 0, awaiting: 0, urgentLabs: 0 });
+  const [summary, setSummary] = useState({ screened: 0, suspicious: 0, nonSuspicious: 0, awaiting: 0, urgentLabs: 0 });
   const [total, setTotal] = useState(0);
   const [facilityStats, setFacilityStats] = useState<any[]>([]);
   const [screenerStats, setScreenerStats] = useState<any[]>([]);
@@ -104,6 +106,7 @@ export default function ScreenedClientsPage() {
   const tiles: Tile[] = [
     { key: "all", label: "Screened clients", value: summary.screened, tone: "text-gray-800 dark:text-white", active: !result && !lab, apply: () => { setResult(""); setLab(""); } },
     { key: "susp", label: "Suspicious findings", value: summary.suspicious, tone: "text-red-600", active: result === "suspicious", apply: () => { setLab(""); setResult("suspicious"); } },
+    { key: "ok", label: "Non-suspicious findings", value: summary.nonSuspicious ?? 0, tone: "text-green-700", active: result === "non_suspicious", apply: () => { setLab(""); setResult("non_suspicious"); } },
     { key: "wait", label: "Awaiting lab result", value: summary.awaiting, tone: "text-amber-600", active: lab === "pending", apply: () => { setResult(""); setLab("pending"); } },
     { key: "urg", label: "Urgent lab results", value: summary.urgentLabs, tone: "text-red-600", active: lab === "urgent", apply: () => { setResult(""); setLab("urgent"); } },
   ];
@@ -154,7 +157,19 @@ export default function ScreenedClientsPage() {
   const LabLine = ({ c }: { c: any }) => {
     const l = c.labs;
     if (!l.pending && !l.released) return <span className="text-xs text-gray-400">No lab tests</span>;
+    const tests: any[] = c.tests ?? [];
     return (
+      <div className="space-y-1.5">
+      {tests.length > 0 && (
+        <ul className="text-xs text-gray-700 dark:text-gray-200 space-y-0.5">
+          {tests.map((t, i) => (
+            <li key={i} className="break-words">
+              <span className="font-medium">{String(t.testType ?? "Test").replace(/_/g, " ")}</span>
+              <span className="text-gray-500"> · {t.status === "result_released" ? String(t.result ?? "released").replace(/_/g, " ") : "awaiting result"}</span>
+            </li>
+          ))}
+        </ul>
+      )}
       <div className="flex flex-wrap gap-1.5 text-xs">
         {l.pending > 0 && <span className="rounded-full bg-amber-100 text-amber-800 px-2 py-0.5 font-semibold">{l.pending} awaiting</span>}
         {l.urgent > 0 && <span className="rounded-full bg-red-100 text-red-700 px-2 py-0.5 font-semibold">{l.urgent} urgent</span>}
@@ -162,6 +177,7 @@ export default function ScreenedClientsPage() {
         {l.released - l.urgent - l.abnormal > 0 && (
           <span className="rounded-full bg-green-100 text-green-800 px-2 py-0.5 font-semibold">{l.released - l.urgent - l.abnormal} normal / other</span>
         )}
+      </div>
       </div>
     );
   };
@@ -174,7 +190,7 @@ export default function ScreenedClientsPage() {
       </p>
 
       {/* Summary tiles double as quick filters */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5">
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-5">
         {tiles.map((t) => (
           <button
             key={t.key}
