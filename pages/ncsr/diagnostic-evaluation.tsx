@@ -10,6 +10,9 @@ import toast from "react-hot-toast";
 import Layout from "../containers/Layout";
 import PageTitle from "../components/Typography/PageTitle";
 import api from "../../lib/api";
+import SearchableSelect from "../../components/SearchableSelect";
+import ClientHistoryPanel, { formatDate } from "../../components/ClientHistoryPanel";
+import { getPreviousRoute, routeLabel } from "../../lib/routeHistory";
 
 const YES_NO_UNKNOWN = [
   { value: "yes", label: "Yes" },
@@ -25,15 +28,6 @@ const SYMPTOM_ITEMS = [
   { key: "weightLoss", label: "Unexplained weight loss" },
   { key: "fatigue", label: "Fatigue" },
   { key: "other", label: "Other concerning symptom" },
-];
-
-const FAMILY_HISTORY_ITEMS = [
-  { key: "breast", label: "Breast cancer" },
-  { key: "cervical", label: "Cervical cancer" },
-  { key: "prostate", label: "Prostate cancer" },
-  { key: "colorectal", label: "Colorectal cancer" },
-  { key: "liver", label: "Liver cancer" },
-  { key: "other", label: "Other cancer" },
 ];
 
 /** ICD-oriented cancer detail options by suspected type (extend as needed) */
@@ -147,6 +141,21 @@ function todayStr() {
 export default function DiagnosticEvaluationPage() {
   const router = useRouter();
   const [stepIndex, setStepIndex] = useState(0);
+
+  // The page that sent the user here (Referred Clients, client record, ...), captured once on arrival.
+  const [origin, setOrigin] = useState<string | null>(null);
+  useEffect(() => {
+    const prev = getPreviousRoute();
+    if (prev && !prev.split("?")[0].startsWith("/ncsr/diagnostic-evaluation")) setOrigin(prev);
+  }, []);
+  const backLabel = origin ? `Back to ${routeLabel(origin)}` : "Back to previous page";
+  function leavePage() {
+    const midWork = currentKey !== "lookup" && currentKey !== "done";
+    if (midWork && !window.confirm("Leave this page? Anything on the current step that hasn't been saved will be lost. Saved steps are kept on the evaluation.")) return;
+    if (origin) router.push(origin);
+    else if (typeof window !== "undefined" && window.history.length > 1) router.back();
+    else router.push(clientId ? `/ncsr/client-details?clientId=${encodeURIComponent(clientId)}` : "/ncsr/referred-clients");
+  }
   const [busy, setBusy] = useState(false);
   const currentKey = STEPS[stepIndex];
 
@@ -178,7 +187,6 @@ export default function DiagnosticEvaluationPage() {
   const [surveillanceNotes, setSurveillanceNotes] = useState("");
 
   const [symptomChecklist, setSymptomChecklist] = useState<Record<string, string>>({});
-  const [familyHistoryChecklist, setFamilyHistoryChecklist] = useState<Record<string, string>>({});
   const [icdCancerCode, setIcdCancerCode] = useState("");
 
   // Treatment referral (cancer confirmed) — facility is chosen manually, never auto-assigned
@@ -228,7 +236,6 @@ export default function DiagnosticEvaluationPage() {
         surveillanceNotes,
         icdCancerCode: icdCancerCode || null,
         symptomChecklist,
-        familyHistoryChecklist,
         treatmentFacilityId: decisionPathway === "cancer_confirmed" ? Number(treatmentFacilityId) : null,
       });
       toast.success("Clinical decision recorded — evaluation complete.");
@@ -393,6 +400,10 @@ export default function DiagnosticEvaluationPage() {
 
   return (
     <Layout>
+      <button type="button" onClick={leavePage} className="mb-3 inline-flex items-center gap-1 text-sm font-semibold text-green-700 hover:underline">
+        <ChevronLeft className="w-4 h-4" /> {backLabel}
+      </button>
+
       <div className="mb-6">
         <PageTitle>Stage 3 — Diagnostic Evaluation</PageTitle>
         <p className="text-sm text-gray-500 mt-1">
@@ -445,7 +456,7 @@ export default function DiagnosticEvaluationPage() {
                     >
                       <p className="text-sm font-semibold text-gray-800 dark:text-white">{r.client?.fullName}</p>
                       <p className="text-xs text-gray-500 mt-0.5">
-                        {r.client?.clientId} · Referred from {r.fromFacility?.facilityName} on {r.referralDate}
+                        {r.client?.clientId} · Referred from {(r.fromFacility ?? r.from_facility)?.facilityName ?? "—"} on {formatDate(r.referralDate)}
                       </p>
                     </button>
                   ))}
@@ -483,35 +494,12 @@ export default function DiagnosticEvaluationPage() {
               </div>
             )}
 
-            <div className="rounded-2xl border border-amber-100 bg-amber-50 dark:bg-amber-900/20 dark:border-amber-800 p-4 space-y-3">
-              <p className="text-xs font-semibold text-amber-700 dark:text-amber-400 uppercase tracking-wide">
-                Screening findings (Stage 2 — reference)
+            {/* Everything captured at Stage 2: referral, findings, risk & family history, biodata, lab results */}
+            <div>
+              <p className="text-xs font-semibold text-amber-700 dark:text-amber-400 uppercase tracking-wide mb-2">
+                Stage 2 history (reference)
               </p>
-
-              <div>
-                <p className="text-xs font-semibold text-gray-600 dark:text-gray-300">Risk Factors & Family History</p>
-                {riskProfile ? (
-                  <p className="text-sm text-gray-700 dark:text-gray-300 mt-1">
-                    Family history: {riskProfile.familyHistory || "not recorded"} · Smoking:{" "}
-                    {riskProfile.smokingStatus || "not recorded"}
-                  </p>
-                ) : (
-                  <p className="text-sm text-gray-400 mt-1">No risk profile on file.</p>
-                )}
-              </div>
-
-              <div>
-                <p className="text-xs font-semibold text-gray-600 dark:text-gray-300">Previous Screening Findings</p>
-                {priorVisits.length === 0 ? (
-                  <p className="text-sm text-gray-400 mt-1">No prior Stage 2 visits on file.</p>
-                ) : (
-                  priorVisits.slice(0, 3).map((v: any) => (
-                    <p key={v.visitId} className="text-sm text-gray-700 dark:text-gray-300 mt-1">
-                      {v.visitDate}: {v.overallOutcome ? v.overallOutcome.replace(/_/g, " ") : "no outcome recorded"}
-                    </p>
-                  ))
-                )}
-              </div>
+              <ClientHistoryPanel clientId={clientId} referralId={referralId} open={["referral", "visits", "risk"]} />
             </div>
 
             <Label>
@@ -540,7 +528,7 @@ export default function DiagnosticEvaluationPage() {
 
             <div>
               <p className="text-sm font-semibold text-gray-800 dark:text-white mb-2">Symptoms checklist</p>
-              <p className="text-xs text-gray-500 mb-3">Tick what applies — reduces free-text burden.</p>
+              <p className="text-xs text-gray-500 mb-3">Tick what applies at this specialist review. Family history is already captured at Stage 2 (see above).</p>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 {SYMPTOM_ITEMS.map((item) => (
                   <div
@@ -552,30 +540,6 @@ export default function DiagnosticEvaluationPage() {
                       className="rounded-xl h-9 w-28 text-sm"
                       value={symptomChecklist[item.key] || ""}
                       onChange={(e) => setSymptomChecklist((p) => ({ ...p, [item.key]: e.target.value }))}
-                    >
-                      <option value="">—</option>
-                      {YES_NO_UNKNOWN.map((o) => (
-                        <option key={o.value} value={o.value}>{o.label}</option>
-                      ))}
-                    </Select>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div>
-              <p className="text-sm font-semibold text-gray-800 dark:text-white mb-2">Family history of cancer</p>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                {FAMILY_HISTORY_ITEMS.map((item) => (
-                  <div
-                    key={item.key}
-                    className="flex items-center justify-between gap-2 p-2 rounded-xl border border-gray-100 dark:border-gray-700"
-                  >
-                    <span className="text-sm text-gray-700 dark:text-gray-300">{item.label}</span>
-                    <Select
-                      className="rounded-xl h-9 w-28 text-sm"
-                      value={familyHistoryChecklist[item.key] || ""}
-                      onChange={(e) => setFamilyHistoryChecklist((p) => ({ ...p, [item.key]: e.target.value }))}
                     >
                       <option value="">—</option>
                       {YES_NO_UNKNOWN.map((o) => (
@@ -619,6 +583,11 @@ export default function DiagnosticEvaluationPage() {
 
         {currentKey === "tests" && (
           <div className="space-y-6">
+            <div>
+              <h3 className="text-base font-semibold text-gray-800 dark:text-white mb-2">Lab results on file</h3>
+              <ClientHistoryPanel clientId={clientId} only={["labs"]} open={["labs"]} />
+            </div>
+
             <div>
               <h3 className="text-lg font-semibold text-gray-800 dark:text-white flex items-center gap-2">
                 <FlaskConical className="w-5 h-5 text-green-700" /> D. Diagnostic Tests — {CANCER_LABELS[suspectedCancerType]}
@@ -783,21 +752,21 @@ export default function DiagnosticEvaluationPage() {
 
             {/* Treatment referral — facility picked manually */}
             {decisionPathway === "cancer_confirmed" && (
-              <Label>
-                <span className="text-sm font-semibold">Refer for treatment to *</span>
-                <Select
-                  className="mt-2 rounded-2xl h-12"
+              <div>
+                <span className="text-sm font-semibold block">Refer for treatment to *</span>
+                <SearchableSelect
                   value={treatmentFacilityId}
-                  onChange={(e) => setTreatmentFacilityId(e.target.value)}
-                >
-                  <option value="">Select treatment facility</option>
-                  {treatmentFacilities.map((f) => (
-                    <option key={f.facilityId} value={f.facilityId}>
-                      {f.facilityName}{f.facilityState ? ` - ${f.facilityState}` : ""}
-                    </option>
-                  ))}
-                </Select>
-              </Label>
+                  onChange={setTreatmentFacilityId}
+                  placeholder="Select treatment facility"
+                  searchPlaceholder="Search by name or state…"
+                  emptyText="No treatment facility matches your search"
+                  options={treatmentFacilities.map((f) => ({
+                    value: String(f.facilityId),
+                    label: f.facilityName,
+                    hint: f.facilityState || undefined,
+                  }))}
+                />
+              </div>
             )}
 
             {/* Repeat biopsy — booking details */}
@@ -839,7 +808,7 @@ export default function DiagnosticEvaluationPage() {
             )}
             {decisionPathway === "repeat_biopsy" && (
               <p className="text-sm text-amber-700 font-medium">
-                Client needs to return for a repeat biopsy{routineRecallDate ? ` on ${routineRecallDate}` : ""}.
+                Client needs to return for a repeat biopsy{routineRecallDate ? ` on ${formatDate(routineRecallDate)}` : ""}.
               </p>
             )}
             <Button
@@ -848,6 +817,13 @@ export default function DiagnosticEvaluationPage() {
             >
               View Client Record
             </Button>
+            {origin && (
+              <div>
+                <Button layout="outline" onClick={() => router.push(origin)} className="mt-2 h-12 px-6 rounded-2xl">
+                  {backLabel}
+                </Button>
+              </div>
+            )}
           </div>
         )}
 

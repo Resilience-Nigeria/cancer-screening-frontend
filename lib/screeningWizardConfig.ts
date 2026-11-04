@@ -594,9 +594,14 @@ const HPV_GENOTYPES = ["16", "18", "31", "33", "35", "39", "45", "51", "52", "56
 export const HPV_GENOTYPE_OPTIONS = [
   { value: "", label: "Select" },
   ...HPV_GENOTYPES.map((g) => ({ value: g, label: g })),
+  // Group results as printed by the Truenat HPV-HR Plus machine (it does not name individual genotypes)
+  { value: "grp_16_18", label: "16/18 (Truenat group)" },
+  { value: "grp_both", label: "16/18 and 31/33/35/45/52/58 (Truenat)" },
+  { value: "grp_other_hr", label: "31/33/35/45/52/58 (Truenat group)" },
   { value: "other", label: "Other" },
 ];
-export const ABLATION_GENOTYPES = ["16", "18", "35", "45"];
+// Ablation-eligible results. Truenat's 31/33/35/45/52/58 group can't isolate 35/45, so it goes to colposcopy.
+export const ABLATION_GENOTYPES = ["16", "18", "35", "45", "grp_16_18", "grp_both"];
 const needsColposcopy = (v: Record<string, any>) =>
   !!v.hpvGenotype && !ABLATION_GENOTYPES.includes(v.hpvGenotype);
 

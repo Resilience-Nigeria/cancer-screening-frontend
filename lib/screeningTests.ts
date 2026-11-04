@@ -2,6 +2,18 @@ import catalog from "./screeningTests.json";
 
 export type Severity = "normal" | "abnormal" | "urgent" | "neutral";
 export type ResultOption = { value: string; label: string; severity: Severity };
+export type ExtraField = {
+  name: string;
+  label: string;
+  type: "select" | "text" | "number";
+  options?: string[];
+  required?: boolean;
+  min?: number;
+  max?: number;
+  /** Values of this field that make the whole result inconclusive (e.g. an invalid machine run). */
+  inconclusiveWhen?: string[];
+};
+
 export type ScreeningTest = {
   key: string;
   cancerType: string;
@@ -13,6 +25,7 @@ export type ScreeningTest = {
   collectionMethods?: { value: string; label: string }[];
   results: ResultOption[];
   value?: { label: string; unit: string; min: number; max: number; bands: { below?: number; result: string }[] };
+  extraFields?: ExtraField[];
   detail?: { name: string; label: string; requiredFor: string[]; options: { value: string; label: string }[] };
 };
 
@@ -39,19 +52,39 @@ export function deriveResult(t: ScreeningTest, value: number): string | null {
 export const resultLabel = (t: ScreeningTest | undefined, result?: string | null) =>
   t?.results.find((r) => r.value === result)?.label ?? result ?? "";
 
-const ABLATION_GENOTYPES = ["16", "18", "35", "45"];
+const ABLATION_GENOTYPES = ["16", "18", "35", "45", "grp_16_18", "grp_both"];
+
+/** True when a machine-run field (e.g. Run status = Invalid) makes the result inconclusive. */
+export function inconclusiveRun(t: ScreeningTest, meta?: Record<string, any> | null): boolean {
+  return !!t.extraFields?.some((f) => f.inconclusiveWhen && meta && f.inconclusiveWhen.includes(String(meta[f.name] ?? "")));
+}
 
 /** Plain-language next step shown after a result is saved. */
 export function nextStep(
   t: ScreeningTest,
   result: string,
-  detail?: string | null
+  detail?: string | null,
+  meta?: Record<string, any> | null
 ): { tone: "ok" | "warn" | "info"; text: string } {
   const severity = t.results.find((r) => r.value === result)?.severity ?? "neutral";
 
+  if (inconclusiveRun(t, meta)) {
+    return {
+      tone: "info",
+      text: "The machine run was not valid (the internal control did not pass). No result can be given. Repeat the test on a fresh sample or extract and record the new run.",
+    };
+  }
+
   if (t.key === "hpv_dna" && result === "positive") {
+    if (detail === "grp_other_hr") {
+      return {
+        tone: "warn",
+        text: "Positive for HPV 31/33/35/45/52/58. This test cannot tell 35/45 apart from the rest of the group, so continue to colposcopy booking in the clinical screening.",
+      };
+    }
+    const label = detail === "grp_16_18" || detail === "grp_both" ? "HPV 16/18" : `HPV ${detail}`;
     return ABLATION_GENOTYPES.includes(detail || "")
-      ? { tone: "warn", text: `HPV ${detail} is positive. Continue to ablation eligibility in the clinical screening.` }
+      ? { tone: "warn", text: `${label} is positive. Continue to ablation eligibility in the clinical screening.` }
       : { tone: "warn", text: "Positive for another high-risk genotype. Continue to colposcopy booking in the clinical screening." };
   }
   if (severity === "urgent") {

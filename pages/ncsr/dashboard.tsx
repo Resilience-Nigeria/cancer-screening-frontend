@@ -607,7 +607,7 @@ function Dashboard() {
                 </Link>
               )}
 
-              <Link href="/ncsr/screening-tests" className="block w-full sm:w-auto">
+              <Link href="/ncsr/screening-tests-page" className="block w-full sm:w-auto">
                 <Button
                   layout="outline"
                   className="w-full sm:w-auto text-emerald-700 dark:text-emerald-400 rounded-2xl min-h-[44px] sm:h-12 border-emerald-700 hover:bg-emerald-50 dark:hover:bg-emerald-900/20"
@@ -619,7 +619,7 @@ function Dashboard() {
                 </Button>
               </Link>
 
-              <Link href="/ncsr/screening-tests?tab=results" className="block w-full sm:w-auto">
+              <Link href="/ncsr/screening-tests-page?tab=results" className="block w-full sm:w-auto">
                 <Button
                   layout="outline"
                   className="w-full sm:w-auto text-emerald-700 dark:text-emerald-400 rounded-2xl min-h-[44px] sm:h-12 border-emerald-700 hover:bg-emerald-50 dark:hover:bg-emerald-900/20"
@@ -760,14 +760,14 @@ function Dashboard() {
               </div>
             </Link>
             )}
-            <Link className="block h-full" href="/ncsr/screening-tests">
+            <Link className="block h-full" href="/ncsr/screening-tests-page">
               <div className="cursor-pointer rounded-2xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-750 transition-colors p-4 sm:p-6 shadow-sm h-full">
                 <FlaskConical className="w-6 h-6 mb-3 text-emerald-700" />
                 <p className="font-semibold text-gray-800 dark:text-white">Collect Sample</p>
                 <p className="text-xs text-gray-500 mt-1">HPV, Pap, PSA, AFP, FIT and more</p>
               </div>
             </Link>
-            <Link className="block h-full" href="/ncsr/screening-tests?tab=results">
+            <Link className="block h-full" href="/ncsr/screening-tests-page?tab=results">
               <div className="cursor-pointer rounded-2xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-750 transition-colors p-4 sm:p-6 shadow-sm h-full">
                 <FileCheck2 className="w-6 h-6 mb-3 text-emerald-700" />
                 <p className="font-semibold text-gray-800 dark:text-white">Submit Test Result</p>

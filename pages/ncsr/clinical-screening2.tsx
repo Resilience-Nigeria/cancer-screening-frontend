@@ -1,0 +1,1949 @@
+import React, { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/router";
+import {
+  Button,
+  Input,
+  Label,
+  Select,
+} from "@roketid/windmill-react-ui";
+import {
+  Search,
+  Loader2,
+  ChevronLeft,
+  ChevronRight,
+  UserPlus,
+  CheckCircle,
+  AlertTriangle,
+} from "lucide-react";
+import toast from "react-hot-toast";
+
+import Layout from "../containers/Layout";
+import PageTitle from "../components/Typography/PageTitle";
+import api from "../../lib/api";
+import {
+  sendOrQueue,
+  newTempClientId,
+  newTempVisitId,
+  isTempId,
+  resolveId,
+  saveLocalClient,
+  findLocalClient,
+  useSyncStatus,
+} from "../../lib/offlineSync";
+import { friendlyError } from "../../lib/apiError";
+import { nigerianStates, lgasByState, getStateCode } from "../../lib/nigerianstates";
+import {
+  CancerType,
+  cancerTypesForClient,
+  cancerAgeNotice,
+  cancerLabel,
+  getRiskGroupsFor,
+  CANCER_TYPE_SELECT_OPTIONS,
+  hydrateRiskProfile,
+  buildRiskPayload,
+  SCREENING_GROUPS,
+  FieldGroup,
+  prostatePatch,
+  dedupeFields,
+  breastfeedingPatch,
+} from "../../lib/screeningWizardConfig";
+import { GroupedForm, buildScreeningPayload } from "../components/ScreningWizard";
+import OtpVerificationStep from "../components/OtpVerificationService";
+import VisitDetailsFields, { initialVisitMeta, ageFromDob, VisitMeta } from "../components/VisitDetailsFields";
+import { CERVICAL_RISK_GROUPS, cervicalRiskPatch } from "../../lib/cervicalRisk";
+import DateOfBirthField from "../components/DateOfBirthField";
+import BiodataExtraFields from "../components/BiodataExtraFields";
+
+// ---------------------------------------------------------------------------
+// Medical history confirm-checklist — Stage 2, Section C
+// ---------------------------------------------------------------------------
+const yesNoUnknown = [
+  { value: "yes", label: "Yes" },
+  { value: "no", label: "No" },
+  { value: "unknown", label: "Unknown" },
+];
+
+const OCCUPATION_OPTIONS = [
+  "Farmer/Agriculture",
+  "Trader/Business Owner",
+  "Civil Servant",
+  "Teacher/Educator",
+  "Healthcare Worker",
+  "Artisan/Skilled Trade",
+  "Driver/Transport",
+  "Military/Security",
+  "Religious Worker",
+  "Student",
+  "Homemaker",
+  "Retired",
+  "Unemployed",
+  "Other",
+];
+
+const NEXT_OF_KIN_RELATIONSHIP_OPTIONS = [
+  "Spouse",
+  "Parent",
+  "Child",
+  "Sibling",
+  "Other Relative",
+  "Friend",
+  "Other",
+];
+
+const RADIATION_TYPE_OPTIONS = [
+  { value: "", label: "Select" },
+  { value: "xray", label: "X-ray" },
+  { value: "ct_scan", label: "CT scan" },
+  { value: "other", label: "Other" },
+];
+
+const MEDICAL_HISTORY_GROUP: FieldGroup = {
+  title: "Medical History — Confirm",
+  description:
+    "Review and confirm with the client. Infection status, family history, and comorbidities are covered above — this section covers the rest.",
+  fields: [
+    { name: "previousCancer", label: "Previous cancer diagnosis", type: "select", options: yesNoUnknown, colSpan: 1 },
+    {
+      name: "previousCancerDetails",
+      label: "Type of cancer",
+      type: "select",
+      options: CANCER_TYPE_SELECT_OPTIONS,
+      colSpan: 1,
+      showIf: (v) => v.previousCancer === "yes",
+    },
+    {
+      name: "ionizingRadiationExposure",
+      label: "Previous exposure to ionizing radiation",
+      type: "select",
+      options: [
+        { value: "yes", label: "Yes" },
+        { value: "no", label: "No" },
+      ],
+      colSpan: 1,
+    },
+    {
+      name: "ionizingRadiationType",
+      label: "Type of exposure",
+      type: "select",
+      options: RADIATION_TYPE_OPTIONS,
+      colSpan: 1,
+      showIf: (v) => v.ionizingRadiationExposure === "yes",
+    },
+    {
+      name: "ionizingRadiationOther",
+      label: "Other exposure (specify)",
+      type: "text",
+      colSpan: 2,
+      placeholder: "Describe the exposure",
+      showIf: (v) => v.ionizingRadiationExposure === "yes" && v.ionizingRadiationType === "other",
+    },
+    { name: "previousScreening", label: "Previous cancer screening", type: "select", options: yesNoUnknown, colSpan: 1 },
+    {
+      name: "previousScreeningDetails",
+      label: "Type of cancer screened",
+      type: "select",
+      options: CANCER_TYPE_SELECT_OPTIONS,
+      colSpan: 1,
+      showIf: (v) => v.previousScreening === "yes",
+    },
+  ],
+};
+
+// ---------------------------------------------------------------------------
+// Physical examination — Stage 2, Section E
+// ---------------------------------------------------------------------------
+const EXAM_GROUPS: FieldGroup[] = [
+  {
+    title: "Basic Observations",
+    fields: [
+      { name: "heightCm", label: "Height (cm)", type: "number", step: "0.1", colSpan: 1 },
+      { name: "weightKg", label: "Weight (kg)", type: "number", step: "0.1", colSpan: 1 },
+      { name: "bmi", label: "BMI", type: "number", step: "0.1", colSpan: 1, readOnly: true, help: "Auto-calculated" },
+      { name: "temperatureCelsius", label: "Temperature (°C)", type: "number", step: "0.1", colSpan: 1 },
+      { name: "bloodPressureSystolic", label: "Blood Pressure — Systolic (mmHg)", type: "number", min: 50, max: 300, colSpan: 1, placeholder: "e.g. 120" },
+      { name: "bloodPressureDiastolic", label: "Blood Pressure — Diastolic (mmHg)", type: "number", min: 30, max: 200, colSpan: 1, placeholder: "e.g. 80" },
+    ],
+  },
+];
+
+// ---------------------------------------------------------------------------
+// Outcome classification — Stage 2, Section G
+// ---------------------------------------------------------------------------
+const OUTCOME_OPTIONS: { value: string; label: string; description: string; tone: string }[] = [
+  { value: "normal", label: "Normal", description: "No suspicious findings. Routine screening.", tone: "border-green-200 bg-green-50 text-green-800" },
+  { value: "low_suspicion", label: "Low Suspicion", description: "Minor abnormalities. Repeat screening in 6–12 months or per protocol.", tone: "border-amber-200 bg-amber-50 text-amber-800" },
+  { value: "suspicious", label: "Suspicious", description: "Positive screening test. Refer to secondary/tertiary hospital.", tone: "border-orange-200 bg-orange-50 text-orange-800" },
+  { value: "urgent_referral", label: "Urgent Referral", description: "Severe symptoms. Same-day referral.", tone: "border-red-200 bg-red-50 text-red-800" },
+];
+
+// Cancer type(s) are chosen BEFORE the risk assessment so only the relevant risk factors are asked.
+const STEPS = [
+  "lookup", "registration", "otpConsent", "cancerTypeSelect", "riskVerify",
+  "physicalExam", "screening", "outcome", "done",
+] as const;
+type StepKey = typeof STEPS[number];
+
+const STEP_LABELS: Record<StepKey, string> = {
+  lookup: "A. Find Client",
+  registration: "B. Registration",
+  otpConsent: "C. Consent (OTP)",
+  cancerTypeSelect: "D. Cancer Type(s)",
+  riskVerify: "E. Risk Assessment",
+  physicalExam: "F. Physical Exam",
+  screening: "G+H. Symptoms & Tests",
+  outcome: "I. Outcome",
+  done: "Complete",
+};
+
+const ENDPOINTS = {
+  screening: (visitId: number | string, cancerType: string) =>
+    `/visits/${visitId}/${cancerType}-screening`,
+};
+
+function todayStr() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+export default function ClinicalScreeningPage() {
+  const router = useRouter();
+  const [stepIndex, setStepIndex] = useState(0);
+  const [busy, setBusy] = useState(false);
+  const sync = useSyncStatus();
+  // Shows the real Client ID once a provisional (offline) one has been synced.
+  const displayId = (id: string) => (id ? resolveId(id, sync.idMap) : id);
+
+  const [visitMeta, setVisitMeta] = useState<VisitMeta>(initialVisitMeta());
+  // Lookup
+  const [lookupValue, setLookupValue] = useState("");
+
+  // Client / visit
+  const [clientId, setClientId] = useState<string>("");
+  const [visitId, setVisitId] = useState<number | string | null>(null);
+
+  const [biodata, setBiodata] = useState<Record<string, any>>({
+    fullName: "",
+    dateOfBirth: "",
+    gender: "",
+    phoneNumber: "",
+    email: "",
+    nin: "",
+    address: "",
+    landmark: "",
+    stateOfResidence: "",
+    lgaOfResidence: "",
+    stateOfOrigin: "",
+    lgaOfOrigin: "",
+    occupation: "",
+    religion: "",
+    religionOther: "",
+    maritalStatus: "",
+    nextOfKinName: "",
+    nextOfKinPhone: "",
+    nextOfKinRelationship: "",
+    phoneNotClients: false,
+    caregiverName: "",
+    caregiverPhoneNumber: "",
+  });
+
+  const [risk, setRisk] = useState<Record<string, any>>({});
+  const [cancerTypes, setCancerTypes] = useState<CancerType[]>([]);
+  const [screenings, setScreenings] = useState<Record<string, Record<string, any>>>({});
+  const [examination, setExamination] = useState<Record<string, any>>({});
+  const [outcome, setOutcome] = useState<{ overallOutcome: string; outcomeNotes: string; repeatScreeningDate: string }>({
+    overallOutcome: "",
+    outcomeNotes: "",
+    repeatScreeningDate: "",
+  });
+  const [autoReferral, setAutoReferral] = useState<any>(null);
+  const [pendingRegistrationId, setPendingRegistrationId] = useState<string>("");
+  const [pendingMaskedPhone, setPendingMaskedPhone] = useState<string>("");
+  const [bloomReference, setBloomReference] = useState<{ registration: any; selfAssessment: any } | null>(null);
+  const [duplicateMatch, setDuplicateMatch] = useState<{ field: "phone" | "email"; client: any } | null>(null);
+  const [incompleteVisits, setIncompleteVisits] = useState<any[]>([]);
+  // True once the client record already existed before this session (found by lookup or matched as a duplicate).
+  const [returningClient, setReturningClient] = useState(false);
+  // OTP skip/override (client can't receive an SMS) and the Client ID screen shown right after OTP.
+  const [otpSkipOpen, setOtpSkipOpen] = useState(false);
+  const [otpSkipReason, setOtpSkipReason] = useState("");
+  const [newClientId, setNewClientId] = useState("");
+
+  // Facility lists and screening errors
+  const [facilities, setFacilities] = useState<any[]>([]);
+  const [screeningErrors, setScreeningErrors] = useState<Record<string, Record<string, boolean>>>({});
+  const [treatmentReferral, setTreatmentReferral] = useState<string>("not_referred");
+
+  const [ablationFacilities, setAblationFacilities] = useState<any[]>([]);
+  const [leepFacilities, setLeepFacilities] = useState<any[]>([]);
+  const [colposcopyFacilities, setColposcopyFacilities] = useState<any[]>([]);
+  const [ihcFacilities, setIhcFacilities] = useState<any[]>([]);
+  const [hpvFacilities, setHpvFacilities] = useState<any[]>([]);
+
+  // Referral (suspicious / urgent) — facility is chosen manually, never auto-assigned
+  const [referralFacilities, setReferralFacilities] = useState<any[]>([]);
+  const [referralFacilityId, setReferralFacilityId] = useState("");
+  const needsReferral =
+    outcome.overallOutcome === "suspicious" || outcome.overallOutcome === "urgent_referral";
+
+  const currentKey = STEPS[stepIndex];
+
+  const clientAge = useMemo(() => ageFromDob(biodata.dateOfBirth), [biodata.dateOfBirth]);
+
+  // Only the cancer types this client is eligible for (by sex and age bracket).
+  const availableCancerTypes = useMemo(
+    () => cancerTypesForClient(biodata.gender, clientAge),
+    [biodata.gender, clientAge]
+  );
+  const ageNotice = cancerAgeNotice(biodata.gender, clientAge);
+
+  // Only the risk factors that apply to the selected cancer type(s).
+  // dedupeFields keeps shared fields (e.g. number of children) from rendering twice when both
+  // breast and cervical are selected.
+  const riskGroupsForVerify = useMemo(() => {
+    const base = getRiskGroupsFor(cancerTypes, biodata.gender);
+    return dedupeFields(
+      cancerTypes.includes("cervical") && biodata.gender !== "male"
+        ? [...base, ...CERVICAL_RISK_GROUPS]
+        : base
+    );
+  }, [cancerTypes, biodata.gender]);
+
+  // Prefill physical exam weight/height from the risk profile
+  useEffect(() => {
+    if (!risk.weightKg && !risk.heightCm) return;
+    setExamination((prev) => ({
+      ...prev,
+      weightKg: prev.weightKg || risk.weightKg || "",
+      heightCm: prev.heightCm || risk.heightCm || "",
+    }));
+  }, [risk.weightKg, risk.heightCm]);
+
+  // Auto-calc BMI for physical exam
+  useEffect(() => {
+    const w = parseFloat(examination.weightKg);
+    const hM = parseFloat(examination.heightCm) / 100;
+    const bmi = w > 0 && hM > 0 ? (w / (hM * hM)).toFixed(1) : "";
+    setExamination((prev) => (prev.bmi === bmi ? prev : { ...prev, bmi }));
+  }, [examination.weightKg, examination.heightCm]);
+
+  useEffect(() => {
+    const patch = cervicalRiskPatch(risk);
+    if (!patch) return;
+    setRisk((prev) => ({ ...prev, ...patch }));
+  }, [risk]);
+
+  // Breast: cumulative breastfeeding (months) = number of children × average months per child.
+  useEffect(() => {
+    const patch = breastfeedingPatch(risk);
+    if (patch) setRisk((prev) => ({ ...prev, ...patch }));
+  }, [risk.numberOfChildbirths, risk.avgBreastfeedingMonthsPerChild, risk.breastfeedingHistory, risk.breastfeedingDuration]);
+
+  // Once the client's gender is known, drop any selected cancer type that doesn't apply to it
+  // (e.g. cervical on a male client, or a stale prostate selection on a female client) together
+  // with that type's screening data, so its questions never render.
+  useEffect(() => {
+    if (!biodata.gender) return;
+    const allowed = new Set(availableCancerTypes.map((c) => c.value));
+    const stale = cancerTypes.filter((ct) => !allowed.has(ct));
+    if (stale.length === 0) return;
+
+    setCancerTypes((prev) => prev.filter((ct) => allowed.has(ct)));
+    const drop = <T extends Record<string, any>>(prev: T): T => {
+      const next = { ...prev };
+      stale.forEach((ct) => delete next[ct]);
+      return next;
+    };
+    setScreenings(drop);
+    setScreeningErrors(drop);
+  }, [biodata.gender, availableCancerTypes, cancerTypes]);
+
+  // Prostate only: auto-derive the screening pathway, PSA eligibility, screening result,
+  // referral and recommended action from the symptom checklist and PSA/DRE thresholds.
+  useEffect(() => {
+    if (!cancerTypes.includes("prostate")) return;
+    const patch = prostatePatch(screenings.prostate || {}, biodata.dateOfBirth);
+    if (!patch) return;
+    setScreenings((prev) => ({
+      ...prev,
+      prostate: { ...(prev.prostate || {}), ...patch },
+    }));
+  }, [cancerTypes, screenings.prostate, biodata.dateOfBirth]);
+
+  // Load facilities capable of biopsy
+  useEffect(() => {
+    (async () => {
+      try {
+        const { data } = await api.get("/services/biopsy/facilities");
+        setFacilities(data?.facilities ?? []);
+      } catch (error) {
+        console.error("Failed to load facilities:", error);
+      }
+    })();
+  }, []);
+
+  // Facilities a suspicious / urgent client can be referred to
+  useEffect(() => {
+    (async () => {
+      try {
+        const { data } = await api.get("/facilities", { params: { types: "main_hub,treatment_center" } });
+        setReferralFacilities(data?.facilities ?? data?.data ?? []);
+      } catch (error) {
+        console.error("Failed to load referral facilities:", error);
+      }
+    })();
+  }, []);
+
+  // Each service list loads on its own, so one missing/failed endpoint doesn't blank the others.
+  useEffect(() => {
+    const load = async (path: string, set: (rows: any[]) => void) => {
+      try {
+        const { data } = await api.get(path);
+        set(data?.facilities ?? []);
+      } catch (error: any) {
+        // warn (not error) with a plain message: Next's dev overlay treats console.error(AxiosError)
+        // as a crash, but a missing service list should just leave that dropdown empty.
+        console.warn(`Could not load facilities from ${path} (${error?.response?.status ?? "no response"})`);
+      }
+    };
+    load("/services/ablation/facilities", setAblationFacilities);
+    load("/services/leep/facilities", setLeepFacilities);
+    load("/services/colposcopy/facilities", setColposcopyFacilities);
+    load("/services/hpv/facilities", setHpvFacilities);
+    load("/services/ihc/facilities", setIhcFacilities);
+  }, []);
+
+  const toFacilityOptions = (rows: any[]) => [
+    { value: "", label: "Select a facility" },
+    ...rows.map((f) => ({
+      value: String(f.facilityId),
+      label: `${f.facilityName} - ${f.facilityState}`,
+    })),
+  ];
+
+  const facilityOptions = useMemo(() => toFacilityOptions(facilities), [facilities]);
+  const ablationFacilityOptions = useMemo(() => toFacilityOptions(ablationFacilities), [ablationFacilities]);
+  const leepFacilityOptions = useMemo(() => toFacilityOptions(leepFacilities), [leepFacilities]);
+  const colposcopyFacilityOptions = useMemo(() => toFacilityOptions(colposcopyFacilities), [colposcopyFacilities]);
+  const ihcFacilityOptions = useMemo(() => toFacilityOptions(ihcFacilities), [ihcFacilities]);
+  const hpvFacilityOptions = useMemo(() => toFacilityOptions(hpvFacilities), [hpvFacilities]);
+  // Prostate recall and urology bookings use the general referral-capable facility list.
+  const referralFacilityOptions = useMemo(() => toFacilityOptions(referralFacilities), [referralFacilities]);
+
+  const getScreeningGroupsWithFacilities = (cancerType: CancerType): FieldGroup[] => {
+    const groups = SCREENING_GROUPS[cancerType] || [];
+
+    return groups.map((group) => ({
+      ...group,
+      fields: group.fields.map((field) => {
+        switch (field.name) {
+          case "biopsyBookingFacilityId":
+            return { ...field, options: facilityOptions };
+          case "ablationBookingFacilityId":
+            return { ...field, options: ablationFacilityOptions };
+          case "leepBookingFacilityId":
+            return { ...field, options: leepFacilityOptions };
+          case "colposcopyBookingFacilityId":
+            return { ...field, options: colposcopyFacilityOptions };
+          case "hpvBookingFacilityId":
+            return { ...field, options: hpvFacilityOptions };
+          case "ihcBookingFacilityId":
+            return { ...field, options: ihcFacilityOptions };
+          case "recallBookingFacilityId":
+          case "urologyBookingFacilityId":
+            return { ...field, options: referralFacilityOptions };
+          default:
+            return field;
+        }
+      }),
+    }));
+  };
+
+  function goTo(key: StepKey) {
+    setStepIndex(STEPS.indexOf(key));
+  }
+
+  function next() {
+    setStepIndex((i) => Math.min(i + 1, STEPS.length - 1));
+  }
+
+  function back() {
+    setStepIndex((i) => {
+      let prevIndex = Math.max(i - 1, 0);
+      // SMS (OTP) consent is only for brand-new registrations. Once a client record exists
+      // (found, duplicate-matched, or just verified) it is never revisited.
+      if (STEPS[prevIndex] === "otpConsent" && (clientId || !pendingRegistrationId)) {
+        prevIndex = Math.max(prevIndex - 1, 0);
+      }
+      return prevIndex;
+    });
+  }
+
+  // Entry points that already know it's a new client
+  useEffect(() => {
+    if (!router.isReady) return;
+    if (router.query.new) {
+      goTo("registration");
+    }
+  }, [router.isReady, router.query.new]);
+
+  // Deep-link support
+  useEffect(() => {
+    if (!router.isReady) return;
+    const qSearch = router.query.search;
+    if (typeof qSearch === "string" && qSearch) {
+      setLookupValue(qSearch);
+      handleLookup(qSearch);
+    }
+  }, [router.isReady]);
+
+  // ── Lookup ───────────────────────────────────────────────────────────
+  async function resumeVisit(visit: any) {
+    setVisitId(visit.visitId);
+
+    if (visit.examination) {
+      setExamination((p) => ({
+        ...p,
+        ...visit.examination,
+      }));
+    }
+
+    const types = visit.cancerTypes as CancerType[];
+    setCancerTypes(types);
+
+    const hydratedScreenings: Record<string, Record<string, any>> = {};
+    types.forEach((t) => {
+      hydratedScreenings[t] = visit.screenings[t] || {};
+    });
+    setScreenings(hydratedScreenings);
+
+    setIncompleteVisits([]);
+    goTo(visit.resumeStep);
+  }
+
+  async function handleLookup(overrideValue?: string) {
+    const value = (overrideValue ?? lookupValue ?? "").toString().trim();
+
+    if (!value) {
+      toast.error("Please enter a phone number or Client ID to search.");
+      return;
+    }
+
+    // Start every lookup from a clean slate so a previous client's cancer-type
+    // selection and screening data can't leak into this one.
+    setCancerTypes([]);
+    setScreenings({});
+    setScreeningErrors({});
+    setReturningClient(false);
+
+    setBusy(true);
+
+    try {
+      let data: any;
+      try {
+        ({ data } = await api.get("/clients/search/details", {
+          params: { search: value },
+        }));
+      } catch (e: any) {
+        if (e?.response) throw e;
+        // No network: search only clients registered or opened on this device.
+        const local = await findLocalClient(value);
+        if (!local) {
+          toast("You're offline and this client isn't saved on this device. Continuing as a new registration.", { icon: "ℹ️" });
+          goTo("registration");
+          return;
+        }
+        data = { client: local, offline: true };
+        toast("Offline — client loaded from this device.", { icon: "📴" });
+      }
+
+      const found = data?.client;
+      if (found && !data?.offline) saveLocalClient(found);
+
+      if (found) {
+        setClientId(found.clientId);
+        setReturningClient(true);
+        setPendingRegistrationId("");
+        setPendingMaskedPhone("");
+
+        setBiodata({
+          fullName: found.fullName || "",
+          dateOfBirth: found.dateOfBirth?.slice(0, 10) || "",
+          gender: found.gender || "",
+          phoneNumber: found.phoneNumber || "",
+          email: found.email || "",
+          nin: found.nin || "",
+          address: found.address || "",
+          landmark: found.landmark || "",
+          stateOfResidence: found.stateOfResidence || "",
+          lgaOfResidence: found.lgaOfResidence || "",
+          stateOfOrigin: found.stateOfOrigin || "",
+          lgaOfOrigin: found.lgaOfOrigin || "",
+          occupation: found.occupation || "",
+          religion: found.religion || "",
+          religionOther: found.religionOther || "",
+          maritalStatus: found.maritalStatus || "",
+          nextOfKinName: found.nextOfKinName || "",
+          nextOfKinPhone: found.nextOfKinPhone || "",
+          nextOfKinRelationship: found.nextOfKinRelationship || "",
+          phoneNotClients: !!found.phoneNotClients,
+          caregiverName: found.caregiverName || "",
+          caregiverPhoneNumber: found.caregiverPhoneNumber || "",
+        });
+
+        // Check for an in-progress visit
+        let incompleteData: any = null;
+        if (!data?.offline) {
+          try {
+            ({ data: incompleteData } = await api.get(`/clients/${found.clientId}/visits/incomplete`));
+          } catch (e: any) {
+            if (e?.response) throw e;
+          }
+        }
+
+        if (incompleteData?.riskProfile) {
+          setRisk((p) => ({
+            ...p,
+            ...hydrateRiskProfile(incompleteData.riskProfile),
+          }));
+        }
+
+        const visits = incompleteData?.visits || [];
+
+        if (visits.length > 0) {
+          setIncompleteVisits(visits);
+          toast.success(
+            "Found an in-progress screening — pick a visit below to continue."
+          );
+          return;
+        }
+
+        toast.success("Client found — details pre-filled below.");
+        // Go directly to registration (no OTP for existing client)
+        goTo("registration");
+      } else {
+        // Bloom fallback
+        try {
+          const { data: bloomData } = await api.get("/awareness/lookup", {
+            params: { phone: value },
+          });
+
+          if (bloomData?.registration) {
+            const reg = bloomData.registration;
+
+            setBiodata((p) => ({
+              ...p,
+              fullName: reg.fullName || "",
+              gender: reg.gender || "",
+              phoneNumber: reg.phoneNumber || "",
+              email: reg.email || "",
+              stateOfResidence: reg.stateOfResidence || "",
+              lgaOfResidence: reg.lgaOfResidence || "",
+            }));
+
+            setBloomReference({
+              registration: reg,
+              selfAssessment: bloomData.selfAssessment || null,
+            });
+
+            toast.success(
+              bloomData.selfAssessment
+                ? "Found a prior Bloom self-assessment — details pre-filled, findings shown in Risk Assessment."
+                : "Found a prior Bloom registration — details pre-filled below."
+            );
+            goTo("registration");
+          } else {
+            toast(
+              "No matching client or Bloom record — continuing as a new registration.",
+              { icon: "ℹ️" }
+            );
+            goTo("registration");
+          }
+        } catch {
+          toast("No matching client — continuing as a new registration.", {
+            icon: "ℹ️",
+          });
+          goTo("registration");
+        }
+      }
+    } catch (error) {
+      console.error("Lookup error:", error);
+      toast.error("Lookup failed. You can continue as a new registration.");
+      goTo("registration");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // Helper function to ensure a visit exists
+  async function ensureVisit(): Promise<number | null> {
+    if (visitId) return visitId;
+
+    if (!clientId) {
+      toast.error("No client selected.");
+      return null;
+    }
+
+    try {
+      const tempVisit = newTempVisitId();
+      const { data } = await sendOrQueue({
+        method: "post",
+        path: `/clients/${clientId}/visits`,
+        body: {
+          visitDate: todayStr(),
+          visitType: returningClient ? "follow_up" : "initial",
+          ...visitMeta,
+        },
+        label: "Start visit",
+        produces: [{ temp: tempVisit, from: ["visit.visitId", "visitId"] }],
+        provisional: { visit: { visitId: tempVisit } },
+      });
+      const newVisitId = data?.visit?.visitId ?? data?.visitId;
+      setVisitId(newVisitId);
+      return newVisitId;
+    } catch (error: any) {
+      toast.error(friendlyError(error, "Could not create visit."));
+      return null;
+    }
+  }
+
+  // ── A. Registration ──────────────────────────────────────────────────
+  async function lookupDuplicate(field: "phone" | "email", value: string): Promise<{ field: "phone" | "email"; client: any } | null> {
+    if (!value.trim()) return null;
+    try {
+      const params = field === "phone" ? { phone: value.trim() } : { email: value.trim() };
+      const { data } = await api.get(`/clients/check-duplicate`, { params });
+      const match = data?.matches?.[0];
+      return match ? { field: match.field, client: match.client } : null;
+    } catch {
+      return null;
+    }
+  }
+
+  // The exact client payload sent to the API. If the client has no phone of their own, the
+  // caregiver's number becomes the contact number and is flagged as not belonging to the client.
+  function clientPayload() {
+    const clientPhone = (biodata.phoneNumber || "").trim();
+    const caregiverPhone = (biodata.caregiverPhoneNumber || "").trim();
+    const usingCaregiverAsContact = !clientPhone && !!caregiverPhone;
+    return {
+      ...biodata,
+      phoneNumber: clientPhone || caregiverPhone,
+      phoneNotClients: !!biodata.phoneNotClients || usingCaregiverAsContact,
+      caregiverName: (biodata.caregiverName || "").trim() || null,
+      caregiverPhoneNumber: caregiverPhone || null,
+    };
+  }
+
+  async function submitRegistration() {
+    const contact = clientPayload();
+    if (!biodata.fullName || !biodata.gender || !contact.phoneNumber) {
+      toast.error("Full name, sex, and a phone number (the client's or a caregiver's) are required.");
+      return;
+    }
+    if (contact.phoneNumber !== biodata.phoneNumber || contact.phoneNotClients !== !!biodata.phoneNotClients) {
+      setBiodata((p) => ({ ...p, phoneNumber: contact.phoneNumber, phoneNotClients: contact.phoneNotClients }));
+    }
+
+    // A fresh visit is about to start — clear any leftover cancer-type
+    // selection and screening data from a previous client or session.
+    if (!visitId) {
+      setCancerTypes([]);
+      setScreenings({});
+      setScreeningErrors({});
+    }
+
+    // CASE 1: Existing client (has clientId) - update and continue, NO OTP
+    if (clientId) {
+      setBusy(true);
+      try {
+        const { queued } = await sendOrQueue({
+          method: "patch",
+          path: `/clients/${clientId}`,
+          body: contact,
+          label: `Update ${contact.fullName || "client"} details`,
+        });
+        saveLocalClient({ ...contact, clientId });
+        await createVisitAndLoadRisk(clientId);
+        if (queued) toast("Saved on this device — will sync when the network returns.", { icon: "📴" });
+        toast.success("Client updated and visit created.");
+        goTo("cancerTypeSelect");
+      } catch (err: any) {
+        toast.error(friendlyError(err, "Could not save registration."));
+      } finally {
+        setBusy(false);
+      }
+      return;
+    }
+
+    // CASE 2: New client - check for duplicates first
+    setBusy(true);
+
+    // No network: no duplicate lookup or OTP is possible. Check this device's own clients, then register offline.
+    if (!navigator.onLine) {
+      const localDup = contact.phoneNotClients ? null : await findLocalClient(contact.phoneNumber);
+      if (localDup) {
+        setDuplicateMatch({ field: "phone", client: localDup });
+        setBusy(false);
+        return;
+      }
+      setBusy(false);
+      goTo("otpConsent");
+      await completeNewClientRegistration({ reason: "Registered offline – no network" });
+      return;
+    }
+
+    // A caregiver's number can legitimately be shared by several clients, so skip the duplicate check.
+    const phoneMatch = contact.phoneNotClients
+      ? null
+      : await lookupDuplicate("phone", contact.phoneNumber);
+    if (phoneMatch) {
+      setDuplicateMatch(phoneMatch);
+      setBusy(false);
+      return;
+    }
+
+    if (biodata.email) {
+      const emailMatch = await lookupDuplicate("email", biodata.email);
+      if (emailMatch) {
+        setDuplicateMatch(emailMatch);
+        setBusy(false);
+        return;
+      }
+    }
+
+    // CASE 3: Fresh registration - send OTP
+    try {
+      const { data } = await api.post(`/awareness/register`, {
+        fullName: biodata.fullName,
+        gender: biodata.gender,
+        phoneNumber: contact.phoneNumber,
+        email: biodata.email || undefined,
+        stateOfResidence: biodata.stateOfResidence,
+        lgaOfResidence: biodata.lgaOfResidence,
+        campaignSource: "phc_stage2",
+      });
+      setPendingRegistrationId(String(data.registrationId));
+      setPendingMaskedPhone(data.maskedPhone);
+      goTo("otpConsent");
+    } catch (err: any) {
+      if (!err?.response) {
+        toast("Network lost — registering offline instead.", { icon: "📴" });
+        goTo("otpConsent");
+        await completeNewClientRegistration({ reason: "Registered offline – no network" });
+        return;
+      }
+      toast.error(friendlyError(err, "Could not start registration."));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function createVisitAndLoadRisk(cId: string, returning: boolean = returningClient) {
+    const tempVisit = newTempVisitId();
+    const { data: visitData } = await sendOrQueue({
+      method: "post",
+      path: `/clients/${cId}/visits`,
+      body: {
+        visitDate: todayStr(),
+        visitType: returning ? "follow_up" : "initial",
+        ...visitMeta,
+      },
+      label: "Start visit",
+      produces: [{ temp: tempVisit, from: ["visit.visitId", "visitId"] }],
+      provisional: { visit: { visitId: tempVisit } },
+    });
+    setVisitId(visitData?.visit?.visitId ?? visitData?.visitId);
+
+    if (isTempId(cId) || !navigator.onLine) return; // nothing to load for a client that isn't on the server yet
+    try {
+      const { data: rp } = await api.get(`/clients/${cId}/risk-profile`);
+      const profile = rp?.risk_profile ?? rp?.riskProfile ?? rp?.data ?? rp;
+      if (profile) setRisk((prev) => ({ ...prev, ...hydrateRiskProfile(profile) }));
+    } catch {
+      // no existing profile — fine, start blank
+    }
+  }
+
+  async function checkDuplicate(field: "phone" | "email", value: string) {
+    if (clientId) return;
+    const match = await lookupDuplicate(field, value);
+    if (match) setDuplicateMatch(match);
+  }
+
+  async function acceptDuplicateMatch() {
+    if (!duplicateMatch) return;
+    const c = duplicateMatch.client;
+    setClientId(c.clientId);
+    setReturningClient(true);
+    setPendingRegistrationId("");
+    setPendingMaskedPhone("");
+    setBiodata({
+      fullName: c.fullName || "",
+      dateOfBirth: c.dateOfBirth?.slice(0, 10) || "",
+      gender: c.gender || "",
+      phoneNumber: c.phoneNumber || "",
+      email: c.email || "",
+      nin: c.nin || "",
+      address: c.address || "",
+      landmark: c.landmark || "",
+      stateOfResidence: c.stateOfResidence || "",
+      lgaOfResidence: c.lgaOfResidence || "",
+      stateOfOrigin: c.stateOfOrigin || "",
+      lgaOfOrigin: c.lgaOfOrigin || "",
+      occupation: c.occupation || "",
+      religion: c.religion || "",
+      religionOther: c.religionOther || "",
+      maritalStatus: c.maritalStatus || "",
+      nextOfKinName: c.nextOfKinName || "",
+      nextOfKinPhone: c.nextOfKinPhone || "",
+      nextOfKinRelationship: c.nextOfKinRelationship || "",
+      phoneNotClients: !!c.phoneNotClients,
+      caregiverName: c.caregiverName || "",
+      caregiverPhoneNumber: c.caregiverPhoneNumber || "",
+    });
+    setDuplicateMatch(null);
+    setBusy(true);
+    try {
+      await createVisitAndLoadRisk(c.clientId, true);
+      toast.success("Continuing screening for the existing client.");
+      goTo("cancerTypeSelect");
+    } catch (err: any) {
+      toast.error(friendlyError(err, "Could not start the visit for this client."));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function rejectDuplicateMatch() {
+    if (!duplicateMatch) return;
+    if (duplicateMatch.field === "phone") {
+      setBiodata((p) => ({ ...p, phoneNumber: "" }));
+    } else {
+      setBiodata((p) => ({ ...p, email: "" }));
+    }
+    setDuplicateMatch(null);
+  }
+
+  async function completeNewClientRegistration(skip?: { reason: string }) {
+    setBusy(true);
+    try {
+      const tempClient = newTempClientId();
+      const body = {
+        ...clientPayload(),
+        stateOfOrigin: biodata.stateOfOrigin || biodata.stateOfResidence,
+        lgaOfOrigin: biodata.lgaOfOrigin || biodata.lgaOfResidence,
+        registrationDate: todayStr(),
+        screeningCategory: "new_client",
+        otpSkipped: !!skip,
+        otpSkipReason: skip?.reason ?? null,
+      };
+      const { data, queued } = await sendOrQueue({
+        method: "post",
+        path: `/clients`,
+        body,
+        label: `Register ${biodata.fullName || "new client"}`,
+        produces: [{ temp: tempClient, from: ["client.clientId", "clientId"] }],
+        provisional: { client: { clientId: tempClient } },
+      });
+      const cId = data?.client?.clientId ?? data?.clientId;
+      setClientId(cId);
+      saveLocalClient({ ...body, clientId: cId }, queued ? cId : undefined);
+      await createVisitAndLoadRisk(cId);
+      if (queued) {
+        toast("Registered on this device. A real Client ID is assigned when the network returns.", { icon: "📴", duration: 6000 });
+      } else {
+        toast.success("Client registered and visit created.");
+      }
+      setNewClientId(cId); // show the Client ID screen before moving on
+    } catch (err: any) {
+      toast.error(friendlyError(err, "Could not complete registration."));
+      goTo("registration");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // ── B + C. Risk verify & medical history ───────────────────────────
+  async function submitRiskAndHistory() {
+    if (!clientId) return;
+    setBusy(true);
+    try {
+      const { queued } = await sendOrQueue({
+        method: "post",
+        path: `/clients/${clientId}/risk-profile`,
+        body: buildRiskPayload(risk),
+        label: "Risk assessment & medical history",
+      });
+      toast.success(queued ? "Saved on this device — will sync later." : "Risk assessment and medical history saved.");
+      next();
+    } catch (err: any) {
+      toast.error(friendlyError(err, "Could not save risk assessment."));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // Catches states where the backend would reject the record, and explains them in plain language.
+  function screeningBlocker(): string | null {
+    const cx = screenings.cervical;
+    if (
+      cancerTypes.includes("cervical") &&
+      cx?.hpvSampleDate &&
+      cx?.hpvResultDate &&
+      cx.hpvResultDate < cx.hpvSampleDate
+    ) {
+      return "The HPV result date can't be earlier than the date the sample was taken.";
+    }
+
+    for (const ct of cancerTypes) {
+      if (ct !== "prostate") continue;
+      const s = screenings.prostate || {};
+
+      if (s.screeningPathway === "Not Eligible") {
+        return s.ageAtScreening
+          ? `Prostate screening isn't available for this client (age ${s.ageAtScreening}). It is for men aged 45 to under 75. Deselect Prostate to continue.`
+          : "Enter the client's date of birth to check prostate screening eligibility (men 45 to under 75), or deselect Prostate.";
+      }
+      if (!s.screeningResult) {
+        if (s.psaEligibility === "Pending Consent") {
+          return s.sharedDecision === "declined"
+            ? "The client declined prostate screening. Deselect Prostate to continue."
+            : "Record the client's shared decision for prostate screening before saving.";
+        }
+        if (s.psaEligibility === "Deferred") {
+          return "Prostate PSA testing is deferred, so there is no result to save yet. Deselect Prostate and recall the client later.";
+        }
+        if (s.psaEligibility === "Eligible") {
+          return "Enter the PSA level (and DRE finding if done) so the prostate screening result can be determined.";
+        }
+        return "Complete the prostate screening so a result can be determined.";
+      }
+    }
+    return null;
+  }
+
+  // ── D + F. Symptoms & cancer-specific tests ────────────────────────
+  async function submitScreenings() {
+    const blocker = screeningBlocker();
+    if (blocker) {
+      toast.error(blocker);
+      return;
+    }
+
+    let activeVisitId = visitId;
+    if (!activeVisitId) {
+      activeVisitId = await ensureVisit();
+      if (!activeVisitId) return;
+    }
+
+    setBusy(true);
+    try {
+      let anyQueued = false;
+      for (const ct of cancerTypes) {
+        const screeningData = screenings[ct] || {};
+
+        const r = await sendOrQueue({
+          method: "post",
+          path: ENDPOINTS.screening(activeVisitId, ct),
+          body: buildScreeningPayload(screeningData, treatmentReferral),
+          label: `${cancerLabel(ct as CancerType)} screening`,
+        });
+        if (r.queued) anyQueued = true;
+      }
+      toast.success(anyQueued ? "Saved on this device — will sync later." : "Screening findings saved.");
+      next();
+    } catch (err: any) {
+      toast.error(friendlyError(err, "Could not save one or more screening records."));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // ── E. Physical examination ────────────────────────────────────────
+  async function submitExamination() {
+    const sys = parseFloat(examination.bloodPressureSystolic);
+    const dia = parseFloat(examination.bloodPressureDiastolic);
+    if (!Number.isNaN(sys) || !Number.isNaN(dia)) {
+      if (Number.isNaN(sys) || Number.isNaN(dia)) {
+        toast.error("Enter both the systolic and diastolic blood pressure.");
+        return;
+      }
+      if (sys < 50 || sys > 300 || dia < 30 || dia > 200) {
+        toast.error("Blood pressure looks out of range. Please check the systolic and diastolic values.");
+        return;
+      }
+      if (sys <= dia) {
+        toast.error("Systolic blood pressure must be higher than diastolic.");
+        return;
+      }
+    }
+
+    let activeVisitId = visitId;
+    if (!activeVisitId) {
+      activeVisitId = await ensureVisit();
+      if (!activeVisitId) return;
+    }
+
+    setBusy(true);
+    try {
+      const { queued } = await sendOrQueue({
+        method: "post",
+        path: `/visits/${activeVisitId}/examination`,
+        body: examination,
+        label: "Physical examination",
+      });
+      toast.success(queued ? "Saved on this device — will sync later." : "Physical examination saved.");
+      next();
+    } catch (err: any) {
+      toast.error(friendlyError(err, "Could not save the examination."));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // ── G. Outcome classification ──────────────────────────────────────
+  async function submitOutcome() {
+    let activeVisitId = visitId;
+    if (!activeVisitId) {
+      activeVisitId = await ensureVisit();
+      if (!activeVisitId) return;
+    }
+
+    if (!outcome.overallOutcome) {
+      toast.error("Please select an outcome classification.");
+      return;
+    }
+    if (outcome.overallOutcome === "low_suspicion" && !outcome.repeatScreeningDate) {
+      toast.error("Please set a repeat screening date for Low Suspicion outcomes.");
+      return;
+    }
+    if (needsReferral && !referralFacilityId) {
+      toast.error("Please select the facility to refer this client to.");
+      return;
+    }
+
+    setBusy(true);
+    try {
+      const { data, queued } = await sendOrQueue({
+        method: "post",
+        path: `/visits/${activeVisitId}/outcome`,
+        body: {
+          ...outcome,
+          referralFacilityId: needsReferral ? Number(referralFacilityId) : null,
+        },
+        label: "Screening outcome",
+      });
+      if (queued) {
+        toast.success(
+          needsReferral
+            ? "Outcome saved on this device — the referral is created when it syncs."
+            : "Outcome saved on this device — will sync later."
+        );
+      } else if (data?.referral) {
+        setAutoReferral(data.referral);
+        toast.success("Screening outcome recorded — client referred.");
+      } else {
+        toast.success("Screening outcome recorded.");
+      }
+      next();
+    } catch (err: any) {
+      toast.error(friendlyError(err, "Could not save the outcome."));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // Shown right after OTP verification (or an OTP skip) so the admin can copy / share the Client ID.
+  if (newClientId && currentKey === "otpConsent") {
+    return (
+      <Layout>
+        <div className="max-w-md mx-auto mt-10 bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700 shadow-sm p-8 text-center space-y-4">
+          <CheckCircle className="w-12 h-12 text-green-600 mx-auto" />
+          <h3 className="text-xl font-bold text-gray-800 dark:text-white">Client registered</h3>
+          <p className="text-sm text-gray-500">
+            Copy this Client ID to document it or share it with the client.
+          </p>
+          <div className="rounded-xl bg-green-50 border border-green-200 px-4 py-3 text-2xl font-bold tracking-wider text-green-800 select-all">
+            {displayId(newClientId)}
+          </div>
+          {isTempId(displayId(newClientId)) && (
+            <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">
+              Provisional ID — registered offline. The real Client ID is assigned when the device reconnects
+              (check the sync panel). Note this ID down for now.
+            </p>
+          )}
+          <div className="flex gap-3 justify-center">
+            <Button
+              layout="outline"
+              className="rounded-xl"
+              onClick={async () => {
+                try {
+                  await navigator.clipboard.writeText(displayId(newClientId));
+                  toast.success("Client ID copied.");
+                } catch {
+                  toast.error("Could not copy. Select the ID and copy it manually.");
+                }
+              }}
+            >
+              Copy ID
+            </Button>
+            <Button
+              className="rounded-xl bg-green-700 border-green-700 hover:bg-green-800"
+              onClick={() => {
+                setNewClientId("");
+                goTo("cancerTypeSelect");
+              }}
+            >
+              Continue <ChevronRight className="w-4 h-4 ml-1" />
+            </Button>
+          </div>
+        </div>
+      </Layout>
+    );
+  }
+
+  if (currentKey === "otpConsent" && pendingRegistrationId) {
+    return (
+      <>
+        <OtpVerificationStep
+          phoneNumber={biodata.phoneNumber}
+          maskedPhone={pendingMaskedPhone}
+          registrationId={pendingRegistrationId}
+          email={biodata.email || undefined}
+          name={biodata.fullName || undefined}
+          onVerified={() => completeNewClientRegistration()}
+        />
+        {/* Spacer so the fixed skip bar never covers the OTP form on short screens */}
+        <div className="h-32" aria-hidden="true" />
+        {/* Fixed to the bottom of the screen so it is visible whatever layout the OTP component uses */}
+        <div
+          className="fixed bottom-0 left-0 right-0 bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 shadow-lg px-4 py-3"
+          style={{ zIndex: 60 }}
+        >
+          <div className="max-w-md mx-auto text-center">
+          {!otpSkipOpen ? (
+            <div className="space-y-1">
+              <p className="text-xs text-gray-500">Client can't receive the code (phone off, no phone, no network)?</p>
+              <Button
+                type="button"
+                onClick={() => setOtpSkipOpen(true)}
+                className="w-full h-12 rounded-2xl bg-amber-600 border-amber-600 hover:bg-amber-700 text-white font-bold text-base"
+              >
+                Skip OTP verification
+              </Button>
+            </div>
+          ) : (
+            <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 space-y-3 text-left">
+              <p className="text-sm font-semibold text-amber-800">Skip OTP verification</p>
+              <p className="text-xs text-amber-700">
+                Only do this if the client has given consent in person. The skip and reason will be recorded.
+              </p>
+              <Select
+                className="rounded-2xl h-11"
+                value={otpSkipReason}
+                onChange={(e) => setOtpSkipReason(e.target.value)}
+              >
+                <option value="">Select reason</option>
+                <option value="Device switched off">Device switched off</option>
+                <option value="Client has no mobile device">Client has no mobile device</option>
+                <option value="OTP not delivered">OTP not delivered</option>
+                <option value="Other">Other</option>
+              </Select>
+              <div className="flex gap-2 justify-end">
+                <Button layout="outline" className="rounded-xl" onClick={() => setOtpSkipOpen(false)}>
+                  Cancel
+                </Button>
+                <Button
+                  className="rounded-xl bg-green-700 border-green-700 hover:bg-green-800"
+                  disabled={busy || !otpSkipReason}
+                  onClick={() => completeNewClientRegistration({ reason: otpSkipReason })}
+                >
+                  {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : "Skip & register client"}
+                </Button>
+              </div>
+            </div>
+          )}
+          </div>
+        </div>
+      </>
+    );
+  }
+
+  const selectedReferralFacility = referralFacilities.find(
+    (f) => String(f.facilityId) === referralFacilityId
+  );
+
+  return (
+    <Layout>
+      {duplicateMatch && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="max-w-sm w-full bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-6 space-y-4">
+            <h3 className="text-lg font-bold text-gray-800 dark:text-white">
+              This {duplicateMatch.field === "phone" ? "phone number" : "email address"} already exists
+            </h3>
+            <div className="rounded-xl bg-gray-50 dark:bg-gray-700/40 p-4 text-sm">
+              <p className="font-semibold text-gray-800 dark:text-white">{duplicateMatch.client.fullName}</p>
+              <p className="text-gray-500 mt-0.5">{duplicateMatch.client.clientId}</p>
+              <p className="text-gray-500">{duplicateMatch.client.phoneNumber}</p>
+            </div>
+            <p className="text-sm text-gray-600 dark:text-gray-300">
+              It's linked to the client above. Would you like to continue screening for this client instead?
+            </p>
+            <div className="flex gap-3 justify-end">
+              <Button layout="outline" onClick={rejectDuplicateMatch} className="rounded-xl">
+                No, use a different {duplicateMatch.field === "phone" ? "number" : "email"}
+              </Button>
+              <Button onClick={acceptDuplicateMatch} className="rounded-xl bg-green-700 border-green-700 hover:bg-green-800">
+                Yes, continue for this client
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className="mb-6 flex items-center justify-between flex-wrap gap-2">
+        <div>
+          <PageTitle>Stage 2 — Clinical Screening</PageTitle>
+          <p className="text-sm text-gray-500 mt-1">
+            For use by a nurse, CHEW, or trained screening officer at the point of care.
+          </p>
+        </div>
+        {clientId && (
+          <span className="inline-flex items-center px-3 py-1.5 rounded-full text-xs font-bold bg-green-100 text-green-800">
+            Client ID: {displayId(clientId)}
+          </span>
+        )}
+      </div>
+
+      {/* Step progress */}
+      {!["lookup", "registration", "otpConsent"].includes(currentKey) && (
+        <div className="mb-6 flex flex-wrap gap-2">
+          {STEPS.map((key, i) => {
+            if (key === "otpConsent" && clientId) return null;
+            const canJump = i < stepIndex && key !== "done";
+            return (
+              <button
+                key={key}
+                type="button"
+                disabled={!canJump}
+                onClick={() => canJump && goTo(key)}
+                className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
+                  i === stepIndex
+                    ? "bg-green-700 text-white"
+                    : i < stepIndex
+                      ? "bg-green-100 text-green-700 hover:bg-green-200 cursor-pointer"
+                      : "bg-gray-100 text-gray-400 cursor-default"
+                }`}
+                title={canJump ? `Return to ${STEP_LABELS[key]}` : undefined}
+              >
+                {STEP_LABELS[key]}
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      <div className="max-w-3xl bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700 shadow-sm p-6 space-y-6">
+        {currentKey === "lookup" && (
+          <div className="space-y-4">
+            <h3 className="text-lg font-semibold text-gray-800 dark:text-white">Find an existing client</h3>
+            <p className="text-sm text-gray-500">
+              Search by phone number or Client ID — for example, someone who already completed a Bloom
+              self-assessment. If nothing matches, you'll continue as a new registration.
+            </p>
+            <div className="flex gap-2">
+              <Input
+                className="rounded-2xl h-12 flex-1"
+                placeholder="Phone number or Client ID"
+                value={lookupValue}
+                onChange={(e) => setLookupValue(e.target.value || "")}
+              />
+              <Button onClick={() => handleLookup(lookupValue)} disabled={busy} className="h-12 px-5 rounded-2xl bg-green-700 border-green-700 hover:bg-green-800">
+                {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
+              </Button>
+            </div>
+
+            {incompleteVisits.length > 0 && (
+              <div className="pt-4 border-t border-gray-100 dark:border-gray-700 space-y-2">
+                <p className="text-sm font-semibold text-gray-700 dark:text-gray-300">In-progress screenings for {biodata.fullName}</p>
+                {incompleteVisits.map((v) => (
+                  <button
+                    key={v.visitId}
+                    type="button"
+                    onClick={() => resumeVisit(v)}
+                    className="w-full text-left p-4 rounded-xl border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"
+                  >
+                    <p className="text-sm font-semibold text-gray-800 dark:text-white">
+                      Visit — {(() => {
+                        // visitDate is a date-only value; parse it as a LOCAL date so timezones
+                        // (e.g. WAT, UTC+1) don't shift it, and don't show a time that doesn't exist.
+                        const date = new Date(`${String(v.visitDate).slice(0, 10)}T00:00:00`);
+                        const day = date.getDate();
+                        const suffix =
+                          day % 10 === 1 && day !== 11 ? "st"
+                          : day % 10 === 2 && day !== 12 ? "nd"
+                          : day % 10 === 3 && day !== 13 ? "rd"
+                          : "th";
+                        const monthYear = date.toLocaleDateString("en-GB", { month: "long", year: "numeric" });
+                        return `${day}${suffix} ${monthYear}`;
+                      })()} ({v.visitType === "follow_up" ? "follow-up" : v.visitType})
+                    </p>
+                    <p className="text-xs text-gray-500 mt-0.5">
+                      {v.cancerTypes?.length > 0 ? `Types: ${v.cancerTypes.join(", ")}` : "No screening started yet"}
+                      {" · "}Next: {STEP_LABELS[v.resumeStep as StepKey]}
+                    </p>
+                  </button>
+                ))}
+                <button
+                  type="button"
+                  onClick={() => goTo("registration")}
+                  className="text-sm font-semibold text-green-700 hover:text-green-800"
+                >
+                  Or start a new visit for this client instead
+                </button>
+              </div>
+            )}
+
+            <button
+              type="button"
+              onClick={() => goTo("registration")}
+              className="inline-flex items-center gap-1.5 text-sm font-semibold text-green-700 hover:text-green-800"
+            >
+              <UserPlus className="w-4 h-4" /> Skip — register a new client
+            </button>
+          </div>
+        )}
+
+        {currentKey === "registration" && (
+          <div className="space-y-4">
+            <h3 className="text-lg font-semibold text-gray-800 dark:text-white">B. Registration</h3>
+            {clientId && (
+              <p className="text-xs text-green-700">
+                Existing client — SMS consent is not required.
+              </p>
+            )}
+            <div className="grid grid-cols-2 gap-4">
+              <Label className="col-span-2">
+                <span className="text-sm font-semibold">Full Name *</span>
+                <Input
+                  className="mt-2 rounded-2xl h-12"
+                  value={biodata.fullName}
+                  onChange={(e) => setBiodata((p) => ({ ...p, fullName: e.target.value }))}
+                />
+              </Label>
+              <div className="col-span-2">
+                <span className="text-sm font-semibold">Date of Birth</span>
+                <DateOfBirthField
+                  value={biodata.dateOfBirth}
+                  onChange={(v) => setBiodata((p) => ({ ...p, dateOfBirth: v }))}
+                />
+              </div>
+              <Label>
+                <span className="text-sm font-semibold">Sex *</span>
+                <Select
+                  className="mt-2 rounded-2xl h-12"
+                  value={biodata.gender}
+                  onChange={(e) => setBiodata((p) => ({ ...p, gender: e.target.value }))}
+                >
+                  <option value="">Select</option>
+                  <option value="male">Male</option>
+                  <option value="female">Female</option>
+                </Select>
+              </Label>
+              <div>
+                <Label>
+                  <span className="text-sm font-semibold">
+                    Phone Number{biodata.caregiverPhoneNumber ? "" : " *"}
+                  </span>
+                  <Input
+                    className="mt-2 rounded-2xl h-12"
+                    value={biodata.phoneNumber}
+                    onChange={(e) => setBiodata((p) => ({ ...p, phoneNumber: e.target.value }))}
+                    onBlur={(e) => {
+                      if (!biodata.phoneNotClients) checkDuplicate("phone", e.target.value);
+                    }}
+                  />
+                </Label>
+                <label className="mt-2 flex items-center gap-2 text-xs text-gray-600 dark:text-gray-300">
+                  <input
+                    type="checkbox"
+                    checked={!!biodata.phoneNotClients}
+                    onChange={(e) => setBiodata((p) => ({ ...p, phoneNotClients: e.target.checked }))}
+                  />
+                  This number doesn't belong to the client
+                </label>
+              </div>
+
+              <div className="col-span-2 rounded-2xl border border-gray-100 dark:border-gray-700 p-4">
+                <p className="text-sm font-semibold text-gray-700 dark:text-gray-300">Caregiver</p>
+                <p className="text-xs text-gray-500 mb-3">
+                  Use this if the client has no phone. With no client phone number, the caregiver's number is used for contact.
+                </p>
+                <div className="grid grid-cols-2 gap-4">
+                  <Label>
+                    <span className="text-sm font-semibold">Caregiver's Name</span>
+                    <Input
+                      id="caregiverName"
+                      className="mt-2 rounded-2xl h-12"
+                      value={biodata.caregiverName}
+                      onChange={(e) => setBiodata((p) => ({ ...p, caregiverName: e.target.value }))}
+                    />
+                  </Label>
+                  <Label>
+                    <span className="text-sm font-semibold">Caregiver's Phone Number</span>
+                    <Input
+                      id="caregiverPhoneNumber"
+                      type="tel"
+                      className="mt-2 rounded-2xl h-12"
+                      value={biodata.caregiverPhoneNumber}
+                      onChange={(e) => setBiodata((p) => ({ ...p, caregiverPhoneNumber: e.target.value }))}
+                    />
+                  </Label>
+                </div>
+              </div>
+              <Label>
+                <span className="text-sm font-semibold">Email Address <span className="text-gray-400 font-normal">(optional)</span></span>
+                <Input
+                  type="email"
+                  className="mt-2 rounded-2xl h-12"
+                  value={biodata.email}
+                  onChange={(e) => setBiodata((p) => ({ ...p, email: e.target.value }))}
+                  onBlur={(e) => checkDuplicate("email", e.target.value)}
+                />
+              </Label>
+              <Label>
+                <span className="text-sm font-semibold">Occupation</span>
+                <Select
+                  className="mt-2 rounded-2xl h-12"
+                  value={biodata.occupation}
+                  onChange={(e) => setBiodata((p) => ({ ...p, occupation: e.target.value }))}
+                >
+                  <option value="">Select occupation</option>
+                  {OCCUPATION_OPTIONS.map((o) => (
+                    <option key={o} value={o}>{o}</option>
+                  ))}
+                </Select>
+              </Label>
+
+              {/* Religion + current marital status (+ "other religion" input when needed) */}
+              <BiodataExtraFields
+                value={biodata}
+                onChange={(n, v) => setBiodata((p) => ({ ...p, [n]: v }))}
+              />
+
+              <Label>
+                <span className="text-sm font-semibold">NIN <span className="text-gray-400 font-normal">(optional)</span></span>
+                <Input
+                  className="mt-2 rounded-2xl h-12"
+                  value={biodata.nin}
+                  onChange={(e) => setBiodata((p) => ({ ...p, nin: e.target.value }))}
+                />
+              </Label>
+              <Label className="col-span-2">
+                <span className="text-sm font-semibold">Address</span>
+                <Input
+                  className="mt-2 rounded-2xl h-12"
+                  value={biodata.address}
+                  onChange={(e) => setBiodata((p) => ({ ...p, address: e.target.value }))}
+                />
+              </Label>
+              <Label className="col-span-2">
+                <span className="text-sm font-semibold">Landmark <span className="text-gray-400 font-normal">(optional)</span></span>
+                <Input
+                  className="mt-2 rounded-2xl h-12"
+                  value={biodata.landmark}
+                  onChange={(e) => setBiodata((p) => ({ ...p, landmark: e.target.value }))}
+                />
+              </Label>
+              <Label>
+                <span className="text-sm font-semibold">State of Residence</span>
+                <Select
+                  className="mt-2 rounded-2xl h-12"
+                  value={biodata.stateOfResidence}
+                  onChange={(e) => setBiodata((p) => ({ ...p, stateOfResidence: e.target.value, lgaOfResidence: "" }))}
+                >
+                  <option value="">Select state</option>
+                  {nigerianStates.map((s) => (
+                    <option key={s.code} value={s.name}>{s.name}</option>
+                  ))}
+                </Select>
+              </Label>
+              <Label>
+                <span className="text-sm font-semibold">LGA of Residence</span>
+                <Select
+                  className="mt-2 rounded-2xl h-12"
+                  value={biodata.lgaOfResidence}
+                  disabled={!biodata.stateOfResidence}
+                  onChange={(e) => setBiodata((p) => ({ ...p, lgaOfResidence: e.target.value }))}
+                >
+                  <option value="">Select LGA</option>
+                  {biodata.stateOfResidence &&
+                    lgasByState[getStateCode(biodata.stateOfResidence)]?.map((lga) => (
+                      <option key={lga} value={lga}>{lga}</option>
+                    ))}
+                </Select>
+              </Label>
+              <Label>
+                <span className="text-sm font-semibold">State of Origin</span>
+                <Select
+                  className="mt-2 rounded-2xl h-12"
+                  value={biodata.stateOfOrigin}
+                  onChange={(e) => setBiodata((p) => ({ ...p, stateOfOrigin: e.target.value, lgaOfOrigin: "" }))}
+                >
+                  <option value="">Select state</option>
+                  {nigerianStates.map((s) => (
+                    <option key={s.code} value={s.name}>{s.name}</option>
+                  ))}
+                </Select>
+              </Label>
+              <Label>
+                <span className="text-sm font-semibold">LGA of Origin</span>
+                <Select
+                  className="mt-2 rounded-2xl h-12"
+                  value={biodata.lgaOfOrigin}
+                  disabled={!biodata.stateOfOrigin}
+                  onChange={(e) => setBiodata((p) => ({ ...p, lgaOfOrigin: e.target.value }))}
+                >
+                  <option value="">Select LGA</option>
+                  {biodata.stateOfOrigin &&
+                    lgasByState[getStateCode(biodata.stateOfOrigin)]?.map((lga) => (
+                      <option key={lga} value={lga}>{lga}</option>
+                    ))}
+                </Select>
+              </Label>
+            </div>
+
+            <div className="pt-2 border-t border-gray-100 dark:border-gray-700">
+              <p className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">Next of Kin</p>
+              <div className="grid grid-cols-3 gap-4">
+                <Label>
+                  <span className="text-sm font-semibold">Name</span>
+                  <Input
+                    className="mt-2 rounded-2xl h-12"
+                    value={biodata.nextOfKinName}
+                    onChange={(e) => setBiodata((p) => ({ ...p, nextOfKinName: e.target.value }))}
+                  />
+                </Label>
+                <Label>
+                  <span className="text-sm font-semibold">Phone</span>
+                  <Input
+                    className="mt-2 rounded-2xl h-12"
+                    value={biodata.nextOfKinPhone}
+                    onChange={(e) => setBiodata((p) => ({ ...p, nextOfKinPhone: e.target.value }))}
+                  />
+                </Label>
+                <Label>
+                  <span className="text-sm font-semibold">Relationship</span>
+                  <Select
+                    className="mt-2 rounded-2xl h-12"
+                    value={biodata.nextOfKinRelationship}
+                    onChange={(e) => setBiodata((p) => ({ ...p, nextOfKinRelationship: e.target.value }))}
+                  >
+                    <option value="">Select relationship</option>
+                    {NEXT_OF_KIN_RELATIONSHIP_OPTIONS.map((r) => (
+                      <option key={r} value={r}>{r}</option>
+                    ))}
+                  </Select>
+                </Label>
+              </div>
+            </div>
+
+            <div className="pt-2 border-t border-gray-100 dark:border-gray-700">
+              <VisitDetailsFields
+                value={visitMeta}
+                onChange={(n, v) => setVisitMeta((p) => ({ ...p, [n]: v }))}
+              />
+            </div>
+          </div>
+        )}
+
+        {currentKey === "riskVerify" && (
+          <div className="space-y-4">
+            <h3 className="text-lg font-semibold text-gray-800 dark:text-white">E. Verify Risk Assessment</h3>
+            <p className="text-sm text-gray-500">
+              Review the responses from Stage 1 (if any) and update as needed. Also confirm medical history with the client.
+            </p>
+            {bloomReference?.selfAssessment && (
+              <div className="rounded-2xl border border-amber-200 bg-amber-50 dark:bg-amber-900/20 dark:border-amber-800 p-4">
+                <p className="text-xs font-semibold text-amber-700 dark:text-amber-400 uppercase tracking-wide mb-2">
+                  Stage 1 — Bloom Self-Assessment (reference only, not auto-filled below)
+                </p>
+                <p className="text-sm font-bold text-gray-800 dark:text-white capitalize">
+                  Risk category: {String(bloomReference.selfAssessment.riskCategory).replace(/_/g, " ")}
+                </p>
+                <p className="text-sm text-gray-600 dark:text-gray-300 mt-1">
+                  {bloomReference.selfAssessment.recommendation}
+                </p>
+                {Array.isArray(bloomReference.selfAssessment.flaggedReasonsJson) &&
+                  bloomReference.selfAssessment.flaggedReasonsJson.length > 0 && (
+                    <ul className="mt-2 text-xs text-gray-600 dark:text-gray-400 list-disc list-inside space-y-0.5">
+                      {bloomReference.selfAssessment.flaggedReasonsJson.map((r: string, i: number) => (
+                        <li key={i} className="capitalize">{r}</li>
+                      ))}
+                    </ul>
+                  )}
+                <p className="text-xs text-amber-600 dark:text-amber-500 mt-2">
+                  Use this to guide your questioning — enter your own findings in the fields below.
+                </p>
+              </div>
+            )}
+            {/* maritalStatus is merged in (read-only) so the cervical "if single" question can use it */}
+            <GroupedForm
+              groups={riskGroupsForVerify}
+              values={{ ...risk, maritalStatus: biodata.maritalStatus }}
+              errors={{}}
+              onChange={(name, value) => setRisk((p) => ({ ...p, [name]: value }))}
+            />
+            <GroupedForm
+              groups={[MEDICAL_HISTORY_GROUP]}
+              values={risk}
+              errors={{}}
+              onChange={(name, value) => setRisk((p) => ({ ...p, [name]: value }))}
+            />
+          </div>
+        )}
+
+        {currentKey === "cancerTypeSelect" && (
+          <div className="space-y-4">
+            <h3 className="text-lg font-semibold text-gray-800 dark:text-white">Which cancer type(s) are being screened today?</h3>
+            <p className="text-sm text-gray-500">
+              Only screenings this client is eligible for are shown. The risk assessment that follows covers just the types you select.
+            </p>
+            {ageNotice && (
+              <p className="text-xs rounded-xl border border-amber-200 bg-amber-50 text-amber-800 px-3 py-2">{ageNotice}</p>
+            )}
+            <div className="grid grid-cols-2 gap-3">
+              {availableCancerTypes.map((ct) => {
+                const selected = cancerTypes.includes(ct.value);
+                return (
+                  <button
+                    key={ct.value}
+                    type="button"
+                    onClick={() =>
+                      setCancerTypes((prev) =>
+                        prev.includes(ct.value) ? prev.filter((t) => t !== ct.value) : [...prev, ct.value]
+                      )
+                    }
+                    className={`text-left px-4 py-3 rounded-xl border-2 transition-colors ${
+                      selected
+                        ? "border-green-600 bg-green-50 text-green-800"
+                        : "border-gray-200 text-gray-600 hover:border-gray-300"
+                    }`}
+                  >
+                    {ct.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {currentKey === "screening" && (
+          <div className="space-y-8">
+            <h3 className="text-lg font-semibold text-gray-800 dark:text-white">G + H. Symptom Assessment & Screening Tests</h3>
+
+            {cancerTypes.length === 0 && (
+              <p className="text-sm text-amber-600">No cancer type selected — go back and select at least one.</p>
+            )}
+
+            {/* Cancer type specific forms with facility options injected */}
+            {cancerTypes.map((ct) => {
+              const groupsWithFacilities = getScreeningGroupsWithFacilities(ct);
+
+              return (
+                <div key={ct} className="border-t border-gray-100 dark:border-gray-700 pt-6 first:border-t-0 first:pt-0">
+                  <p className="text-sm font-bold text-green-700 uppercase tracking-wide mb-3">{cancerLabel(ct)}</p>
+                  <GroupedForm
+                    groups={groupsWithFacilities}
+                    values={screenings[ct] || {}}
+                    errors={screeningErrors[ct] || {}}
+                    onChange={(name, value) => {
+                      setScreenings((prev) => {
+                        const currentScreening = prev[ct] || {};
+                        const updatedScreening = { ...currentScreening, [name]: value };
+                        return { ...prev, [ct]: updatedScreening };
+                      });
+                    }}
+                  />
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {currentKey === "physicalExam" && (
+          <div className="space-y-4">
+            <h3 className="text-lg font-semibold text-gray-800 dark:text-white">F. Physical Examination</h3>
+            <GroupedForm
+              groups={EXAM_GROUPS}
+              values={examination}
+              errors={{}}
+              onChange={(name, value) => setExamination((p) => ({ ...p, [name]: value }))}
+            />
+          </div>
+        )}
+
+        {currentKey === "outcome" && (
+          <div className="space-y-4">
+            <h3 className="text-lg font-semibold text-gray-800 dark:text-white">G. Screening Outcome</h3>
+            <div className="grid grid-cols-1 gap-3">
+              {OUTCOME_OPTIONS.map((opt) => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => setOutcome((p) => ({ ...p, overallOutcome: opt.value }))}
+                  className={`text-left px-4 py-3 rounded-xl border-2 transition-colors ${
+                    outcome.overallOutcome === opt.value ? opt.tone + " border-2" : "border-gray-200 text-gray-600 hover:border-gray-300"
+                  }`}
+                >
+                  <p className="font-semibold">{opt.label}</p>
+                  <p className="text-xs mt-0.5 opacity-80">{opt.description}</p>
+                </button>
+              ))}
+            </div>
+            {outcome.overallOutcome === "low_suspicion" && (
+              <Label>
+                <span className="text-sm font-semibold">Repeat screening date *</span>
+                <Input
+                  type="date"
+                  className="mt-2 rounded-2xl h-12"
+                  value={outcome.repeatScreeningDate}
+                  onChange={(e) => setOutcome((p) => ({ ...p, repeatScreeningDate: e.target.value }))}
+                />
+              </Label>
+            )}
+
+            {/* Referral — facility is chosen manually, never auto-assigned */}
+            {needsReferral && (
+              <Label>
+                <span className="text-sm font-semibold">Refer client to *</span>
+                <Select
+                  className="mt-2 rounded-2xl h-12"
+                  value={referralFacilityId}
+                  onChange={(e) => setReferralFacilityId(e.target.value)}
+                >
+                  <option value="">Select referral facility</option>
+                  {referralFacilities.map((f) => (
+                    <option key={f.facilityId} value={f.facilityId}>
+                      {f.facilityName}{f.facilityState ? ` - ${f.facilityState}` : ""}
+                    </option>
+                  ))}
+                </Select>
+              </Label>
+            )}
+
+            <Label>
+              <span className="text-sm font-semibold">Notes</span>
+              <textarea
+                className="mt-2 w-full rounded-2xl border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-900 p-3 text-sm"
+                rows={3}
+                value={outcome.outcomeNotes}
+                onChange={(e) => setOutcome((p) => ({ ...p, outcomeNotes: e.target.value }))}
+              />
+            </Label>
+          </div>
+        )}
+
+        {currentKey === "done" && (
+          <div className="text-center py-10 space-y-3">
+            <CheckCircle className="w-14 h-14 text-green-600 mx-auto" />
+            <h3 className="text-xl font-bold text-gray-800 dark:text-white">Stage 2 screening complete</h3>
+            <p className="text-sm font-semibold text-green-700">Client ID: {displayId(clientId)}</p>
+            <p className="text-sm text-gray-500">
+              {needsReferral ? (
+                <span className="inline-flex items-center gap-1.5 text-red-600 font-semibold">
+                  <AlertTriangle className="w-4 h-4" /> This client needs referral — please action promptly.
+                </span>
+              ) : (
+                "All findings have been saved to the client's record."
+              )}
+            </p>
+
+            {needsReferral && (autoReferral || selectedReferralFacility) && (
+              <div className="max-w-sm mx-auto text-left rounded-2xl border border-green-100 bg-green-50 dark:bg-green-900/20 dark:border-green-800 p-4 mt-4">
+                <p className="text-xs font-semibold text-green-700 dark:text-green-400 uppercase tracking-wide mb-1">
+                  Referred to
+                </p>
+                <p className="text-sm font-bold text-gray-800 dark:text-white">
+                  {autoReferral?.toFacility?.facilityName ||
+                    autoReferral?.to_facility?.facilityName ||
+                    selectedReferralFacility?.facilityName ||
+                    "Referral facility"}
+                </p>
+                {(autoReferral?.toFacility?.facilityAddress ||
+                  autoReferral?.to_facility?.facilityAddress ||
+                  selectedReferralFacility?.facilityAddress) && (
+                  <p className="text-xs text-gray-500 mt-0.5">
+                    {autoReferral?.toFacility?.facilityAddress ||
+                      autoReferral?.to_facility?.facilityAddress ||
+                      selectedReferralFacility?.facilityAddress}
+                  </p>
+                )}
+                <p className="text-xs text-gray-400 mt-2">
+                  A referral notification has been sent to this facility and the client.
+                </p>
+              </div>
+            )}
+            {needsReferral && !autoReferral && !selectedReferralFacility && (
+              <div className="max-w-sm mx-auto text-left rounded-2xl border border-amber-100 bg-amber-50 dark:bg-amber-900/20 dark:border-amber-800 p-4 mt-4">
+                <p className="text-sm text-amber-700 dark:text-amber-400">
+                  No referral facility was recorded. Please arrange the referral manually.
+                </p>
+              </div>
+            )}
+
+            <Button
+              onClick={() => router.push(`/ncsr/client-record?clientId=${clientId}`)}
+              className="mt-4 h-12 px-6 rounded-2xl bg-green-700 border-green-700 hover:bg-green-800"
+            >
+              View Client Record
+            </Button>
+          </div>
+        )}
+
+        {/* Navigation */}
+        {currentKey !== "lookup" && currentKey !== "done" && (
+          <div className="flex items-center justify-between pt-4 border-t border-gray-100 dark:border-gray-700">
+            <button
+              type="button"
+              onClick={back}
+              className="inline-flex items-center gap-1 text-sm font-semibold text-gray-500 hover:text-gray-700"
+            >
+              <ChevronLeft className="w-4 h-4" /> Back
+            </button>
+
+            {currentKey === "registration" && (
+              <Button onClick={submitRegistration} disabled={busy} className="h-11 px-5 rounded-2xl bg-green-700 border-green-700 hover:bg-green-800">
+                {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <span className="inline-flex items-center gap-1">Save & Continue <ChevronRight className="w-4 h-4" /></span>}
+              </Button>
+            )}
+            {currentKey === "riskVerify" && (
+              <Button onClick={submitRiskAndHistory} disabled={busy} className="h-11 px-5 rounded-2xl bg-green-700 border-green-700 hover:bg-green-800">
+                {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : "Save & Continue"}
+              </Button>
+            )}
+            {currentKey === "cancerTypeSelect" && (
+              <Button onClick={next} disabled={cancerTypes.length === 0} className="h-11 px-5 rounded-2xl bg-green-700 border-green-700 hover:bg-green-800">
+                Continue
+              </Button>
+            )}
+            {currentKey === "screening" && (
+              <Button onClick={submitScreenings} disabled={busy || cancerTypes.length === 0} className="h-11 px-5 rounded-2xl bg-green-700 border-green-700 hover:bg-green-800">
+                {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : "Save & Continue"}
+              </Button>
+            )}
+            {currentKey === "physicalExam" && (
+              <Button onClick={submitExamination} disabled={busy} className="h-11 px-5 rounded-2xl bg-green-700 border-green-700 hover:bg-green-800">
+                {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : "Save & Continue"}
+              </Button>
+            )}
+            {currentKey === "outcome" && (
+              <Button onClick={submitOutcome} disabled={busy} className="h-11 px-5 rounded-2xl bg-green-700 border-green-700 hover:bg-green-800">
+                {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : "Finish"}
+              </Button>
+            )}
+          </div>
+        )}
+      </div>
+    </Layout>
+  );
+}

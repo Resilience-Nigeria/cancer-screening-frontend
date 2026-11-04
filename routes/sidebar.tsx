@@ -14,6 +14,9 @@ import {
   MapPinned,
   HeartHandshake,
   FlaskConical,
+  ClipboardList,
+  UserCheck,
+  Send,
 } from "lucide-react";
 import { ComponentType } from "react";
 
@@ -50,9 +53,12 @@ const routes: IRoute[] = [
   { path: "/ncsr/dashboard", icon: HomeIcon, name: "Dashboard", exact: true },
   { path: "/ncsr/clients", name: "Clients", icon: Users },
   { path: "/ncsr/all-visits", icon: HospitalIcon, name: "Visits" },
-  { path: "/ncsr/screenings", icon: MicroscopeIcon, name: "Screenings" },
+  // { path: "/ncsr/screenings", icon: MicroscopeIcon, name: "Screenings" },
+    { path: "/ncsr/screened-clients", icon: UserCheck, name: "Screened Clients" },
+
   { path: "/ncsr/outcomes", icon: SheetIcon, name: "Outcomes" },
   { path: "/ncsr/referred", icon: LinkIcon, name: "Linked Clients" },
+  { path: "/ncsr/referred-clients", icon: Send, name: "Referred Clients" },
   {
     path: "/ncsr/self-assessments",
     icon: MicroscopeIcon,
@@ -74,6 +80,12 @@ const routes: IRoute[] = [
     name: "Samples & Test Results",
   },
 
+ {
+    // Read-only list of every recorded result, with filters and CSV export.
+    path: "/ncsr/test-results-page",
+    icon: ClipboardList,
+    name: "All Test Results",
+  },
   // {
   //   // HPV sample collection + result entry (Collect sample / Enter results tabs).
   //   // Not stage-gated: samples are often collected at a feeder and read at a lab/hub.

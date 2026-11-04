@@ -22,6 +22,8 @@ import {
   FlaskConical,
   Building2,
   ArrowRight,
+  Pencil,
+  Paperclip,
 } from "lucide-react";
 import toast from "react-hot-toast";
 
@@ -33,6 +35,31 @@ import ScreeningModuleSelector from "../components/modals/ScreeningModal";
 import OutcomeModal from "../components/modals/Outcome";
 import api from "../../lib/api";
 import AgeCard from "../components/Cards/AgeCard";
+import RecordFields from "../../components/RecordFields";
+import ResultAttachmentViewer from "../components/ResultAttachmentViewer";
+import { buildSections, displayValue, humanize } from "../../lib/recordDisplay";
+import {
+  SCREENING_GROUPS,
+  getRiskGroupsFor,
+  dedupeFields,
+  hydrateRiskProfile,
+  cancerLabel,
+  CancerType,
+} from "../../lib/screeningWizardConfig";
+import { CERVICAL_RISK_GROUPS } from "../../lib/cervicalRisk";
+import { findTest, resultLabel, cancerName } from "../../lib/screeningTests";
+
+const ALL_CANCERS: CancerType[] = ["breast", "cervical", "prostate", "colorectal", "liver"];
+
+const severityChip: Record<string, string> = {
+  normal: "bg-green-100 text-green-800",
+  abnormal: "bg-amber-100 text-amber-800",
+  urgent: "bg-red-100 text-red-700",
+  neutral: "bg-gray-100 text-gray-700",
+};
+
+const prettyDate = (d?: string | null) =>
+  d ? new Date(`${String(d).slice(0, 10)}T00:00:00`).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : "—";
 
 type Visit = {
   visitId: number;
@@ -44,6 +71,7 @@ type Visit = {
   colorectalScreening?: any;
   liverScreening?: any;
   prostateScreening?: any;
+  examination?: any;
 };
 
 type ClientDetail = {
@@ -61,6 +89,7 @@ type ClientDetail = {
   latestRiskProfile?: any;
   outcome?: any;
   visits?: Visit[];
+  raw?: any;
 };
 
 /**
@@ -153,6 +182,12 @@ export default function ClientSummaryPage() {
   const [showOutcomeModal, setShowOutcomeModal] = useState(false);
   const [selectedVisitId, setSelectedVisitId] = useState<number | null>(null);
 
+  // Samples / tests recorded for this client, and which visits have their findings expanded
+  const [testResults, setTestResults] = useState<any[]>([]);
+  const [pendingSamples, setPendingSamples] = useState<any[]>([]);
+  const [viewing, setViewing] = useState<any>(null);
+  const [openVisits, setOpenVisits] = useState<Record<number, boolean>>({});
+
   const riskLevel = client?.latestRiskProfile
     ? calculateRiskLevel(client.latestRiskProfile)
     : "unknown";
@@ -194,6 +229,7 @@ export default function ClientSummaryPage() {
           rawClient.registrationDate ?? rawClient.registration_date ?? "",
         latestRiskProfile,
         outcome,
+        raw: rawClient,
         visits: (rawClient.visits || []).map((visit: any) => ({
           visitId: visit.visitId ?? visit.id,
           visitDate: visit.visitDate ?? visit.visit_date,
@@ -208,6 +244,7 @@ export default function ClientSummaryPage() {
           liverScreening: visit.liverScreening ?? visit.liver_screening ?? null,
           prostateScreening:
             visit.prostateScreening ?? visit.prostate_screening ?? null,
+          examination: visit.examination ?? null,
         })),
       };
 
@@ -226,14 +263,51 @@ export default function ClientSummaryPage() {
     }
   }
 
+  async function fetchTests() {
+    if (!clientId) return;
+    try {
+      const [done, waiting] = await Promise.all([
+        api.get("/screening-samples/results", { params: { clientId, perPage: 50 } }),
+        api.get("/screening-samples", { params: { status: "collected", search: clientId } }),
+      ]);
+      setTestResults(done.data?.results ?? []);
+      setPendingSamples((waiting.data?.samples ?? []).filter((x: any) => x.clientId === clientId));
+    } catch {
+      // The tests section is supplementary; the rest of the record still loads.
+    }
+  }
+
   useEffect(() => {
     fetchClient();
+    fetchTests();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clientId]);
 
   // New encounters run through the guided wizard, which auto-creates the visit.
   function startScreening() {
-    router.push(`/ncsr/screening-wizard?clientId=${clientId}`);
+    router.push(`/ncsr/clinical-screening?search=${encodeURIComponent(String(clientId))}`);
+  }
+
+  // Opens the clinical screening page on this client's biodata. "Save changes only" there updates
+  // the details without recording a visit.
+  function editBiodata() {
+    router.push(`/ncsr/clinical-screening?search=${encodeURIComponent(String(clientId))}&edit=1`);
+  }
+
+  // Edit risk profile / add outcome open the matching section of the clinical screening page for this client.
+  function editRisk() {
+    router.push(`/ncsr/clinical-screening?search=${encodeURIComponent(String(clientId))}&step=risk`);
+  }
+
+  function editOutcome() {
+    const ids = (client?.visits || []).map((v: any) => Number(v.visitId)).filter(Boolean);
+    if (ids.length === 0) {
+      toast.error("There is no visit yet to record an outcome for. Start a new screening first.");
+      return;
+    }
+    router.push(
+      `/ncsr/clinical-screening?search=${encodeURIComponent(String(clientId))}&step=outcome&visitId=${Math.max(...ids)}`
+    );
   }
 
   function openVisitScreening(visitId: number) {
@@ -334,7 +408,18 @@ export default function ClientSummaryPage() {
                 <Button
                   layout="outline"
                   className="rounded-2xl h-11 w-full sm:w-auto border-white text-white hover:bg-white/10"
-                  onClick={() => setShowRiskProfileModal(true)}
+                  onClick={editBiodata}
+                >
+                  <span className="inline-flex items-center justify-center gap-2">
+                    <Pencil className="w-4 h-4" />
+                    Edit Details
+                  </span>
+                </Button>
+
+                <Button
+                  layout="outline"
+                  className="rounded-2xl h-11 w-full sm:w-auto border-white text-white hover:bg-white/10"
+                  onClick={editRisk}
                 >
                   <span className="inline-flex items-center justify-center gap-2">
                     <Activity className="w-4 h-4" />
@@ -345,11 +430,11 @@ export default function ClientSummaryPage() {
                 <Button
                   layout="outline"
                   className="rounded-2xl h-11 w-full sm:w-auto border-white text-white hover:bg-white/10"
-                  onClick={() => setShowOutcomeModal(true)}
+                  onClick={editOutcome}
                 >
                   <span className="inline-flex items-center justify-center gap-2">
                     <FileText className="w-4 h-4" />
-                    {client.outcome ? "Edit Outcome" : "Add Outcome"}
+                    {(client.visits || []).some((v: any) => v.overallOutcome) ? "Edit Outcome" : "Add Outcome"}
                   </span>
                 </Button>
               </div>
@@ -363,9 +448,10 @@ export default function ClientSummaryPage() {
         <Stethoscope className="w-5 h-5 text-green-600 shrink-0 mt-0.5" />
         <p className="text-sm text-green-800 dark:text-green-300">
           Use <span className="font-semibold">New Screening</span> to run a
-          guided encounter — counselling, risk profile, the screening itself,
-          and the outcome. A visit is created automatically; you don&apos;t add
-          one separately.
+          guided encounter — biodata, risk profile, the screening itself,
+          and the outcome. A visit is created automatically. To correct this
+          client&apos;s details without starting a visit, use{" "}
+          <span className="font-semibold">Edit Details</span>.
         </p>
       </div>
 
@@ -425,6 +511,82 @@ export default function ClientSummaryPage() {
         </div>
       </div>
 
+      {/* Biodata — everything captured at registration on the clinical screening page */}
+      {(() => {
+        const r = client.raw || {};
+        const add = (items: { label: string; value: any }[]) =>
+          items.filter((i) => i.value !== null && i.value !== undefined && i.value !== "").map((i) => ({ label: i.label, value: String(i.value) }));
+        const sections = [
+          {
+            title: "Identity",
+            items: add([
+              { label: "Client ID", value: r.clientId },
+              { label: "Hospital number", value: r.hospitalNumber },
+              { label: "NIN", value: r.nin },
+              { label: "Date of birth", value: r.dateOfBirth ? prettyDate(r.dateOfBirth) : "" },
+              { label: "Marital status", value: r.maritalStatus ? displayValue(r.maritalStatus) : "" },
+              { label: "Religion", value: r.religion === "other" && r.religionOther ? r.religionOther : r.religion ? displayValue(r.religion) : "" },
+              { label: "Occupation", value: r.occupation },
+            ]),
+          },
+          {
+            title: "Contact",
+            items: add([
+              { label: r.phoneNotClients ? "Phone (caregiver's number)" : "Phone", value: r.phoneNumber },
+              { label: "Caregiver's name", value: r.caregiverName },
+              { label: "Caregiver's phone", value: r.caregiverPhoneNumber },
+              { label: "Email", value: r.email },
+            ]),
+          },
+          {
+            title: "Location",
+            items: add([
+              { label: "State of residence", value: r.stateOfResidence },
+              { label: "LGA of residence", value: r.lgaOfResidence },
+              { label: "State of origin", value: r.stateOfOrigin },
+              { label: "LGA of origin", value: r.lgaOfOrigin },
+              { label: "Address", value: r.address },
+              { label: "Landmark", value: r.landmark },
+            ]),
+          },
+          {
+            title: "Next of kin",
+            items: add([
+              { label: "Name", value: r.nextOfKinName },
+              { label: "Phone", value: r.nextOfKinPhone },
+              { label: "Relationship", value: r.nextOfKinRelationship },
+            ]),
+          },
+          {
+            title: "Registration",
+            items: add([
+              { label: "Registered", value: r.registrationDate ? prettyDate(r.registrationDate) : "" },
+              { label: "Category", value: r.screeningCategory ? displayValue(r.screeningCategory) : "" },
+              { label: "OTP verification", value: r.otpSkipped ? `Skipped${r.otpSkipReason ? ` (${r.otpSkipReason})` : ""}` : "" },
+            ]),
+          },
+        ].filter((x) => x.items.length > 0);
+
+        return (
+          <div className="mb-8">
+            <div className="flex items-center justify-between mb-5">
+              <div className="flex items-center gap-3">
+                <UserRound className="w-5 h-5 text-green-600" />
+                <SectionTitle>Biodata</SectionTitle>
+              </div>
+              <Button size="small" layout="outline" className="rounded-xl" onClick={editBiodata}>
+                <span className="inline-flex items-center gap-2">
+                  <Pencil className="w-3 h-3" /> Edit
+                </span>
+              </Button>
+            </div>
+            <div className="rounded-3xl border border-gray-100 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-sm p-4 sm:p-6">
+              <RecordFields sections={sections} />
+            </div>
+          </div>
+        );
+      })()}
+
       {/* Risk Profile Section — aligned to real columns */}
       {hasRiskProfile && rp && (
         <div className="mb-8">
@@ -440,103 +602,38 @@ export default function ClientSummaryPage() {
               size="small"
               layout="outline"
               className="rounded-xl"
-              onClick={() => setShowRiskProfileModal(true)}
+              onClick={editRisk}
             >
               Edit Risk Profile
             </Button>
           </div>
 
           <div className="rounded-3xl border border-gray-100 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-sm overflow-hidden">
-            <div className="p-6">
-              <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-                {/* Basic Health */}
-                <div className="space-y-3">
-                  <h4 className="font-semibold text-gray-800 dark:text-gray-100 flex items-center gap-2">
-                    <HeartPulse className="w-4 h-4 text-green-600" />
-                    Basic Health
-                  </h4>
-                  <div className="space-y-2 text-sm">
-                    <p><span className="text-gray-500">Weight:</span> {formatRiskValue(rp.weightKg)}{rp.weightKg ? " kg" : ""}</p>
-                    <p><span className="text-gray-500">Height:</span> {formatRiskValue(rp.heightCm)}{rp.heightCm ? " cm" : ""}</p>
-                    <p><span className="text-gray-500">BMI:</span> {formatRiskValue(rp.bmi)}</p>
-                  </div>
-                </div>
-
-                {/* Smoking */}
-                <div className="space-y-3">
-                  <h4 className="font-semibold text-gray-800 dark:text-gray-100 flex items-center gap-2">
-                    <Cigarette className="w-4 h-4 text-orange-600" />
-                    Smoking History
-                  </h4>
-                  <div className="space-y-2 text-sm">
-                    <p><span className="text-gray-500">Status:</span> {formatRiskValue(rp.smokingStatus)}</p>
-                    {rp.cigarettesPerDay ? (
-                      <p><span className="text-gray-500">Cigarettes/Day:</span> {rp.cigarettesPerDay}</p>
-                    ) : null}
-                    {rp.smokingDuration ? (
-                      <p><span className="text-gray-500">Duration:</span> {rp.smokingDuration} years</p>
-                    ) : null}
-                  </div>
-                </div>
-
-                {/* Alcohol */}
-                <div className="space-y-3">
-                  <h4 className="font-semibold text-gray-800 dark:text-gray-100 flex items-center gap-2">
-                    <Wine className="w-4 h-4 text-purple-600" />
-                    Alcohol History
-                  </h4>
-                  <div className="space-y-2 text-sm">
-                    <p><span className="text-gray-500">Frequency:</span> {formatRiskValue(rp.alcoholFrequency ?? rp.alcoholConsumption)}</p>
-                    {rp.alcoholUnitsPerWeek ? (
-                      <p><span className="text-gray-500">Units/Week:</span> {rp.alcoholUnitsPerWeek}</p>
-                    ) : null}
-                  </div>
-                </div>
-
-                {/* Infectious status */}
-                <div className="space-y-3">
-                  <h4 className="font-semibold text-gray-800 dark:text-gray-100 flex items-center gap-2">
-                    <FlaskConical className="w-4 h-4 text-red-600" />
-                    Infectious Status
-                  </h4>
-                  <div className="space-y-2 text-sm">
-                    <p><span className="text-gray-500">HIV:</span> {formatRiskValue(rp.hivStatus)}</p>
-                    <p><span className="text-gray-500">Hepatitis B:</span> {formatRiskValue(rp.hbvStatus)}</p>
-                    <p><span className="text-gray-500">Hepatitis C:</span> {formatRiskValue(rp.hcvStatus)}</p>
-                  </div>
-                </div>
-
-                {/* Family History */}
-                <div className="space-y-3">
-                  <h4 className="font-semibold text-gray-800 dark:text-gray-100 flex items-center gap-2">
-                    <Users className="w-4 h-4 text-blue-600" />
-                    Family History
-                  </h4>
-                  <div className="space-y-2 text-sm">
-                    <p><span className="text-gray-500">Family History of Cancer:</span> {formatRiskValue(rp.familyHistory)}</p>
-                  </div>
-                </div>
-
-                {/* Comorbidities */}
-                {Array.isArray(rp.comorbiditiesJson) && rp.comorbiditiesJson.length > 0 && (
-                  <div className="space-y-3">
-                    <h4 className="font-semibold text-gray-800 dark:text-gray-100 flex items-center gap-2">
-                      <Heart className="w-4 h-4 text-rose-600" />
-                      Comorbidities
-                    </h4>
-                    <div className="flex flex-wrap gap-2">
-                      {rp.comorbiditiesJson.map((c: string, i: number) => (
-                        <span
-                          key={i}
-                          className="inline-flex rounded-full bg-gray-100 dark:bg-gray-700 px-3 py-1 text-xs text-gray-700 dark:text-gray-200"
-                        >
-                          {c}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
+            <div className="p-4 sm:p-6">
+              {/* Built from the same field definitions the clinical screening page uses, so every answer
+                  collected there shows here. Anything stored but not in those definitions is listed under "Other details". */}
+              <RecordFields
+                sections={buildSections(
+                  dedupeFields([
+                    ...getRiskGroupsFor(ALL_CANCERS, client.gender),
+                    ...(client.gender === "female" ? CERVICAL_RISK_GROUPS : []),
+                  ]),
+                  hydrateRiskProfile(rp),
+                  { includeOther: true, skip: ["comorbidities", "comorbiditiesOther"] }
                 )}
-              </div>
+              />
+              {Array.isArray(rp.comorbiditiesJson) && rp.comorbiditiesJson.length > 0 && (
+                <div className="mt-5">
+                  <h5 className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-2">Comorbidities</h5>
+                  <div className="flex flex-wrap gap-2">
+                    {rp.comorbiditiesJson.map((c: string, i: number) => (
+                      <span key={i} className="inline-flex rounded-full bg-gray-100 dark:bg-gray-700 px-3 py-1 text-xs text-gray-700 dark:text-gray-200">
+                        {c}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -556,7 +653,7 @@ export default function ClientSummaryPage() {
               className="rounded-xl"
               onClick={() => setShowOutcomeModal(true)}
             >
-              Edit Outcome
+              Edit Case Outcome
             </Button>
           </div>
 
@@ -700,6 +797,77 @@ export default function ClientSummaryPage() {
         </div>
       </div>
 
+      {/* Samples & test results (collected on the Samples & Test Results page) */}
+      <div className="mb-8">
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-5">
+          <div className="flex items-center gap-3">
+            <FlaskConical className="w-5 h-5 text-green-600" />
+            <SectionTitle>Samples &amp; Test Results</SectionTitle>
+          </div>
+          <div className="flex gap-2">
+            <Button size="small" layout="outline" className="rounded-xl" onClick={() => router.push("/ncsr/screening-tests-page")}>
+              Record sample / result
+            </Button>
+            {testResults.length > 0 && (
+              <Button size="small" layout="outline" className="rounded-xl" onClick={() => router.push(`/ncsr/test-results?clientId=${encodeURIComponent(String(clientId))}`)}>
+                Open in results list
+              </Button>
+            )}
+          </div>
+        </div>
+
+        <div className="rounded-3xl border border-gray-100 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-sm p-4 sm:p-6 space-y-3">
+          {pendingSamples.length === 0 && testResults.length === 0 && (
+            <p className="text-sm text-gray-500">No samples or tests recorded yet.</p>
+          )}
+
+          {pendingSamples.map((x) => {
+            const t = findTest(x.testType);
+            return (
+              <div key={x.sampleId} className="flex items-start justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm">
+                <div className="min-w-0">
+                  <p className="font-semibold text-gray-800">{t?.label ?? x.testType} <span className="text-gray-500 font-normal">· {cancerName(x.cancerType)}</span></p>
+                  <p className="text-xs text-gray-600">{x.sampleRef} · {t?.kind === "procedure" ? "performed" : "taken"} {prettyDate(x.sampleDate)}</p>
+                </div>
+                <span className="shrink-0 text-xs font-semibold px-2 py-1 rounded-full bg-amber-100 text-amber-800">Awaiting result</span>
+              </div>
+            );
+          })}
+
+          {testResults.map((x) => {
+            const t = findTest(x.testType);
+            const extra: string[] = [];
+            if (x.resultValue != null && t?.value) extra.push(`${x.resultValue} ${t.value.unit}`);
+            if (x.resultDetail && t?.detail) {
+              extra.push(`${t.detail.label}: ${t.detail.options.find((o) => o.value === x.resultDetail)?.label ?? x.resultDetail}`);
+            }
+            if (x.resultMeta?.runStatus && x.resultMeta.runStatus !== "Valid") extra.push(`Run ${String(x.resultMeta.runStatus).toLowerCase()}`);
+            return (
+              <div key={x.sampleId} className="rounded-xl border border-gray-100 dark:border-gray-700 p-3 text-sm">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="font-semibold text-gray-800 dark:text-gray-100">{t?.label ?? x.testType} <span className="text-gray-500 font-normal">· {cancerName(x.cancerType)}</span></p>
+                    <p className="text-xs text-gray-500">
+                      {x.sampleRef} · {t?.kind === "procedure" ? "performed" : "taken"} {prettyDate(x.sampleDate)} · released {prettyDate(x.resultDate)}
+                    </p>
+                    {extra.length > 0 && <p className="text-xs text-gray-600 mt-1">{extra.join(" · ")}</p>}
+                    {x.resultNotes && <p className="text-xs text-gray-600 mt-1">{x.resultNotes}</p>}
+                  </div>
+                  <span className={`shrink-0 max-w-[45%] text-xs font-semibold px-2 py-1 rounded-full ${severityChip[x.resultSeverity || "neutral"]}`}>
+                    {resultLabel(t, x.result)}
+                  </span>
+                </div>
+                {x.hasAttachment && (
+                  <button type="button" className="mt-2 inline-flex items-center gap-1 text-xs font-semibold text-green-700 underline" onClick={() => setViewing(x)}>
+                    <Paperclip className="w-3 h-3" /> View printout
+                  </button>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
       {/* Visit History */}
       <div className="mb-8">
         <div className="flex items-center justify-between mb-5">
@@ -769,18 +937,52 @@ export default function ClientSummaryPage() {
                       )}
                     </div>
 
-                    <Button
-                      size="small"
-                      layout="outline"
-                      className="rounded-xl w-full md:w-auto"
-                      onClick={() => openVisitScreening(visit.visitId)}
-                    >
-                      <span className="inline-flex items-center justify-center gap-2">
-                        <Stethoscope className="w-4 h-4" />
-                        Manage Screenings
-                      </span>
-                    </Button>
+                    <div className="flex flex-col sm:flex-row md:flex-col gap-2 w-full md:w-auto">
+                      <Button
+                        size="small"
+                        layout="outline"
+                        className="rounded-xl w-full md:w-auto"
+                        onClick={() => setOpenVisits((p) => ({ ...p, [visit.visitId]: !p[visit.visitId] }))}
+                      >
+                        {openVisits[visit.visitId] ? "Hide findings" : "View findings"}
+                      </Button>
+                      <Button
+                        size="small"
+                        layout="outline"
+                        className="rounded-xl w-full md:w-auto"
+                        onClick={() => openVisitScreening(visit.visitId)}
+                      >
+                        <span className="inline-flex items-center justify-center gap-2">
+                          <Stethoscope className="w-4 h-4" />
+                          Manage Screenings
+                        </span>
+                      </Button>
+                    </div>
                   </div>
+
+                  {openVisits[visit.visitId] && (
+                    <div className="mt-5 pt-5 border-t border-gray-100 dark:border-gray-700 space-y-6">
+                      {(["cervical", "breast", "prostate", "colorectal", "liver"] as CancerType[]).map((ct) => {
+                        const rec = (visit as any)[`${ct}Screening`];
+                        if (!rec) return null;
+                        return (
+                          <div key={ct}>
+                            <h5 className="text-sm font-semibold text-gray-800 dark:text-gray-100 mb-2">{cancerLabel(ct)} screening</h5>
+                            <RecordFields
+                              sections={buildSections(SCREENING_GROUPS[ct] || [], rec, { includeOther: true })}
+                              empty="No findings recorded."
+                            />
+                          </div>
+                        );
+                      })}
+                      {visit.examination && (
+                        <div>
+                          <h5 className="text-sm font-semibold text-gray-800 dark:text-gray-100 mb-2">Physical examination</h5>
+                          <RecordFields sections={buildSections([], visit.examination, { includeOther: true })} empty="No examination recorded." />
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               );
             })
@@ -844,6 +1046,13 @@ export default function ClientSummaryPage() {
           fetchClient();
         }}
       />
+      {viewing && (
+        <ResultAttachmentViewer
+          sampleId={viewing.sampleId}
+          title={`${findTest(viewing.testType)?.label ?? "Result"} · ${viewing.sampleRef}`}
+          onClose={() => setViewing(null)}
+        />
+      )}
     </Layout>
   );
 }

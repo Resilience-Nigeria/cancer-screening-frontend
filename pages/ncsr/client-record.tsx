@@ -13,12 +13,38 @@ import {
   AlertTriangle,
   CalendarDays,
   Building2,
+  Pencil,
+  Activity,
+  FileText,
+  FlaskConical,
+  Paperclip,
 } from "lucide-react";
 
 import Layout from "../containers/Layout";
 import PageTitle from "../components/Typography/PageTitle";
 import api from "../../lib/api";
-import { cancerLabel } from "../../lib/screeningWizardConfig";
+import {
+  cancerLabel,
+  SCREENING_GROUPS,
+  getRiskGroupsFor,
+  dedupeFields,
+  hydrateRiskProfile,
+  CancerType,
+} from "../../lib/screeningWizardConfig";
+import { CERVICAL_RISK_GROUPS } from "../../lib/cervicalRisk";
+import RecordFields from "../components/RecordFields";
+import ResultAttachmentViewer from "../components/ResultAttachmentViewer";
+import { buildSections } from "../../lib/recordDisplay";
+import { findTest, resultLabel, cancerName } from "../../lib/screeningTests";
+
+const ALL_CANCERS: CancerType[] = ["breast", "cervical", "prostate", "colorectal", "liver"];
+
+const SEVERITY_CHIP: Record<string, string> = {
+  normal: "bg-green-100 text-green-800",
+  abnormal: "bg-amber-100 text-amber-800",
+  urgent: "bg-red-100 text-red-700",
+  neutral: "bg-gray-100 text-gray-700",
+};
 
 // ---------------------------------------------------------------------------
 // Small display primitives
@@ -79,6 +105,13 @@ const OUTCOME_TONE: Record<string, string> = {
   urgent_referral: "bg-red-100 text-red-800",
 };
 
+const OUTCOME_NAME: Record<string, string> = {
+  normal: "Normal",
+  low_suspicion: "Low suspicion",
+  suspicious: "Referral for further diagnosis",
+  urgent_referral: "Urgent referral for treatment",
+};
+
 const RESULT_TONE: Record<string, string> = {
   negative: "bg-green-100 text-green-800",
   non_suspicious: "bg-green-100 text-green-800",
@@ -106,40 +139,11 @@ const SCREENING_KEYS: { type: string; relation: string }[] = [
   { type: "liver", relation: "liverScreening" },
 ];
 
-const SCREENING_LABEL_OVERRIDES: Record<string, string> = {
-  screeningDate: "Screening Date",
-  screeningResult: "Result",
-  method: "Method",
-  biradsScore: "BI-RADS Score",
-  leftBiradsScore: "Left BI-RADS",
-  rightBiradsScore: "Right BI-RADS",
-  breastDensity: "Breast Density",
-  leftBreastDensity: "Left Density",
-  rightBreastDensity: "Right Density",
-  leftCbeFinding: "Left CBE Finding",
-  rightCbeFinding: "Right CBE Finding",
-  leftImagingFinding: "Left Imaging Finding",
-  rightImagingFinding: "Right Imaging Finding",
-  biopsyDone: "Biopsy Done",
-  biopsyResult: "Biopsy Result",
-  histologyResult: "Histology Result",
-  ihcRequested: "IHC Requested",
-  ihcResult: "IHC Result",
-  biopsyBookingDate: "Biopsy Booking Date",
-  biopsyBookingNotes: "Biopsy Notes",
-};
-
-const SCREENING_SKIP_KEYS = new Set([
-  "id", "visitId", "clientId", "created_at", "updated_at",
-  "biopsyBookingFacilityId",
-]);
-
 function ScreeningRecordCard({ type, record }: { type: string; record: any }) {
-  const entries = Object.entries(record).filter(
-    ([k, v]) => !SCREENING_SKIP_KEYS.has(k) && v !== null && v !== undefined && v !== ""
-  );
-
-  if (entries.length === 0) return null;
+  // Built from the same field definitions the clinical screening page uses, so every answer collected
+  // there is shown here. Anything stored but not in those definitions goes under "Other details".
+  const sections = buildSections(SCREENING_GROUPS[type as CancerType] || [], record, { includeOther: true });
+  if (sections.length === 0) return null;
 
   const result = record.screeningResult as string | undefined;
 
@@ -151,15 +155,7 @@ function ScreeningRecordCard({ type, record }: { type: string; record: any }) {
         </p>
         {result && <Pill label={capitalize(result)} tone={RESULT_TONE[result]} />}
       </div>
-      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-        {entries.map(([k, v]) => (
-          <Field
-            key={k}
-            label={SCREENING_LABEL_OVERRIDES[k] || capitalize(k)}
-            value={typeof v === "boolean" ? fmt(v) : k.toLowerCase().includes("date") ? fmtDate(v) : String(v)}
-          />
-        ))}
-      </div>
+      <RecordFields sections={sections} />
     </div>
   );
 }
@@ -173,9 +169,25 @@ export default function ClientRecordPage() {
 
   const [client, setClient] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [testResults, setTestResults] = useState<any[]>([]);
+  const [pendingSamples, setPendingSamples] = useState<any[]>([]);
+  const [viewing, setViewing] = useState<any>(null);
 
   useEffect(() => {
     if (!clientId) return;
+    // Lab samples and results (with printout images) recorded on the Samples & Test Results pages
+    (async () => {
+      try {
+        const [done, waiting] = await Promise.all([
+          api.get("/screening-samples/results", { params: { clientId, perPage: 50 } }),
+          api.get("/screening-samples", { params: { status: "collected", clientId } }),
+        ]);
+        setTestResults(done.data?.results ?? []);
+        setPendingSamples(waiting.data?.samples ?? []);
+      } catch {
+        // supplementary; the rest of the record still shows
+      }
+    })();
     (async () => {
       setLoading(true);
       try {
@@ -241,6 +253,27 @@ export default function ClientRecordPage() {
             </span>
           )}
         </div>
+
+        {/* Each button opens the matching section of the clinical screening page for this client */}
+        <div className="mt-4 flex flex-wrap gap-2">
+          <Link href={`/ncsr/clinical-screening?search=${encodeURIComponent(client.clientId)}`} className="inline-flex items-center gap-2 rounded-2xl bg-green-700 hover:bg-green-800 text-white text-sm font-semibold px-4 h-10">
+            <Stethoscope className="w-4 h-4" /> New Screening
+          </Link>
+          <Link href={`/ncsr/clinical-screening?search=${encodeURIComponent(client.clientId)}&edit=1`} className="inline-flex items-center gap-2 rounded-2xl border border-gray-300 dark:border-gray-600 text-sm font-semibold px-4 h-10 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700">
+            <Pencil className="w-4 h-4" /> Edit Details
+          </Link>
+          <Link href={`/ncsr/clinical-screening?search=${encodeURIComponent(client.clientId)}&step=risk`} className="inline-flex items-center gap-2 rounded-2xl border border-gray-300 dark:border-gray-600 text-sm font-semibold px-4 h-10 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700">
+            <Activity className="w-4 h-4" /> {riskProfile ? "Edit Risk Profile" : "Add Risk Profile"}
+          </Link>
+          {visits.length > 0 && (
+            <Link
+              href={`/ncsr/clinical-screening?search=${encodeURIComponent(client.clientId)}&step=outcome&visitId=${Math.max(...visits.map((v: any) => Number(v.visitId) || 0))}`}
+              className="inline-flex items-center gap-2 rounded-2xl border border-gray-300 dark:border-gray-600 text-sm font-semibold px-4 h-10 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700"
+            >
+              <FileText className="w-4 h-4" /> {visits.some((v: any) => v.overallOutcome) ? "Edit Outcome" : "Add Outcome"}
+            </Link>
+          )}
+        </div>
       </div>
 
       {/* Biodata & Contact */}
@@ -250,12 +283,18 @@ export default function ClientRecordPage() {
           <Field label="Sex" value={capitalize(client.gender)} />
           <Field label="Date of Birth" value={fmtDate(client.dateOfBirth)} />
           <Field label="Age" value={client.age ? `${client.age} yrs` : "—"} />
-          <Field label="Phone Number" value={client.phoneNumber} />
+          <Field label="Hospital Number" value={client.hospitalNumber} />
+          <Field label={client.phoneNotClients ? "Phone Number (caregiver's)" : "Phone Number"} value={client.phoneNumber} />
+          <Field label="Caregiver's Name" value={client.caregiverName} />
+          <Field label="Caregiver's Phone" value={client.caregiverPhoneNumber} />
           <Field label="Email" value={client.email} />
+          <Field label="Marital Status" value={capitalize(client.maritalStatus)} />
+          <Field label="Religion" value={client.religion === "other" && client.religionOther ? client.religionOther : capitalize(client.religion)} />
           <Field label="Occupation" value={client.occupation} />
           <Field label="NIN" value={client.nin} />
           <Field label="Registration Date" value={fmtDate(client.registrationDate)} />
           <Field label="Screening Category" value={capitalize(client.screeningCategory)} />
+          {client.otpSkipped && <Field label="OTP Verification" value={`Skipped${client.otpSkipReason ? ` (${client.otpSkipReason})` : ""}`} />}
         </FieldGrid>
       </Card>
 
@@ -286,52 +325,86 @@ export default function ClientRecordPage() {
           <p className="text-sm text-gray-400">No risk profile on file yet.</p>
         ) : (
           <div className="space-y-5">
-            <FieldGrid>
-              <Field label="Family History of Cancer" value={capitalize(riskProfile.familyHistory)} />
-              <Field label="Smoking Status" value={capitalize(riskProfile.smokingStatus)} />
-              <Field label="Alcohol Consumption" value={capitalize(riskProfile.alcoholConsumption)} />
-              <Field label="Weight" value={riskProfile.weightKg ? `${riskProfile.weightKg} kg` : "—"} />
-              <Field label="Height" value={riskProfile.heightCm ? `${riskProfile.heightCm} cm` : "—"} />
-              <Field label="BMI" value={riskProfile.bmi} />
-              <Field label="HIV Status" value={capitalize(riskProfile.hivStatus)} />
-              <Field label="Hepatitis B Status" value={capitalize(riskProfile.hbvStatus)} />
-              <Field label="Hepatitis C Status" value={capitalize(riskProfile.hcvStatus)} />
-              <Field
-                label="Comorbidities"
-                value={
-                  Array.isArray(riskProfile.comorbiditiesJson) && riskProfile.comorbiditiesJson.length > 0
-                    ? riskProfile.comorbiditiesJson.join(", ")
-                    : "—"
-                }
-              />
-            </FieldGrid>
-
-            {(riskProfile.ageAtFirstMenstruation || riskProfile.ageAtMenopause || riskProfile.breastfeedingHistory || riskProfile.previousBreastSurgery) && (
-              <div className="pt-4 border-t border-gray-100 dark:border-gray-700">
-                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Women's / Breast Health</p>
-                <FieldGrid>
-                  <Field label="Age at First Menstruation" value={riskProfile.ageAtFirstMenstruation} />
-                  <Field label="Age at Menopause" value={riskProfile.ageAtMenopause} />
-                  <Field label="Breastfeeding History" value={capitalize(riskProfile.breastfeedingHistory)} />
-                  <Field label="Breastfeeding Duration" value={riskProfile.breastfeedingDuration ? `${riskProfile.breastfeedingDuration} months` : "—"} />
-                  <Field label="Previous Breast Surgery" value={capitalize(riskProfile.previousBreastSurgery)} />
-                </FieldGrid>
+            <RecordFields
+              sections={buildSections(
+                dedupeFields([
+                  ...getRiskGroupsFor(ALL_CANCERS, client.gender),
+                  ...(client.gender === "female" ? CERVICAL_RISK_GROUPS : []),
+                ]),
+                hydrateRiskProfile(riskProfile),
+                { includeOther: true, skip: ["comorbidities", "comorbiditiesOther"] }
+              )}
+            />
+            {Array.isArray(riskProfile.comorbiditiesJson) && riskProfile.comorbiditiesJson.length > 0 && (
+              <div>
+                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Comorbidities</p>
+                <div className="flex flex-wrap gap-2">
+                  {riskProfile.comorbiditiesJson.map((c: string, i: number) => (
+                    <Pill key={i} label={c} />
+                  ))}
+                </div>
               </div>
             )}
-
-            <div className="pt-4 border-t border-gray-100 dark:border-gray-700">
-              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Medical History — Confirmed</p>
-              <FieldGrid>
-                <Field label="Previous Cancer" value={capitalize(riskProfile.previousCancer)} />
-                <Field label="Previous Cancer Details" value={riskProfile.previousCancerDetails} />
-                <Field label="Previous Surgeries" value={capitalize(riskProfile.previousSurgeries)} />
-                <Field label="Previous Surgeries Details" value={riskProfile.previousSurgeriesDetails} />
-                <Field label="Previous Screening" value={capitalize(riskProfile.previousScreening)} />
-                <Field label="Previous Screening Details" value={riskProfile.previousScreeningDetails} />
-              </FieldGrid>
-            </div>
           </div>
         )}
+      </Card>
+
+      {/* Samples & test results, including the uploaded machine printout */}
+      <Card title="Samples & Test Results" icon={<FlaskConical className="w-5 h-5" />}>
+        {pendingSamples.length === 0 && testResults.length === 0 ? (
+          <p className="text-sm text-gray-400">No samples or tests recorded yet.</p>
+        ) : (
+          <div className="space-y-3">
+            {pendingSamples.map((x) => {
+              const t = findTest(x.testType);
+              return (
+                <div key={x.sampleId} className="flex items-start justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm">
+                  <div className="min-w-0">
+                    <p className="font-semibold text-gray-800">{t?.label ?? x.testType} <span className="text-gray-500 font-normal">· {cancerName(x.cancerType)}</span></p>
+                    <p className="text-xs text-gray-600">{x.sampleRef} · {t?.kind === "procedure" ? "performed" : "taken"} {fmtDate(x.sampleDate)}</p>
+                  </div>
+                  <Pill label="Awaiting result" tone="bg-amber-100 text-amber-800" />
+                </div>
+              );
+            })}
+            {testResults.map((x) => {
+              const t = findTest(x.testType);
+              const extra: string[] = [];
+              if (x.resultValue != null && t?.value) extra.push(`${x.resultValue} ${t.value.unit}`);
+              if (x.resultDetail && t?.detail) extra.push(`${t.detail.label}: ${t.detail.options.find((o) => o.value === x.resultDetail)?.label ?? x.resultDetail}`);
+              if (x.resultMeta?.runStatus && x.resultMeta.runStatus !== "Valid") extra.push(`Run ${String(x.resultMeta.runStatus).toLowerCase()}`);
+              if (x.resultMeta?.controlCt != null) extra.push(`Control Ct ${x.resultMeta.controlCt}`);
+              return (
+                <div key={x.sampleId} className="rounded-xl border border-gray-100 dark:border-gray-700 p-3 text-sm">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="font-semibold text-gray-800 dark:text-gray-100">{t?.label ?? x.testType} <span className="text-gray-500 font-normal">· {cancerName(x.cancerType)}</span></p>
+                      <p className="text-xs text-gray-500">
+                        {x.sampleRef} · {t?.kind === "procedure" ? "performed" : "taken"} {fmtDate(x.sampleDate)} · released {fmtDate(x.resultDate)}
+                      </p>
+                      {extra.length > 0 && <p className="text-xs text-gray-600 mt-1">{extra.join(" · ")}</p>}
+                      {x.resultNotes && <p className="text-xs text-gray-600 mt-1">{x.resultNotes}</p>}
+                    </div>
+                    <span className={`shrink-0 text-xs font-semibold px-2 py-1 rounded-full ${SEVERITY_CHIP[x.resultSeverity || "neutral"]}`}>
+                      {resultLabel(t, x.result)}
+                    </span>
+                  </div>
+                  {x.hasAttachment && (
+                    <button type="button" className="mt-2 inline-flex items-center gap-1 text-xs font-semibold text-green-700 underline" onClick={() => setViewing(x)}>
+                      <Paperclip className="w-3 h-3" /> View result image
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+        <div className="mt-4 flex flex-wrap gap-3 text-xs font-semibold">
+          <Link href="/ncsr/screening-tests-page" className="text-green-700 underline">Record sample / result</Link>
+          {testResults.length > 0 && (
+            <Link href={`/ncsr/test-results?clientId=${encodeURIComponent(client.clientId)}`} className="text-green-700 underline">Open in results list</Link>
+          )}
+        </div>
       </Card>
 
       {/* Visit History */}
@@ -357,7 +430,7 @@ export default function ClientRecordPage() {
                 <span>{capitalize(visit.visitType)}</span>
               </div>
               {visit.overallOutcome && (
-                <Pill label={capitalize(visit.overallOutcome)} tone={OUTCOME_TONE[visit.overallOutcome]} />
+                <Pill label={OUTCOME_NAME[visit.overallOutcome] ?? capitalize(visit.overallOutcome)} tone={OUTCOME_TONE[visit.overallOutcome]} />
               )}
             </div>
 
@@ -386,6 +459,15 @@ export default function ClientRecordPage() {
                     <Field label="Lymph Node Site" value={visit.examination.enlargedLymphNodesSite} />
                     <Field label="Jaundice" value={fmt(visit.examination.jaundice)} />
                   </FieldGrid>
+                  {(() => {
+                    const shown = ["heightCm","weightKg","bmi","bloodPressureSystolic","bloodPressureDiastolic","pulse","temperatureCelsius","pallor","weightLossNoted","enlargedLymphNodes","enlargedLymphNodesSite","jaundice","notes"];
+                    const extra = buildSections([], visit.examination, { includeOther: true, skip: shown });
+                    return extra.length > 0 ? (
+                      <div className="mt-3 pt-3 border-t border-gray-100 dark:border-gray-700">
+                        <RecordFields sections={extra} />
+                      </div>
+                    ) : null;
+                  })()}
                   {visit.examination.notes && (
                     <div className="mt-3 pt-3 border-t border-gray-100 dark:border-gray-700">
                       <Field label="Notes" value={visit.examination.notes} />
@@ -413,7 +495,7 @@ export default function ClientRecordPage() {
                 <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Screening Outcome</p>
                 <div className="rounded-xl border border-gray-100 dark:border-gray-700 p-4">
                   <FieldGrid>
-                    <Field label="Outcome" value={capitalize(visit.overallOutcome)} />
+                    <Field label="Outcome" value={OUTCOME_NAME[visit.overallOutcome] ?? capitalize(visit.overallOutcome)} />
                     <Field label="Repeat Screening Date" value={fmtDate(visit.repeatScreeningDate)} />
                     <Field label="Classified At" value={fmtDate(visit.outcomeClassifiedAt)} />
                   </FieldGrid>
@@ -451,6 +533,13 @@ export default function ClientRecordPage() {
               ))}
           </FieldGrid>
         </Card>
+      )}
+      {viewing && (
+        <ResultAttachmentViewer
+          sampleId={viewing.sampleId}
+          title={`${findTest(viewing.testType)?.label ?? "Result"} · ${viewing.sampleRef}`}
+          onClose={() => setViewing(null)}
+        />
       )}
     </Layout>
   );
