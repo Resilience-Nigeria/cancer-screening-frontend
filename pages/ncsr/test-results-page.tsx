@@ -49,7 +49,7 @@ function describe(s: any) {
     const opt = t.detail.options.find((o) => o.value === s.resultDetail);
     parts.push(`${t.detail.label}: ${opt?.label ?? s.resultDetail}`);
   }
-  if (s.resultMeta?.riskCategory) parts.push(hpvRiskLabel(s.resultMeta.riskCategory));
+  if (s.resultMeta?.riskCategory) parts.push(`Viral load: ${hpvRiskLabel(s.resultMeta.riskCategory).toLowerCase()}`);
   return parts;
 }
 

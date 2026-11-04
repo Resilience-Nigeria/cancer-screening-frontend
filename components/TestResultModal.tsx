@@ -3,7 +3,7 @@ import { X, Loader2, Building2, Download, ExternalLink } from "lucide-react";
 import { Button } from "@roketid/windmill-react-ui";
 
 import api from "../lib/api";
-import { hpvRiskLabel } from "../lib/hpvRisk";
+import { HPV_TRUENAT_CATEGORIES, hpvRiskLabel } from "../lib/hpvRisk";
 import { findTest, resultLabel, cancerName } from "../lib/screeningTests";
 
 const chip: Record<string, string> = {
@@ -156,11 +156,15 @@ export default function TestResultModal({
             <Row label="Result released" value={sample.resultDate ? fmt(sample.resultDate) : null} />
             {m.riskCategory && (
               <Row
-                label="HPV risk category"
-                value={`${hpvRiskLabel(String(m.riskCategory))}${m.riskOverridden === "yes" && m.riskSuggested ? ` (changed from suggested ${hpvRiskLabel(String(m.riskSuggested)).toLowerCase()})` : ""}`}
+                label="Viral load concentration"
+                value={hpvRiskLabel(String(m.riskCategory))}
               />
             )}
-            {Object.entries(m).filter(([k]) => !["riskCategory", "riskSuggested", "riskOverridden"].includes(k)).map(([k, v]) => (
+            {sample.testType === "hpv_dna" && m.hrCategory && (
+              <Row label="Truenat category" value={HPV_TRUENAT_CATEGORIES.find((c) => c.value === m.hrCategory)?.label ?? String(m.hrCategory)} />
+            )}
+            {sample.testType === "hpv_dna" && m.ct && <Row label="Ct value" value={String(m.ct)} />}
+            {Object.entries(m).filter(([k]) => !["riskCategory", "riskSuggested", "riskOverridden", "hrCategory", "ct", "hr1618", "level1618", "ct1618", "hrOther", "levelOther", "ctOther"].includes(k)).map(([k, v]) => (
               <Row key={k} label={human(k.replace(/([a-z])([A-Z])/g, "$1 $2"))} value={String(v)} />
             ))}
             {sample.resultNotes && <div className="sm:col-span-2"><Row label="Notes" value={sample.resultNotes} /></div>}

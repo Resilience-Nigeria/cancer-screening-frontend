@@ -52,8 +52,6 @@ export function deriveResult(t: ScreeningTest, value: number): string | null {
 export const resultLabel = (t: ScreeningTest | undefined, result?: string | null) =>
   t?.results.find((r) => r.value === result)?.label ?? result ?? "";
 
-import { isLowRiskType } from "./hpvRisk";
-
 const ABLATION_GENOTYPES = ["16", "18", "35", "45", "grp_16_18", "grp_both"];
 
 /** True when a machine-run field (e.g. Run status = Invalid) makes the result inconclusive. */
@@ -82,12 +80,6 @@ export function nextStep(
       return {
         tone: "warn",
         text: "Positive for HPV 31/33/35/45/52/58. This test cannot tell 35/45 apart from the rest of the group, so continue to colposcopy booking in the clinical screening.",
-      };
-    }
-    if (isLowRiskType(detail)) {
-      return {
-        tone: "info",
-        text: `HPV ${detail} is a low-risk (non-oncogenic) type. It does not need colposcopy or ablation. Counsel the client and re-screen at the routine interval.`,
       };
     }
     const label = detail === "grp_16_18" || detail === "grp_both" ? "HPV 16/18" : `HPV ${detail}`;

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/router";
 import {
   Button,
@@ -14,6 +14,7 @@ import {
   UserPlus,
   CheckCircle,
   AlertTriangle,
+  Lock,
 } from "lucide-react";
 import toast from "react-hot-toast";
 
@@ -53,7 +54,7 @@ import VisitDetailsFields, { initialVisitMeta, ageFromDob, VisitMeta } from "../
 import { CERVICAL_RISK_GROUPS, cervicalRiskPatch } from "../../lib/cervicalRisk";
 import DateOfBirthField from "../components/DateOfBirthField";
 import BiodataExtraFields from "../components/BiodataExtraFields";
-import LabTestsPanel from "../components/LabTestsPanel";
+import LabTestsPanel from "../../components/LabTestsPanel";
 import SearchableSelect from "../../components/SearchableSelect";
 import { getPreviousRoute, routeLabel } from "../../lib/routeHistory";
 
@@ -290,6 +291,10 @@ export default function ClinicalScreeningPage() {
   const [bloomReference, setBloomReference] = useState<{ registration: any; selfAssessment: any } | null>(null);
   const [duplicateMatch, setDuplicateMatch] = useState<{ field: "phone" | "email"; client: any } | null>(null);
   const [incompleteVisits, setIncompleteVisits] = useState<any[]>([]);
+  // Released HPV lab result carried over when the user arrives from the results page ("Continue" -> ?fromLab=hpv)
+  const [hpvLab, setHpvLab] = useState({ hasSample: false, released: false });
+  const [labHpv, setLabHpv] = useState<null | { sampleId?: number; hpvResult: string; hpvGenotype: string; hpvSampleDate: string; hpvResultDate: string }>(null);
+  const labHpvDone = useRef({ types: false, fields: false });
   // Set when the page is opened from the Client Record to edit just one section (?step=risk or ?step=outcome).
   // After saving, the user goes straight back to the record instead of through the rest of the wizard.
   const [focus, setFocus] = useState<null | "risk" | "outcome">(null);
@@ -329,6 +334,25 @@ export default function ClinicalScreeningPage() {
     outcome.overallOutcome === "suspicious" || outcome.overallOutcome === "urgent_referral";
 
   const currentKey = STEPS[stepIndex];
+
+  // Coming from the HPV result page: tick Cervical, tick the HPV method and fill in the lab result,
+  // at the point the user reaches those steps (earlier steps reset these when a new visit starts).
+  useEffect(() => {
+    if (!labHpv) return;
+    if (currentKey === "cancerTypeSelect" && !labHpvDone.current.types) {
+      labHpvDone.current.types = true;
+      setCancerTypes((prev) => (prev.includes("cervical" as CancerType) ? prev : [...prev, "cervical" as CancerType]));
+    }
+    if (currentKey === "screening" && !labHpvDone.current.fields) {
+      labHpvDone.current.fields = true;
+      setScreenings((prev) => {
+        const cur = prev.cervical || {};
+        if (cur.hpvResult) return prev;   // never overwrite what is already recorded
+        return { ...prev, cervical: { ...cur, methodHpv: true, ...labHpv } };
+      });
+      toast.success("HPV method selected and the lab result filled in.");
+    }
+  }, [labHpv, currentKey]);
 
   const clientAge = useMemo(() => ageFromDob(biodata.dateOfBirth), [biodata.dateOfBirth]);
 
@@ -568,6 +592,8 @@ export default function ClinicalScreeningPage() {
 
   // Clears everything that belongs to the previously opened client.
   function resetClientState() {
+    setLabHpv(null);
+    setHpvLab({ hasSample: false, released: false });
     setClientId("");
     setVisitId(null);
     setBiodata(blankBiodata());
@@ -748,6 +774,28 @@ export default function ClinicalScreeningPage() {
           setFocus("outcome");
           goTo("outcome");
           return;
+        }
+
+        // Arrived from the HPV result page: remember the released result so it can be filled in.
+        if (router.query.fromLab === "hpv" && !data?.offline) {
+          try {
+            const { data: lab } = await api.get("/screening-samples", {
+              params: { status: "result_released", clientId: found.clientId, cancerType: "cervical" },
+            });
+            const r = (lab?.samples ?? []).find((x: any) => x.testType === "hpv_dna");
+            if (r) {
+              labHpvDone.current = { types: false, fields: false };
+              setLabHpv({
+                sampleId: r.sampleId,
+                hpvResult: r.result || "",
+                hpvGenotype: r.resultDetail || "",
+                hpvSampleDate: String(r.sampleDate).slice(0, 10),
+                hpvResultDate: String(r.resultDate).slice(0, 10),
+              });
+            }
+          } catch {
+            /* the lab panel on the screening step still fills it in */
+          }
         }
 
         // Check for an in-progress visit
@@ -2033,7 +2081,24 @@ export default function ClinicalScreeningPage() {
               return (
                 <div key={ct} className="border-t border-gray-100 dark:border-gray-700 pt-6 first:border-t-0 first:pt-0">
                   <p className="text-sm font-bold text-green-700 uppercase tracking-wide mb-3">{cancerLabel(ct)}</p>
+                  {ct === "cervical" && hpvLab.released && (
+                    <div className="mb-3 rounded-xl border border-green-200 bg-green-50 text-green-900 text-sm p-3 flex gap-2">
+                      <Lock className="w-4 h-4 mt-0.5 shrink-0" />
+                      <span>
+                        The HPV result comes from the testing module, so the HPV fields are locked. To correct it, edit the result on the Samples &amp; Test Results page.
+                      </span>
+                    </div>
+                  )}
                   <GroupedForm
+                    lockedFields={
+                      ct !== "cervical"
+                        ? undefined
+                        : hpvLab.released
+                        ? ["methodHpv", "hpvResult", "hpvGenotype", "hpvSampleDate", "hpvResultDate"]
+                        : hpvLab.hasSample
+                        ? ["hpvSampleDate"]
+                        : undefined
+                    }
                     groups={groupsWithFacilities}
                     values={screenings[ct] || {}}
                     errors={screeningErrors[ct] || {}}
@@ -2051,6 +2116,9 @@ export default function ClinicalScreeningPage() {
                     <LabTestsPanel
                       clientId={clientId}
                       cancerType={ct}
+                      visitId={visitId}
+                      acceptSampleId={labHpv?.sampleId ?? null}
+                      onHpvState={setHpvLab}
                       hpvFormEmpty={ct === "cervical" && !screenings.cervical?.hpvResult}
                       onHpvResult={(v) =>
                         setScreenings((prev) => ({

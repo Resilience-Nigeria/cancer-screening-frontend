@@ -10,7 +10,7 @@ import api from "../../lib/api";
 import { friendlyError } from "../../lib/apiError";
 import { ageFromDob } from "../components/VisitDetailsFields";
 import ResultAttachmentViewer from "../components/ResultAttachmentViewer";
-import { HPV_RISK_OPTIONS, suggestHpvRisk, hpvRiskLabel, hpvRiskTone } from "../../lib/hpvRisk";
+import { HPV_RISK_OPTIONS, HPV_TRUENAT_CATEGORIES, VIRAL_LOAD_LABEL, hpvGroupCode, hpvRiskLabel } from "../../lib/hpvRisk";
 import { ACCEPTED_ATTACHMENTS, MAX_ATTACHMENT_MB, prepareImage } from "../../lib/imageUpload";
 import {
   CANCER_TYPES,
@@ -31,6 +31,14 @@ const CLINICAL_SCREENING_PATH = "/ncsr/clinical-screening";
 
 type Tab = "collect" | "results";
 type StatusFilter = "collected" | "result_released";
+
+// Written out in full so Tailwind keeps these classes.
+const LOAD_TONE: Record<string, string> = {
+  very_low: "bg-green-100 text-green-800 border-green-500",
+  low: "bg-yellow-100 text-yellow-800 border-yellow-500",
+  medium: "bg-orange-100 text-orange-800 border-orange-500",
+  high: "bg-red-100 text-red-700 border-red-500",
+};
 
 const todayStr = () => new Date().toISOString().slice(0, 10);
 
@@ -285,10 +293,12 @@ export default function ScreeningTestsPage() {
   const runInvalid = !!selectedTest && inconclusiveRun(selectedTest, resultForm.meta);
   const effectiveResult = runInvalid ? "" : selectedTest?.value ? derived || "" : resultForm.result;
   const isHpvPositive = selectedTest?.key === "hpv_dna" && effectiveResult === "positive";
-  const suggestedRisk = isHpvPositive ? suggestHpvRisk(resultForm.detail) : "";
-  const riskOverridden = !!suggestedRisk && !!resultForm.meta.riskCategory && resultForm.meta.riskCategory !== suggestedRisk;
+  // Truenat cannot name the genotype: it reports a category (16/18, 31/33/35/45/52/58, or others) and a level.
+  // Other platforms name the genotype directly.
+  const useGroups = isHpvPositive && resultForm.meta.assay !== "Other platform";
+  const groupCode = useGroups ? hpvGroupCode(resultForm.meta) : "";
+  const effectiveDetail = useGroups ? groupCode : resultForm.detail;
   const needsDetail = !!selectedTest?.detail && selectedTest.detail.requiredFor.includes(effectiveResult);
-
   async function saveResult() {
     if (!selected || !selectedTest) return;
     const sampleDate = String(selected.sampleDate).slice(0, 10);
@@ -316,16 +326,16 @@ export default function ScreeningTestsPage() {
       toast.error("Select the result.");
       return;
     }
-    if (needsDetail && !resultForm.detail) {
+    if (useGroups && !groupCode) {
+      toast.error("Select the Truenat category: HPV-HR 16/18, HPV-HR 31/33/35/45/52/58 or Others.");
+      return;
+    }
+    if (needsDetail && !effectiveDetail) {
       toast.error(`Select the ${selectedTest.detail!.label.toLowerCase()}.`);
       return;
     }
     if (isHpvPositive && !resultForm.meta.riskCategory) {
-      toast.error("Select the HPV risk category (low, medium or high).");
-      return;
-    }
-    if (riskOverridden && resultForm.meta.riskOverridden !== "yes") {
-      toast.error("Tick the box to confirm you are changing the suggested risk category.");
+      toast.error("Select the viral load concentration (very low, low, medium or high).");
       return;
     }
     if (!resultForm.resultDate) {
@@ -349,15 +359,18 @@ export default function ScreeningTestsPage() {
       };
       if (selectedTest.extraFields?.length || isHpvPositive) {
         const meta: Record<string, any> = { ...resultForm.meta };
-        if (!isHpvPositive) { delete meta.riskCategory; delete meta.riskSuggested; delete meta.riskOverridden; }
-        else if (riskOverridden) meta.riskSuggested = suggestedRisk;     // keep a record of what the system suggested
-        else { delete meta.riskSuggested; delete meta.riskOverridden; }
+        if (!isHpvPositive) {
+          for (const k of ["riskCategory", "hrCategory", "ct", "riskSuggested", "riskOverridden", "hr1618", "level1618", "ct1618", "hrOther", "levelOther", "ctOther"]) delete meta[k];
+        } else {
+          for (const k of ["riskSuggested", "riskOverridden", "hr1618", "level1618", "ct1618", "hrOther", "levelOther", "ctOther"]) delete meta[k];
+          if (!useGroups) { delete meta.hrCategory; delete meta.ct; }
+        }
         payload.resultMeta = meta;
       }
       if (runInvalid) payload.result = null;
       else if (selectedTest.value) payload.resultValue = parseFloat(resultForm.resultValue);
       else payload.result = resultForm.result;
-      if (selectedTest.detail && needsDetail) payload[selectedTest.detail.name] = resultForm.detail;
+      if (selectedTest.detail && needsDetail) payload[selectedTest.detail.name] = effectiveDetail;
 
       const { data } = await api.patch(`/screening-samples/${selected.sampleId}/result`, payload);
       let saved = data?.sample ?? { ...selected, ...payload, result: effectiveResult, resultDetail: resultForm.detail };
@@ -390,7 +403,7 @@ export default function ScreeningTestsPage() {
   }
 
   const goToClinical = (clientId: string) =>
-    router.push({ pathname: CLINICAL_SCREENING_PATH, query: { search: clientId } });
+    router.push({ pathname: CLINICAL_SCREENING_PATH, query: { search: clientId, fromLab: "hpv" } });
 
   const inputClass = "mt-2 rounded-2xl h-12";
   const pill = (active: boolean) =>
@@ -833,7 +846,7 @@ export default function ScreeningTestsPage() {
                     </div>
                   )}
 
-                  {needsDetail && selectedTest.detail && (
+                  {needsDetail && selectedTest.detail && !useGroups && (
                     <Label className="sm:col-span-2">
                       <span className="text-sm font-semibold">{selectedTest.detail.label} *</span>
                       <Select
@@ -844,74 +857,87 @@ export default function ScreeningTestsPage() {
                             ...p,
                             detail: e.target.value,
                             // Suggest the risk category from the genotype; it can still be changed below.
-                            meta: isHpvPositive ? { ...p.meta, riskCategory: suggestHpvRisk(e.target.value), riskOverridden: "" } : p.meta,
+                            meta: p.meta,
                           }))
                         }
                       >
                         <option value="">Select</option>
-                        {(() => {
-                          const opts = selectedTest.detail!.options as { value: string; label: string; group?: string }[];
-                          const groups = Array.from(new Set(opts.map((o) => o.group || "")));
-                          return groups.map((g) =>
-                            g ? (
-                              <optgroup key={g} label={g}>
-                                {opts.filter((o) => o.group === g).map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-                              </optgroup>
-                            ) : (
-                              opts.filter((o) => !o.group).map((o) => <option key={o.value} value={o.value}>{o.label}</option>)
-                            )
-                          );
-                        })()}
+                        {selectedTest.detail.options.map((o) => (
+                          <option key={o.value} value={o.value}>{o.label}</option>
+                        ))}
                       </Select>
                     </Label>
                   )}
 
-                  {isHpvPositive && (
+                  {useGroups && (
                     <div className="sm:col-span-2">
-                      <span className="text-sm font-semibold block mb-1">HPV risk category *</span>
-                      <div className="grid grid-cols-3 gap-2" role="radiogroup" aria-label="HPV risk category">
-                        {HPV_RISK_OPTIONS.map((o) => {
-                          const on = resultForm.meta.riskCategory === o.value;
+                      <span className="text-sm font-semibold block mb-1">Category detected on the Truenat report *</span>
+                      <div className="space-y-2" role="radiogroup" aria-label="Truenat HPV category">
+                        {HPV_TRUENAT_CATEGORIES.map((c) => {
+                          const on = resultForm.meta.hrCategory === c.value;
                           return (
-                            <button
-                              key={o.value}
-                              type="button"
-                              role="radio"
-                              aria-checked={on}
-                              onClick={() => setResultForm((p) => ({ ...p, meta: { ...p.meta, riskCategory: o.value, riskOverridden: "" } }))}
-                              className={`rounded-xl border-2 px-2 py-2.5 text-sm font-semibold transition ${
-                                on ? hpvRiskTone[o.value] + " border-current" : "border-gray-200 text-gray-600 hover:border-gray-300"
+                            <label
+                              key={c.value}
+                              className={`flex items-center gap-3 rounded-xl border-2 px-3 py-3 cursor-pointer transition ${
+                                on ? "border-red-400 bg-red-50 dark:bg-red-900/10" : "border-gray-200 hover:border-gray-300"
                               }`}
                             >
-                              {o.label}
-                            </button>
+                              <input
+                                type="radio"
+                                name="truenatCategory"
+                                checked={on}
+                                onChange={() => setResultForm((p) => ({ ...p, meta: { ...p.meta, hrCategory: c.value } }))}
+                              />
+                              <span className="text-sm font-medium text-gray-800 dark:text-gray-100">{c.label}</span>
+                            </label>
                           );
                         })}
                       </div>
                       <p className="text-xs text-gray-500 mt-1.5">
-                        {resultForm.detail && suggestHpvRisk(resultForm.detail)
-                          ? `Suggested from HPV ${resultForm.detail}. Change it if the clinical picture says otherwise.`
-                          : "High: HPV 16, 18, 45 · Medium: other oncogenic types · Low: non-oncogenic types."}
+                        Truenat cannot say which genotype in the category it is, so only one category is recorded.
                       </p>
-                      {riskOverridden && (
-                        <div className="mt-2 rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 flex gap-2" role="alert">
-                          <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
-                          <div className="min-w-0">
-                            <p>
-                              HPV {resultForm.detail} is normally <strong>{hpvRiskLabel(suggestedRisk).toLowerCase()}</strong>. You have set it to{" "}
-                              <strong>{hpvRiskLabel(resultForm.meta.riskCategory).toLowerCase()}</strong>. This will be recorded as a change to the suggested category.
-                            </p>
-                            <label className="mt-2 flex items-start gap-2 cursor-pointer">
-                              <input
-                                type="checkbox"
-                                className="mt-1"
-                                checked={resultForm.meta.riskOverridden === "yes"}
-                                onChange={(e) => setResultForm((p) => ({ ...p, meta: { ...p.meta, riskOverridden: e.target.checked ? "yes" : "" } }))}
-                              />
-                              <span>I confirm this change is intended.</span>
-                            </label>
-                          </div>
+                    </div>
+                  )}
+
+                  {isHpvPositive && (
+                    <div className="sm:col-span-2 space-y-4">
+                      <div>
+                        <span className="text-sm font-semibold block mb-1">{VIRAL_LOAD_LABEL} *</span>
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2" role="radiogroup" aria-label="Viral load concentration">
+                          {HPV_RISK_OPTIONS.map((o) => {
+                            const on = resultForm.meta.riskCategory === o.value;
+                            return (
+                              <button
+                                key={o.value}
+                                type="button"
+                                role="radio"
+                                aria-checked={on}
+                                onClick={() => setResultForm((p) => ({ ...p, meta: { ...p.meta, riskCategory: o.value } }))}
+                                className={`rounded-xl border-2 px-2 py-2.5 text-sm font-semibold transition ${
+                                  on ? LOAD_TONE[o.value] : "border-gray-200 text-gray-600 hover:border-gray-300"
+                                }`}
+                              >
+                                {o.label}
+                              </button>
+                            );
+                          })}
                         </div>
+                        <p className="text-xs text-gray-500 mt-1.5">The concentration printed next to the detected category on the report.</p>
+                      </div>
+                      {useGroups && (
+                        <Label className="block sm:max-w-xs">
+                          <span className="text-sm font-semibold">Ct value <span className="text-gray-400 font-normal">(optional)</span></span>
+                          <Input
+                            type="number"
+                            inputMode="decimal"
+                            step="0.01"
+                            min={0}
+                            max={60}
+                            className={inputClass}
+                            value={resultForm.meta.ct ?? ""}
+                            onChange={(e) => setResultForm((p) => ({ ...p, meta: { ...p.meta, ct: e.target.value } }))}
+                          />
+                        </Label>
                       )}
                     </div>
                   )}
@@ -987,7 +1013,7 @@ export default function ScreeningTestsPage() {
                     {selected.client?.fullName || selected.clientId} · {selectedTest.label}: {resultLabel(selectedTest, resultSaved.result)}
                     {resultSaved.resultValue != null && selectedTest.value ? ` (${resultSaved.resultValue} ${selectedTest.value.unit})` : ""}
                     {resultSaved.resultDetail ? ` · ${resultSaved.resultDetail}` : ""}
-                    {resultSaved.resultMeta?.riskCategory ? ` · ${hpvRiskLabel(resultSaved.resultMeta.riskCategory)}` : (isHpvPositive && resultForm.meta.riskCategory ? ` · ${hpvRiskLabel(resultForm.meta.riskCategory)}` : "")} · released {prettyDate(resultSaved.resultDate)}
+                    {(resultSaved.resultMeta?.riskCategory || (isHpvPositive && resultForm.meta.riskCategory)) ? ` · viral load ${hpvRiskLabel(resultSaved.resultMeta?.riskCategory || resultForm.meta.riskCategory).toLowerCase()}` : ""} · released {prettyDate(resultSaved.resultDate)}
                   </p>
                   <div className={`text-left text-sm rounded-xl border p-3 flex gap-2 ${toneClass[step.tone]}`}>
                     {step.tone === "warn" && <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />}

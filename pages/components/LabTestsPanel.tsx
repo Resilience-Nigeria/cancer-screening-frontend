@@ -3,8 +3,8 @@ import { Button } from "@roketid/windmill-react-ui";
 import { RefreshCw, FlaskConical, Loader2, ExternalLink } from "lucide-react";
 import toast from "react-hot-toast";
 
-import api from "../../lib/api";
-import { findTest, resultLabel, testsFor, cancerName } from "../../lib/screeningTests";
+import api from "../lib/api";
+import { findTest, resultLabel, testsFor, cancerName } from "../lib/screeningTests";
 
 const chip: Record<string, string> = {
   normal: "bg-green-100 text-green-800",
