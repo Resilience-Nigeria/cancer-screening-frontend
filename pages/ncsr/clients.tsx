@@ -83,6 +83,8 @@ type Client = {
   landmark?: string | null;
   registrationDate?: string | null;
   dateOfBirth?: string | null;
+  dobEstimated?: boolean;
+  offlineId?: string | null;
   latestReferral?: {
     referralId: number;
     referralType: string;
@@ -100,6 +102,9 @@ type ClientForm = {
   fullName: string;
   gender: string;
   dateOfBirth: string;
+  dobMode: "date" | "age";
+  age: string;
+  hasCaregiver: boolean;
   phoneNumber: string;
   email: string;
   nin: string;
@@ -141,6 +146,9 @@ const initialFormData: ClientForm = {
   fullName: "",
   gender: "",
   dateOfBirth: "",
+  dobMode: "date",
+  age: "",
+  hasCaregiver: false,
   phoneNumber: "",
   email: "",
   nin: "",
@@ -223,6 +231,8 @@ export default function ClientsIndexPage() {
         registrationDate:
           client.registrationDate ?? client.registration_date ?? "",
         dateOfBirth: client.dateOfBirth ?? client.date_of_birth ?? "",
+        dobEstimated: !!client.dobEstimated,
+        offlineId: client.offlineId ?? null,
         latestReferral: client.latestReferral ?? client.latest_referral ?? null,
       }));
 
@@ -275,6 +285,11 @@ function openEditModal(client: Client) {
     fullName: client.fullName || "",
     gender: client.gender || "",
     dateOfBirth: formatDateForInput(client.dateOfBirth),
+    dobMode: client.dobEstimated ? "age" : "date",
+    age: client.dobEstimated && client.dateOfBirth
+      ? String(Math.max(0, new Date().getFullYear() - new Date(client.dateOfBirth).getFullYear()))
+      : "",
+    hasCaregiver: !!(client.caregiverName || client.caregiverPhoneNumber || client.phoneNotClients),
     phoneNumber: client.phoneNumber || "",
     email: client.email || "",
     nin: client.nin || "",
@@ -330,21 +345,45 @@ function openEditModal(client: Client) {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
 
-    // A client without a phone of their own can be reached through a caregiver's number.
+    // Caregiver details only count when "Do you have a caregiver?" is ticked.
     const clientPhone = formData.phoneNumber.trim();
-    const caregiverPhone = formData.caregiverPhoneNumber.trim();
+    const caregiverPhone = formData.hasCaregiver ? formData.caregiverPhoneNumber.trim() : "";
+    const caregiverName = formData.hasCaregiver ? formData.caregiverName.trim() : "";
     if (!clientPhone && !caregiverPhone) {
-      toast.error("Enter the client's phone number or a caregiver's phone number.");
+      toast.error(
+        formData.hasCaregiver
+          ? "Enter the client's phone number or the caregiver's phone number."
+          : "Enter the client's phone number."
+      );
+      return;
+    }
+
+    const { dobMode, age, hasCaregiver, ...rest } = formData;
+    if (dobMode === "age") {
+      const n = Number(age);
+      if (!age.trim() || !Number.isFinite(n) || n < 0 || n > 120) {
+        toast.error("Enter a valid age (0 - 120).");
+        return;
+      }
+    } else if (!formData.dateOfBirth) {
+      toast.error("Enter a date of birth, or switch to Age.");
       return;
     }
 
     const payload: Record<string, any> = {
-      ...formData,
+      ...rest,
       phoneNumber: clientPhone || caregiverPhone,
-      phoneNotClients: formData.phoneNotClients || (!clientPhone && !!caregiverPhone),
-      caregiverName: formData.caregiverName.trim() || null,
+      phoneNotClients: hasCaregiver && (formData.phoneNotClients || (!clientPhone && !!caregiverPhone)),
+      caregiverName: caregiverName || null,
       caregiverPhoneNumber: caregiverPhone || null,
     };
+    if (dobMode === "age") {
+      // The server converts the age into a birth year and flags the date as estimated.
+      delete payload.dateOfBirth;
+      payload.age = Number(age);
+    } else {
+      payload.dobEstimated = false;
+    }
     // These two are validated as "required when present", so leave them out instead of sending blanks.
     if (!payload.screeningCategory) delete payload.screeningCategory;
     if (!payload.registrationDate) delete payload.registrationDate;
@@ -544,28 +583,64 @@ function openEditModal(client: Client) {
                       </Select>
                     </Label>
 
-                    <Label>
-                      <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                        Date of Birth <span className="text-red-500">*</span>
-                      </span>
-                      <Input
-                        type="date"
-                        name="dateOfBirth"
-                        value={formData.dateOfBirth}
-                        onChange={handleInputChange}
-                        className="mt-1 rounded-xl"
-                        max={new Date().toISOString().split("T")[0]}
-                        required
-                        disabled={isSubmitting}
-                      />
-                    </Label>
+                    <div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                          {formData.dobMode === "age" ? "Age" : "Date of Birth"} <span className="text-red-500">*</span>
+                        </span>
+                        <div className="inline-flex rounded-lg border border-gray-200 dark:border-gray-600 overflow-hidden text-xs">
+                          {(["date", "age"] as const).map((m) => (
+                            <button
+                              key={m}
+                              type="button"
+                              disabled={isSubmitting}
+                              onClick={() => setFormData((p) => ({ ...p, dobMode: m }))}
+                              className={`px-3 py-1 ${formData.dobMode === m ? "bg-green-700 text-white" : "bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300"}`}
+                            >
+                              {m === "date" ? "Date of birth" : "Age"}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                      {formData.dobMode === "age" ? (
+                        <>
+                          <Input
+                            type="number"
+                            inputMode="numeric"
+                            min={0}
+                            max={120}
+                            name="age"
+                            value={formData.age}
+                            onChange={handleInputChange}
+                            className="mt-1 rounded-xl"
+                            placeholder="Age in years"
+                            disabled={isSubmitting}
+                          />
+                          {formData.age && Number(formData.age) >= 0 && Number(formData.age) <= 120 ? (
+                            <p className="mt-1 text-xs text-gray-500">
+                              Recorded as born in {new Date().getFullYear() - Number(formData.age)} (estimated).
+                            </p>
+                          ) : null}
+                        </>
+                      ) : (
+                        <Input
+                          type="date"
+                          name="dateOfBirth"
+                          value={formData.dateOfBirth}
+                          onChange={handleInputChange}
+                          className="mt-1 rounded-xl"
+                          max={new Date().toISOString().split("T")[0]}
+                          disabled={isSubmitting}
+                        />
+                      )}
+                    </div>
                   </div>
 
                   {/* Phone number + caregiver */}
                   <div>
                     <Label>
                       <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                        Phone Number{formData.caregiverPhoneNumber.trim() ? "" : <span className="text-red-500"> *</span>}
+                        Phone Number{formData.hasCaregiver && formData.caregiverPhoneNumber.trim() ? "" : <span className="text-red-500"> *</span>}
                       </span>
                       <Input
                         name="phoneNumber"
@@ -577,16 +652,34 @@ function openEditModal(client: Client) {
                         disabled={isSubmitting}
                       />
                     </Label>
-                    <label className="mt-2 flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300">
+                    <label className="mt-3 flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300">
                       <input
                         type="checkbox"
                         className="rounded"
-                        checked={formData.phoneNotClients}
-                        onChange={(e) => setFormData((p) => ({ ...p, phoneNotClients: e.target.checked }))}
+                        checked={formData.hasCaregiver}
+                        onChange={(e) =>
+                          setFormData((p) => ({
+                            ...p,
+                            hasCaregiver: e.target.checked,
+                            ...(e.target.checked ? {} : { caregiverName: "", caregiverPhoneNumber: "", phoneNotClients: false }),
+                          }))
+                        }
                         disabled={isSubmitting}
                       />
-                      This number doesn&apos;t belong to the client
+                      Does the client have a caregiver?
                     </label>
+                    {formData.hasCaregiver ? (
+                      <>
+                        <label className="mt-2 flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300">
+                          <input
+                            type="checkbox"
+                            className="rounded"
+                            checked={formData.phoneNotClients}
+                            onChange={(e) => setFormData((p) => ({ ...p, phoneNotClients: e.target.checked }))}
+                            disabled={isSubmitting}
+                          />
+                          The phone number above belongs to the caregiver
+                        </label>
                     <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-4 rounded-xl border border-gray-100 dark:border-gray-700 p-3">
                       <Label>
                         <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
@@ -616,6 +709,8 @@ function openEditModal(client: Client) {
                         />
                       </Label>
                     </div>
+                      </>
+                    ) : null}
                   </div>
 
                   {/* Email Address */}
@@ -991,6 +1086,7 @@ function openEditModal(client: Client) {
                     <span className="text-xs text-gray-500 dark:text-gray-400 break-all">
                       ID: {client.clientId || "-"}
                       {client.hospitalNumber ? ` · Hosp. No: ${client.hospitalNumber}` : ""}
+                      {client.offlineId ? ` · Offline ID: ${client.offlineId}` : ""}
                     </span>
                   </div>
                   <p className="mt-1 text-sm text-gray-500 dark:text-gray-400 capitalize">
@@ -1106,6 +1202,7 @@ function openEditModal(client: Client) {
             <thead>
               <tr className="text-left text-xs font-semibold tracking-wide uppercase border-b bg-gray-50 dark:bg-gray-800/60 text-gray-500 dark:text-gray-400">
                 <th className="px-6 py-4">Client ID</th>
+                <th className="px-6 py-4">Offline ID</th>
                 <th className="px-6 py-4">Client</th>
                 <th className="px-6 py-4">Gender</th>
                 <th className="px-6 py-4">Phone</th>
@@ -1123,6 +1220,9 @@ function openEditModal(client: Client) {
                   <tr key={i}>
                     <td className="px-6 py-4">
                       <div className="h-4 w-24 bg-gray-200 dark:bg-gray-700 rounded animate-pulse" />
+                    </td>
+                    <td className="px-6 py-4">
+                      <div className="h-4 w-20 bg-gray-200 dark:bg-gray-700 rounded animate-pulse" />
                     </td>
                     <td className="px-6 py-4">
                       <div className="h-4 w-40 bg-gray-200 dark:bg-gray-700 rounded animate-pulse" />
@@ -1161,6 +1261,15 @@ function openEditModal(client: Client) {
                       {client.hospitalNumber ? (
                         <span className="block text-xs text-gray-500">Hosp. No: {client.hospitalNumber}</span>
                       ) : null}
+                    </td>
+                    <td className="px-6 py-4 text-sm">
+                      {client.offlineId ? (
+                        <span className="inline-block rounded-md bg-amber-50 text-amber-800 border border-amber-200 px-2 py-0.5 text-xs font-mono">
+                          {client.offlineId}
+                        </span>
+                      ) : (
+                        <span className="text-gray-400">—</span>
+                      )}
                     </td>
                     <td className="px-6 py-4">
                       <div className="flex items-center text-sm">

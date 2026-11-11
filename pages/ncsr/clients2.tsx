@@ -36,6 +36,24 @@ import {
   getLGACode 
 } from "../../lib/nigerianstates";
 import { nextToolFor } from "../../lib/referralStage";
+import BiodataExtraFields from "../components/BiodataExtraFields";
+
+const OCCUPATION_OPTIONS = [
+  "Farmer/Agriculture",
+  "Trader/Business Owner",
+  "Civil Servant",
+  "Teacher/Educator",
+  "Healthcare Worker",
+  "Artisan/Skilled Trade",
+  "Driver/Transport",
+  "Military/Security",
+  "Religious Worker",
+  "Student",
+  "Homemaker",
+  "Retired",
+  "Unemployed",
+  "Other",
+]; // keep in step with the list on the clinical screening page
 
 type Client = {
   id: number;
@@ -45,6 +63,17 @@ type Client = {
   phoneNumber?: string | null;
   email?: string | null;
   nin?: string | null;
+  hospitalNumber?: string | null;
+  phoneNotClients?: boolean;
+  caregiverName?: string | null;
+  caregiverPhoneNumber?: string | null;
+  occupation?: string | null;
+  religion?: string | null;
+  religionOther?: string | null;
+  maritalStatus?: string | null;
+  nextOfKinName?: string | null;
+  nextOfKinPhone?: string | null;
+  nextOfKinRelationship?: string | null;
   screeningCategory?: string;
   stateOfOrigin?: string | null;
   lgaOfOrigin?: string | null;
@@ -74,6 +103,17 @@ type ClientForm = {
   phoneNumber: string;
   email: string;
   nin: string;
+  hospitalNumber: string;
+  phoneNotClients: boolean;
+  caregiverName: string;
+  caregiverPhoneNumber: string;
+  occupation: string;
+  religion: string;
+  religionOther: string;
+  maritalStatus: string;
+  nextOfKinName: string;
+  nextOfKinPhone: string;
+  nextOfKinRelationship: string;
   screeningCategory: string;
   stateOfOrigin: string;
   lgaOfOrigin: string;
@@ -104,6 +144,17 @@ const initialFormData: ClientForm = {
   phoneNumber: "",
   email: "",
   nin: "",
+  hospitalNumber: "",
+  phoneNotClients: false,
+  caregiverName: "",
+  caregiverPhoneNumber: "",
+  occupation: "",
+  religion: "",
+  religionOther: "",
+  maritalStatus: "",
+  nextOfKinName: "",
+  nextOfKinPhone: "",
+  nextOfKinRelationship: "",
   screeningCategory: "",
   stateOfOrigin: "",
   lgaOfOrigin: "",
@@ -128,6 +179,7 @@ export default function ClientsIndexPage() {
   const [totalResults, setTotalResults] = useState(0);
 
   const [formData, setFormData] = useState<ClientForm>(initialFormData);
+  const [formErrors, setFormErrors] = useState<string[]>([]);
 
   const resultsPerPage = 10;
 
@@ -149,6 +201,17 @@ export default function ClientsIndexPage() {
         phoneNumber: client.phoneNumber ?? client.phone_number ?? "",
         email: client.email ?? "",
         nin: client.nin ?? "",
+        hospitalNumber: client.hospitalNumber ?? "",
+        phoneNotClients: !!client.phoneNotClients,
+        caregiverName: client.caregiverName ?? "",
+        caregiverPhoneNumber: client.caregiverPhoneNumber ?? "",
+        occupation: client.occupation ?? "",
+        religion: client.religion ?? "",
+        religionOther: client.religionOther ?? "",
+        maritalStatus: client.maritalStatus ?? "",
+        nextOfKinName: client.nextOfKinName ?? "",
+        nextOfKinPhone: client.nextOfKinPhone ?? "",
+        nextOfKinRelationship: client.nextOfKinRelationship ?? "",
         screeningCategory:
           client.screeningCategory ?? client.screening_category ?? "",
         stateOfOrigin: client.stateOfOrigin ?? client.state_of_origin ?? "",
@@ -207,6 +270,7 @@ function formatDateForInput(dateString?: string | null): string {
 // Then update openEditModal to use it:
 function openEditModal(client: Client) {
   setEditingClient(client);
+  setFormErrors([]);
   setFormData({
     fullName: client.fullName || "",
     gender: client.gender || "",
@@ -214,6 +278,17 @@ function openEditModal(client: Client) {
     phoneNumber: client.phoneNumber || "",
     email: client.email || "",
     nin: client.nin || "",
+    hospitalNumber: client.hospitalNumber || "",
+    phoneNotClients: !!client.phoneNotClients,
+    caregiverName: client.caregiverName || "",
+    caregiverPhoneNumber: client.caregiverPhoneNumber || "",
+    occupation: client.occupation || "",
+    religion: client.religion || "",
+    religionOther: client.religionOther || "",
+    maritalStatus: client.maritalStatus || "",
+    nextOfKinName: client.nextOfKinName || "",
+    nextOfKinPhone: client.nextOfKinPhone || "",
+    nextOfKinRelationship: client.nextOfKinRelationship || "",
     screeningCategory: client.screeningCategory || "",
     stateOfOrigin: client.stateOfOrigin || "",
     lgaOfOrigin: client.lgaOfOrigin || "",
@@ -227,6 +302,7 @@ function openEditModal(client: Client) {
 }
 
   function closeModal() {
+    setFormErrors([]);
     setIsModalOpen(false);
     setEditingClient(null);
     setFormData(initialFormData);
@@ -253,25 +329,52 @@ function openEditModal(client: Client) {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+
+    // A client without a phone of their own can be reached through a caregiver's number.
+    const clientPhone = formData.phoneNumber.trim();
+    const caregiverPhone = formData.caregiverPhoneNumber.trim();
+    if (!clientPhone && !caregiverPhone) {
+      toast.error("Enter the client's phone number or a caregiver's phone number.");
+      return;
+    }
+
+    const payload: Record<string, any> = {
+      ...formData,
+      phoneNumber: clientPhone || caregiverPhone,
+      phoneNotClients: formData.phoneNotClients || (!clientPhone && !!caregiverPhone),
+      caregiverName: formData.caregiverName.trim() || null,
+      caregiverPhoneNumber: caregiverPhone || null,
+    };
+    // These two are validated as "required when present", so leave them out instead of sending blanks.
+    if (!payload.screeningCategory) delete payload.screeningCategory;
+    if (!payload.registrationDate) delete payload.registrationDate;
+
     setIsSubmitting(true);
+    setFormErrors([]);
 
     try {
       if (editingClient) {
-        // Update existing client
-        await api.patch(`/clients/${editingClient.clientId}`, formData);
-        toast.success("Client updated successfully!");
+        // Details only. This never creates a visit.
+        await api.patch(`/clients/${editingClient.clientId}`, payload);
+        toast.success("Client details updated.");
       } else {
-        // Create new client
-        await api.post("/clients", formData);
+        await api.post("/clients", payload);
         toast.success("Client added successfully!");
       }
       closeModal();
       fetchClients(); // Refresh the list
     } catch (err: any) {
-      toast.error(
-        err?.response?.data?.message || 
-        `Failed to ${editingClient ? "update" : "add"} client. Please try again.`
-      );
+      // Keep the modal open and everything typed; list exactly what the server rejected.
+      const errors = err?.response?.data?.errors;
+      if (errors && typeof errors === "object") {
+        setFormErrors(Array.from(new Set(Object.values(errors).flat().map(String))));
+        toast.error("Some details need fixing. Nothing you entered has been lost.");
+      } else {
+        toast.error(
+          err?.response?.data?.message ||
+            `Failed to ${editingClient ? "update" : "add"} client. Please try again.`
+        );
+      }
     } finally {
       setIsSubmitting(false);
     }
@@ -327,7 +430,7 @@ function openEditModal(client: Client) {
             <div className="relative">
               <Input
                 className="pl-11 h-12 rounded-2xl border-gray-200 dark:border-gray-600 shadow-sm"
-                placeholder="Search by client name or phone number"
+                placeholder="Search by name, phone, Client ID or hospital number"
                 value={searchInput}
                 onChange={(e) => setSearchInput(e.target.value)}
               />
@@ -384,8 +487,23 @@ function openEditModal(client: Client) {
 
             {/* Modal Body - Scrollable */}
             <form onSubmit={handleSubmit} className="flex flex-col flex-1 overflow-hidden">
-              <div className="flex-1 overflow-y-auto px-6 py-5">
+              <div className="flex-1 overflow-y-auto px-4 sm:px-6 py-5">
                 <div className="space-y-5">
+                  {formErrors.length > 0 && (
+                    <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">
+                      <p className="font-semibold">Please fix the following (everything you entered is still here):</p>
+                      <ul className="mt-1 list-disc pl-5 space-y-0.5">
+                        {formErrors.map((m) => (
+                          <li key={m}>{m}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  {editingClient && (
+                    <p className="text-xs text-green-700 bg-green-50 border border-green-200 rounded-xl px-3 py-2">
+                      Editing {editingClient.clientId}. Saving updates this client&apos;s details only; no visit is recorded.
+                    </p>
+                  )}
                   {/* Full Name */}
                   <div>
                     <Label>
@@ -393,9 +511,11 @@ function openEditModal(client: Client) {
                         Full Name <span className="text-red-500">*</span>
                       </span>
                       <Input
-                        name="fullName"
+                        name="ncsr-client-fullname"
+                        autoComplete="off"
+                        data-lpignore="true"
                         value={formData.fullName}
-                        onChange={handleInputChange}
+                        onChange={(e) => setFormData((p) => ({ ...p, fullName: e.target.value }))}
                         className="mt-1 rounded-xl"
                         placeholder="Enter full name"
                         required
@@ -441,11 +561,11 @@ function openEditModal(client: Client) {
                     </Label>
                   </div>
 
-                  {/* Phone Number */}
+                  {/* Phone number + caregiver */}
                   <div>
                     <Label>
                       <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                        Phone Number <span className="text-red-500">*</span>
+                        Phone Number{formData.caregiverPhoneNumber.trim() ? "" : <span className="text-red-500"> *</span>}
                       </span>
                       <Input
                         name="phoneNumber"
@@ -455,9 +575,47 @@ function openEditModal(client: Client) {
                         placeholder="Enter phone number"
                         type="tel"
                         disabled={isSubmitting}
-                        required
                       />
                     </Label>
+                    <label className="mt-2 flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300">
+                      <input
+                        type="checkbox"
+                        className="rounded"
+                        checked={formData.phoneNotClients}
+                        onChange={(e) => setFormData((p) => ({ ...p, phoneNotClients: e.target.checked }))}
+                        disabled={isSubmitting}
+                      />
+                      This number doesn&apos;t belong to the client
+                    </label>
+                    <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-4 rounded-xl border border-gray-100 dark:border-gray-700 p-3">
+                      <Label>
+                        <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                          Caregiver&apos;s Name <span className="text-gray-400 font-normal">(optional)</span>
+                        </span>
+                        <Input
+                          name="ncsr-caregiver-name"
+                          autoComplete="off"
+                          data-lpignore="true"
+                          value={formData.caregiverName}
+                          onChange={(e) => setFormData((p) => ({ ...p, caregiverName: e.target.value }))}
+                          className="mt-1 rounded-xl"
+                          disabled={isSubmitting}
+                        />
+                      </Label>
+                      <Label>
+                        <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                          Caregiver&apos;s Phone Number <span className="text-gray-400 font-normal">(optional)</span>
+                        </span>
+                        <Input
+                          name="caregiverPhoneNumber"
+                          type="tel"
+                          value={formData.caregiverPhoneNumber}
+                          onChange={handleInputChange}
+                          className="mt-1 rounded-xl"
+                          disabled={isSubmitting}
+                        />
+                      </Label>
+                    </div>
                   </div>
 
                   {/* Email Address */}
@@ -478,37 +636,78 @@ function openEditModal(client: Client) {
                     </Label>
                   </div>
 
-                   {/* NIN*/}
-                  <div>
+                  {/* NIN + Hospital number (both optional) */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <Label>
                       <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                        NIN
+                        NIN <span className="text-gray-400 font-normal">(optional)</span>
                       </span>
                       <Input
                         name="nin"
                         value={formData.nin}
                         onChange={handleInputChange}
                         className="mt-1 rounded-xl"
-                        placeholder="Enter NIN"
-                        required
+                        placeholder="National Identification Number"
+                        inputMode="numeric"
+                        maxLength={11}
+                        autoComplete="off"
                         disabled={isSubmitting}
-                        type="number"
                       />
                     </Label>
+                    <Label>
+                      <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                        Hospital Number <span className="text-gray-400 font-normal">(optional)</span>
+                      </span>
+                      <Input
+                        name="ncsr-hospital-number"
+                        value={formData.hospitalNumber}
+                        onChange={(e) => setFormData((p) => ({ ...p, hospitalNumber: e.target.value }))}
+                        className="mt-1 rounded-xl"
+                        placeholder="Facility folder / file number"
+                        autoComplete="off"
+                        disabled={isSubmitting}
+                      />
+                    </Label>
+                  </div>
+
+                  {/* Occupation, religion, marital status (same fields as the clinical screening page) */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <Label>
+                      <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Occupation</span>
+                      <Select
+                        name="occupation"
+                        value={formData.occupation}
+                        onChange={handleInputChange}
+                        className="mt-1 rounded-xl"
+                        disabled={isSubmitting}
+                      >
+                        <option value="">Select occupation</option>
+                        {formData.occupation && !OCCUPATION_OPTIONS.includes(formData.occupation) && (
+                          <option value={formData.occupation}>{formData.occupation}</option>
+                        )}
+                        {OCCUPATION_OPTIONS.map((o) => (
+                          <option key={o} value={o}>{o}</option>
+                        ))}
+                      </Select>
+                    </Label>
+                    <BiodataExtraFields
+                      value={formData}
+                      onChange={(n: string, v: any) => setFormData((p) => ({ ...p, [n]: v }))}
+                    />
                   </div>
 
                   {/* Screening Category */}
                   <div>
                     <Label>
                       <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                        Screening Category <span className="text-red-500">*</span>
+                        Screening Category{!editingClient && <span className="text-red-500"> *</span>}
                       </span>
                       <Select
                         name="screeningCategory"
                         value={formData.screeningCategory}
                         onChange={handleInputChange}
                         className="mt-1 rounded-xl"
-                        required
+                        required={!editingClient}
                         disabled={isSubmitting}
                       >
                         <option value="">Select category</option>
@@ -533,7 +732,7 @@ function openEditModal(client: Client) {
                           value={formData.stateOfOrigin}
                           onChange={handleInputChange}
                           className="mt-1 rounded-xl"
-                          required
+                          required={!editingClient}
                           disabled={isSubmitting}
                         >
                           <option value="">Select State</option>
@@ -554,7 +753,7 @@ function openEditModal(client: Client) {
                           value={formData.lgaOfOrigin}
                           onChange={handleInputChange}
                           className="mt-1 rounded-xl"
-                          required
+                          required={!editingClient}
                           disabled={!formData.stateOfOrigin || isSubmitting}
                         >
                           <option value="">Select LGA</option>
@@ -583,7 +782,7 @@ function openEditModal(client: Client) {
                           value={formData.stateOfResidence}
                           onChange={handleInputChange}
                           className="mt-1 rounded-xl"
-                          required
+                          required={!editingClient}
                           disabled={isSubmitting}
                         >
                           <option value="">Select State</option>
@@ -604,7 +803,7 @@ function openEditModal(client: Client) {
                           value={formData.lgaOfResidence}
                           onChange={handleInputChange}
                           className="mt-1 rounded-xl"
-                          required
+                          required={!editingClient}
                           disabled={!formData.stateOfResidence || isSubmitting}
                         >
                           <option value="">Select LGA</option>
@@ -665,16 +864,56 @@ function openEditModal(client: Client) {
                         value={formData.registrationDate}
                         onChange={handleInputChange}
                         className="mt-1 rounded-xl"
-                        required
+                        required={!editingClient}
                         disabled={isSubmitting}
                       />
                     </Label>
+                  </div>
+
+                  {/* Next of kin */}
+                  <div>
+                    <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">Next of Kin</h4>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                      <Label>
+                        <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Name</span>
+                        <Input
+                          name="ncsr-nok-name"
+                          autoComplete="off"
+                          data-lpignore="true"
+                          value={formData.nextOfKinName}
+                          onChange={(e) => setFormData((p) => ({ ...p, nextOfKinName: e.target.value }))}
+                          className="mt-1 rounded-xl"
+                          disabled={isSubmitting}
+                        />
+                      </Label>
+                      <Label>
+                        <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Phone</span>
+                        <Input
+                          name="nextOfKinPhone"
+                          type="tel"
+                          value={formData.nextOfKinPhone}
+                          onChange={handleInputChange}
+                          className="mt-1 rounded-xl"
+                          disabled={isSubmitting}
+                        />
+                      </Label>
+                      <Label>
+                        <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Relationship</span>
+                        <Input
+                          name="nextOfKinRelationship"
+                          value={formData.nextOfKinRelationship}
+                          onChange={handleInputChange}
+                          className="mt-1 rounded-xl"
+                          disabled={isSubmitting}
+                        />
+                      </Label>
+                    </div>
                   </div>
                 </div>
               </div>
 
               {/* Modal Footer */}
-              <div className="flex gap-3 justify-end px-6 py-4 border-t border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50">
+              <div className="flex gap-3 justify-end px-4 sm:px-6 py-4 border-t border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50">
                 <Button
                   layout="outline"
                   onClick={closeModal}
@@ -749,8 +988,9 @@ function openEditModal(client: Client) {
                     {client.fullName}
                   </h3>
                   <div className="flex items-start gap-2 mt-1">
-                    <span className="text-xs text-gray-500 dark:text-gray-400">
+                    <span className="text-xs text-gray-500 dark:text-gray-400 break-all">
                       ID: {client.clientId || "-"}
+                      {client.hospitalNumber ? ` · Hosp. No: ${client.hospitalNumber}` : ""}
                     </span>
                   </div>
                   <p className="mt-1 text-sm text-gray-500 dark:text-gray-400 capitalize">
@@ -768,7 +1008,14 @@ function openEditModal(client: Client) {
               <div className="mt-4 space-y-3 text-sm text-gray-600 dark:text-gray-300">
                 <div className="flex items-start gap-2">
                   <Phone className="w-4 h-4 mt-0.5 shrink-0" />
-                  <span>{client.phoneNumber || "No phone number"}</span>
+                  <span>
+                    {client.phoneNumber || "No phone number"}
+                    {client.phoneNotClients ? (
+                      <span className="block text-xs text-amber-700">
+                        Caregiver&apos;s number{client.caregiverName ? `: ${client.caregiverName}` : ""}
+                      </span>
+                    ) : null}
+                  </span>
                 </div>
 
                 <div className="flex items-start gap-2">
@@ -911,6 +1158,9 @@ function openEditModal(client: Client) {
                   >
                     <td className="px-6 py-4 text-sm">
                       {client.clientId || "—"}
+                      {client.hospitalNumber ? (
+                        <span className="block text-xs text-gray-500">Hosp. No: {client.hospitalNumber}</span>
+                      ) : null}
                     </td>
                     <td className="px-6 py-4">
                       <div className="flex items-center text-sm">
@@ -933,6 +1183,11 @@ function openEditModal(client: Client) {
                     </td>
                     <td className="px-6 py-4 text-sm">
                       {client.phoneNumber || "—"}
+                      {client.phoneNotClients ? (
+                        <span className="block text-xs text-amber-700">
+                          Caregiver{client.caregiverName ? `: ${client.caregiverName}` : ""}
+                        </span>
+                      ) : null}
                     </td>
                     <td className="px-6 py-4">
                       <Badge

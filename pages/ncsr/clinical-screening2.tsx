@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/router";
 import {
   Button,
@@ -14,6 +14,7 @@ import {
   UserPlus,
   CheckCircle,
   AlertTriangle,
+  Lock,
 } from "lucide-react";
 import toast from "react-hot-toast";
 
@@ -53,6 +54,9 @@ import VisitDetailsFields, { initialVisitMeta, ageFromDob, VisitMeta } from "../
 import { CERVICAL_RISK_GROUPS, cervicalRiskPatch } from "../../lib/cervicalRisk";
 import DateOfBirthField from "../components/DateOfBirthField";
 import BiodataExtraFields from "../components/BiodataExtraFields";
+import LabTestsPanel from "../../components/LabTestsPanel";
+import SearchableSelect from "../../components/SearchableSelect";
+import { getPreviousRoute, routeLabel } from "../../lib/routeHistory";
 
 // ---------------------------------------------------------------------------
 // Medical history confirm-checklist — Stage 2, Section C
@@ -172,8 +176,8 @@ const EXAM_GROUPS: FieldGroup[] = [
 const OUTCOME_OPTIONS: { value: string; label: string; description: string; tone: string }[] = [
   { value: "normal", label: "Normal", description: "No suspicious findings. Routine screening.", tone: "border-green-200 bg-green-50 text-green-800" },
   { value: "low_suspicion", label: "Low Suspicion", description: "Minor abnormalities. Repeat screening in 6–12 months or per protocol.", tone: "border-amber-200 bg-amber-50 text-amber-800" },
-  { value: "suspicious", label: "Suspicious", description: "Positive screening test. Refer to secondary/tertiary hospital.", tone: "border-orange-200 bg-orange-50 text-orange-800" },
-  { value: "urgent_referral", label: "Urgent Referral", description: "Severe symptoms. Same-day referral.", tone: "border-red-200 bg-red-50 text-red-800" },
+  { value: "suspicious", label: "Referral for further diagnosis", description: "Positive or suspicious finding. Refer for diagnostic evaluation (Stage 3).", tone: "border-orange-200 bg-orange-50 text-orange-800" },
+  { value: "urgent_referral", label: "Urgent referral for treatment", description: "High-risk indicators or severe symptoms. Same-day referral straight to a treatment centre.", tone: "border-red-200 bg-red-50 text-red-800" },
 ];
 
 // Cancer type(s) are chosen BEFORE the risk assessment so only the relevant risk factors are asked.
@@ -200,33 +204,35 @@ const ENDPOINTS = {
     `/visits/${visitId}/${cancerType}-screening`,
 };
 
-function todayStr() {
-  return new Date().toISOString().slice(0, 10);
+// Keeps treatment centres and drops feeders / hubs. Works from whichever type field the facility record
+// carries; if none is present the server's own filter (types=treatment_center) is trusted as-is.
+const normType = (v: any) => String(v ?? "").toLowerCase().replace(/[\s-]+/g, "_");
+// Diagnostic referral: any facility that can take the next stage (hubs and treatment centres) - never feeders.
+function onlyReferralCapable(rows: any[]): any[] {
+  const typeOf = (f: any) => f.facilityType ?? f.type ?? f.facilityCategory ?? f.category ?? f.facilityRole;
+  if (!rows.some((f) => typeOf(f) !== undefined && typeOf(f) !== null)) return rows;
+  return rows.filter((f) => {
+    const t = normType(typeOf(f));
+    return t.includes("treatment") || t.includes("hub");
+  });
+}
+function onlyTreatmentCenters(rows: any[]): any[] {
+  const typeOf = (f: any) => f.facilityType ?? f.type ?? f.facilityCategory ?? f.category ?? f.facilityRole;
+  if (!rows.some((f) => typeOf(f) !== undefined && typeOf(f) !== null)) return rows;
+  return rows.filter((f) => normType(typeOf(f)).includes("treatment"));
 }
 
-export default function ClinicalScreeningPage() {
-  const router = useRouter();
-  const [stepIndex, setStepIndex] = useState(0);
-  const [busy, setBusy] = useState(false);
-  const sync = useSyncStatus();
-  // Shows the real Client ID once a provisional (offline) one has been synced.
-  const displayId = (id: string) => (id ? resolveId(id, sync.idMap) : id);
-
-  const [visitMeta, setVisitMeta] = useState<VisitMeta>(initialVisitMeta());
-  // Lookup
-  const [lookupValue, setLookupValue] = useState("");
-
-  // Client / visit
-  const [clientId, setClientId] = useState<string>("");
-  const [visitId, setVisitId] = useState<number | string | null>(null);
-
-  const [biodata, setBiodata] = useState<Record<string, any>>({
+// A completely empty biodata form. Used on first load and whenever a new lookup / new registration
+// starts, so nothing from the previous client can leak into the next one.
+function blankBiodata(): Record<string, any> {
+  return {
     fullName: "",
     dateOfBirth: "",
     gender: "",
     phoneNumber: "",
     email: "",
     nin: "",
+    hospitalNumber: "",
     address: "",
     landmark: "",
     stateOfResidence: "",
@@ -243,7 +249,32 @@ export default function ClinicalScreeningPage() {
     phoneNotClients: false,
     caregiverName: "",
     caregiverPhoneNumber: "",
-  });
+  };
+}
+
+function todayStr() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+export default function ClinicalScreeningPage() {
+  const router = useRouter();
+  const [stepIndex, setStepIndex] = useState(0);
+  const [busy, setBusy] = useState(false);
+  const sync = useSyncStatus();
+  const [formErrors, setFormErrors] = useState<string[]>([]);
+  const [biodataNotice, setBiodataNotice] = useState("");
+  // Shows the real Client ID once a provisional (offline) one has been synced.
+  const displayId = (id: string) => (id ? resolveId(id, sync.idMap) : id);
+
+  const [visitMeta, setVisitMeta] = useState<VisitMeta>(initialVisitMeta());
+  // Lookup
+  const [lookupValue, setLookupValue] = useState("");
+
+  // Client / visit
+  const [clientId, setClientId] = useState<string>("");
+  const [visitId, setVisitId] = useState<number | string | null>(null);
+
+  const [biodata, setBiodata] = useState<Record<string, any>>(blankBiodata);
 
   const [risk, setRisk] = useState<Record<string, any>>({});
   const [cancerTypes, setCancerTypes] = useState<CancerType[]>([]);
@@ -260,6 +291,21 @@ export default function ClinicalScreeningPage() {
   const [bloomReference, setBloomReference] = useState<{ registration: any; selfAssessment: any } | null>(null);
   const [duplicateMatch, setDuplicateMatch] = useState<{ field: "phone" | "email"; client: any } | null>(null);
   const [incompleteVisits, setIncompleteVisits] = useState<any[]>([]);
+  // Released HPV lab result carried over when the user arrives from the results page ("Continue" -> ?fromLab=hpv)
+  const [hpvLab, setHpvLab] = useState({ hasSample: false, released: false });
+  const [labHpv, setLabHpv] = useState<null | { sampleId?: number; hpvResult: string; hpvGenotype: string; hpvSampleDate: string; hpvResultDate: string }>(null);
+  const labHpvDone = useRef({ types: false, fields: false });
+  // Set when the page is opened from the Client Record to edit just one section (?step=risk or ?step=outcome).
+  // After saving, the user goes straight back to the record instead of through the rest of the wizard.
+  const [focus, setFocus] = useState<null | "risk" | "outcome">(null);
+
+  // The page that sent the user here (Referred Clients, client record, dashboard, ...).
+  // Captured once when this page opens, so moving through the wizard steps can't change it.
+  const [origin, setOrigin] = useState<string | null>(null);
+  useEffect(() => {
+    const prev = getPreviousRoute();
+    if (prev && !prev.split("?")[0].startsWith("/ncsr/clinical-screening")) setOrigin(prev);
+  }, []);
   // True once the client record already existed before this session (found by lookup or matched as a duplicate).
   const [returningClient, setReturningClient] = useState(false);
   // OTP skip/override (client can't receive an SMS) and the Client ID screen shown right after OTP.
@@ -280,11 +326,33 @@ export default function ClinicalScreeningPage() {
 
   // Referral (suspicious / urgent) — facility is chosen manually, never auto-assigned
   const [referralFacilities, setReferralFacilities] = useState<any[]>([]);
+  // Outcome referrals go to treatment centres only (no feeder facilities).
+  const [treatmentCenters, setTreatmentCenters] = useState<any[]>([]);
+  const [diagnosticCenters, setDiagnosticCenters] = useState<any[]>([]);
   const [referralFacilityId, setReferralFacilityId] = useState("");
   const needsReferral =
     outcome.overallOutcome === "suspicious" || outcome.overallOutcome === "urgent_referral";
 
   const currentKey = STEPS[stepIndex];
+
+  // Coming from the HPV result page: tick Cervical, tick the HPV method and fill in the lab result,
+  // at the point the user reaches those steps (earlier steps reset these when a new visit starts).
+  useEffect(() => {
+    if (!labHpv) return;
+    if (currentKey === "cancerTypeSelect" && !labHpvDone.current.types) {
+      labHpvDone.current.types = true;
+      setCancerTypes((prev) => (prev.includes("cervical" as CancerType) ? prev : [...prev, "cervical" as CancerType]));
+    }
+    if (currentKey === "screening" && !labHpvDone.current.fields) {
+      labHpvDone.current.fields = true;
+      setScreenings((prev) => {
+        const cur = prev.cervical || {};
+        if (cur.hpvResult) return prev;   // never overwrite what is already recorded
+        return { ...prev, cervical: { ...cur, methodHpv: true, ...labHpv } };
+      });
+      toast.success("HPV method selected and the lab result filled in.");
+    }
+  }, [labHpv, currentKey]);
 
   const clientAge = useMemo(() => ageFromDob(biodata.dateOfBirth), [biodata.dateOfBirth]);
 
@@ -385,7 +453,10 @@ export default function ClinicalScreeningPage() {
     (async () => {
       try {
         const { data } = await api.get("/facilities", { params: { types: "main_hub,treatment_center" } });
-        setReferralFacilities(data?.facilities ?? data?.data ?? []);
+        const all: any[] = data?.facilities ?? data?.data ?? [];
+        setReferralFacilities(all);
+        setDiagnosticCenters(onlyReferralCapable(all));
+        setTreatmentCenters(onlyTreatmentCenters(all));
       } catch (error) {
         console.error("Failed to load referral facilities:", error);
       }
@@ -519,6 +590,69 @@ export default function ClinicalScreeningPage() {
     goTo(visit.resumeStep);
   }
 
+  // Clears everything that belongs to the previously opened client.
+  function resetClientState() {
+    setLabHpv(null);
+    setHpvLab({ hasSample: false, released: false });
+    setClientId("");
+    setVisitId(null);
+    setBiodata(blankBiodata());
+    setRisk({});
+    setCancerTypes([]);
+    setScreenings({});
+    setScreeningErrors({});
+    setReturningClient(false);
+    setIncompleteVisits([]);
+    setBloomReference(null);
+    setDuplicateMatch(null);
+    setPendingRegistrationId("");
+    setPendingMaskedPhone("");
+    setFormErrors([]);
+    setBiodataNotice("");
+    setFocus(null);
+  }
+
+  // Back to the page the user came from, with the exact filters/tab/client it had.
+  function leavePage() {
+    const midVisit = currentKey !== "lookup" && currentKey !== "done" && !focus;
+    if (
+      midVisit &&
+      !window.confirm(
+        "Leave this page? Anything on the current step that hasn't been saved will be lost. Steps you already saved can be resumed later from the client's record."
+      )
+    ) {
+      return;
+    }
+    if (origin) {
+      router.push(origin);
+    } else if (typeof window !== "undefined" && window.history.length > 1) {
+      router.back();
+    } else {
+      router.push(clientId ? `/ncsr/client-details?clientId=${encodeURIComponent(clientId)}` : "/ncsr/dashboard");
+    }
+  }
+
+  const backLabel = origin ? `Back to ${routeLabel(origin)}` : "Back to previous page";
+
+  function startNewRegistration() {
+    resetClientState();
+    goTo("registration");
+  }
+
+  // Shows the server's validation messages in one box while keeping everything the admin typed.
+  function applyServerErrors(err: any, fallback: string) {
+    const errors = err?.response?.data?.errors;
+    if (errors && typeof errors === "object") {
+      const list = Array.from(new Set(Object.values(errors).flat().map(String)));
+      setFormErrors(list);
+      toast.error("Some details need fixing. Nothing you entered has been lost.");
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    } else {
+      setFormErrors([]);
+      toast.error(friendlyError(err, fallback));
+    }
+  }
+
   async function handleLookup(overrideValue?: string) {
     const value = (overrideValue ?? lookupValue ?? "").toString().trim();
 
@@ -529,10 +663,7 @@ export default function ClinicalScreeningPage() {
 
     // Start every lookup from a clean slate so a previous client's cancer-type
     // selection and screening data can't leak into this one.
-    setCancerTypes([]);
-    setScreenings({});
-    setScreeningErrors({});
-    setReturningClient(false);
+    resetClientState();
 
     setBusy(true);
 
@@ -571,6 +702,7 @@ export default function ClinicalScreeningPage() {
           phoneNumber: found.phoneNumber || "",
           email: found.email || "",
           nin: found.nin || "",
+          hospitalNumber: found.hospitalNumber || "",
           address: found.address || "",
           landmark: found.landmark || "",
           stateOfResidence: found.stateOfResidence || "",
@@ -588,6 +720,83 @@ export default function ClinicalScreeningPage() {
           caregiverName: found.caregiverName || "",
           caregiverPhoneNumber: found.caregiverPhoneNumber || "",
         });
+
+        // Opened from the Client Summary "Edit Details" button: go straight to the biodata form.
+        // "Save changes only" there updates the details without recording a visit.
+        if (router.query.edit === "1") {
+          toast.success("Edit the details below, then use “Save changes only”.");
+          goTo("registration");
+          return;
+        }
+
+        // Opened from the Client Record to edit one section: ?step=risk or ?step=outcome&visitId=<id>
+        const qStep = router.query.step;
+        if ((qStep === "risk" || qStep === "outcome") && !data?.offline) {
+          let latest: any = null;
+          try {
+            ({ data: latest } = await api.get(`/clients/${found.clientId}/visits/incomplete`));
+          } catch (e: any) {
+            if (e?.response) throw e;
+          }
+          if (latest?.riskProfile) {
+            setRisk((p) => ({ ...p, ...hydrateRiskProfile(latest.riskProfile) }));
+          }
+
+          if (qStep === "risk") {
+            const age = ageFromDob(found.dateOfBirth?.slice(0, 10));
+            setCancerTypes(cancerTypesForClient(found.gender, age).map((c) => c.value as CancerType));
+            setFocus("risk");
+            goTo("riskVerify");
+            return;
+          }
+
+          const qVisit = Number(router.query.visitId);
+          if (!qVisit) {
+            toast.error("This client has no visit to record an outcome for yet. Start a new screening first.");
+            goTo("registration");
+            return;
+          }
+          // Show what was already recorded for that visit so it can be corrected.
+          try {
+            const { data: rec } = await api.get(`/clients/${found.clientId}`);
+            const v = (rec?.client || rec?.data || {}).visits?.find((x: any) => Number(x.visitId) === qVisit);
+            if (v) {
+              setOutcome({
+                overallOutcome: v.overallOutcome || "",
+                outcomeNotes: v.outcomeNotes || "",
+                repeatScreeningDate: v.repeatScreeningDate ? String(v.repeatScreeningDate).slice(0, 10) : "",
+              });
+            }
+          } catch {
+            /* start from a blank outcome */
+          }
+          setVisitId(qVisit);
+          setFocus("outcome");
+          goTo("outcome");
+          return;
+        }
+
+        // Arrived from the HPV result page: remember the released result so it can be filled in.
+        if (router.query.fromLab === "hpv" && !data?.offline) {
+          try {
+            const { data: lab } = await api.get("/screening-samples", {
+              params: { status: "result_released", clientId: found.clientId, cancerType: "cervical" },
+            });
+            const r = (lab?.samples ?? []).find((x: any) => x.testType === "hpv_dna");
+            if (r) {
+              labHpvDone.current = { types: false, fields: false };
+              setLabHpv({
+                sampleId: r.sampleId,
+                hpvResult: r.result || "",
+                hpvGenotype: r.resultDetail || "",
+                hpvSampleDate: String(r.sampleDate).slice(0, 10),
+                hpvResultDate: String(r.resultDate).slice(0, 10),
+              });
+            }
+          } catch {
+            /* the lab panel on the screening step still fills it in */
+          }
+        }
 
         // Check for an in-progress visit
         let incompleteData: any = null;
@@ -733,7 +942,42 @@ export default function ClinicalScreeningPage() {
     };
   }
 
+  // Updates an existing client's details WITHOUT starting a visit.
+  async function saveBiodataOnly() {
+    if (!clientId) return;
+    const contact = clientPayload();
+    if (!biodata.fullName || !biodata.gender || !contact.phoneNumber) {
+      toast.error("Full name, sex, and a phone number (the client's or a caregiver's) are required.");
+      return;
+    }
+    setBusy(true);
+    setFormErrors([]);
+    try {
+      const { queued } = await sendOrQueue({
+        method: "patch",
+        path: `/clients/${clientId}`,
+        body: contact,
+        label: `Update ${contact.fullName || "client"} details`,
+      });
+      saveLocalClient({ ...contact, clientId });
+      setBiodata((p) => ({ ...p, phoneNumber: contact.phoneNumber, phoneNotClients: contact.phoneNotClients }));
+      setBiodataNotice(
+        queued
+          ? "Details saved on this device. They will sync when the network returns. No visit was recorded."
+          : "Client details updated. No visit was recorded."
+      );
+      toast.success("Details updated — no visit recorded.");
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    } catch (err: any) {
+      applyServerErrors(err, "Could not update the client's details.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function submitRegistration() {
+    setFormErrors([]);
+    setBiodataNotice("");
     const contact = clientPayload();
     if (!biodata.fullName || !biodata.gender || !contact.phoneNumber) {
       toast.error("Full name, sex, and a phone number (the client's or a caregiver's) are required.");
@@ -767,7 +1011,7 @@ export default function ClinicalScreeningPage() {
         toast.success("Client updated and visit created.");
         goTo("cancerTypeSelect");
       } catch (err: any) {
-        toast.error(friendlyError(err, "Could not save registration."));
+        applyServerErrors(err, "Could not save registration.");
       } finally {
         setBusy(false);
       }
@@ -883,6 +1127,7 @@ export default function ClinicalScreeningPage() {
       phoneNumber: c.phoneNumber || "",
       email: c.email || "",
       nin: c.nin || "",
+      hospitalNumber: c.hospitalNumber || "",
       address: c.address || "",
       landmark: c.landmark || "",
       stateOfResidence: c.stateOfResidence || "",
@@ -955,7 +1200,7 @@ export default function ClinicalScreeningPage() {
       }
       setNewClientId(cId); // show the Client ID screen before moving on
     } catch (err: any) {
-      toast.error(friendlyError(err, "Could not complete registration."));
+      applyServerErrors(err, "Could not complete registration.");
       goTo("registration");
     } finally {
       setBusy(false);
@@ -974,6 +1219,10 @@ export default function ClinicalScreeningPage() {
         label: "Risk assessment & medical history",
       });
       toast.success(queued ? "Saved on this device — will sync later." : "Risk assessment and medical history saved.");
+      if (focus === "risk") {
+        router.push(`/ncsr/client-details?clientId=${encodeURIComponent(clientId)}`);
+        return;
+      }
       next();
     } catch (err: any) {
       toast.error(friendlyError(err, "Could not save risk assessment."));
@@ -1048,6 +1297,13 @@ export default function ClinicalScreeningPage() {
           label: `${cancerLabel(ct as CancerType)} screening`,
         });
         if (r.queued) anyQueued = true;
+      }
+      // Mirror the HPV sample/result into the Samples & Test Results pages (best effort, online only).
+      if (!anyQueued && cancerTypes.includes("cervical" as CancerType)) {
+        const cx = screenings.cervical || {};
+        if (cx.methodHpv && cx.hpvSampleDate) {
+          api.post(`/visits/${activeVisitId}/lab-sync`).catch(() => {});
+        }
       }
       toast.success(anyQueued ? "Saved on this device — will sync later." : "Screening findings saved.");
       next();
@@ -1143,6 +1399,10 @@ export default function ClinicalScreeningPage() {
         toast.success("Screening outcome recorded — client referred.");
       } else {
         toast.success("Screening outcome recorded.");
+      }
+      if (focus === "outcome" && !needsReferral) {
+        router.push(`/ncsr/client-details?clientId=${encodeURIComponent(clientId)}`);
+        return;
       }
       next();
     } catch (err: any) {
@@ -1300,6 +1560,14 @@ export default function ClinicalScreeningPage() {
         </div>
       )}
 
+      <button
+        type="button"
+        onClick={leavePage}
+        className="mb-3 inline-flex items-center gap-1 text-sm font-semibold text-green-700 hover:underline"
+      >
+        <ChevronLeft className="w-4 h-4" /> {backLabel}
+      </button>
+
       <div className="mb-6 flex items-center justify-between flex-wrap gap-2">
         <div>
           <PageTitle>Stage 2 — Clinical Screening</PageTitle>
@@ -1314,8 +1582,24 @@ export default function ClinicalScreeningPage() {
         )}
       </div>
 
+      {focus && currentKey !== "done" && (
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-900">
+          <span>
+            Editing the <span className="font-semibold">{focus === "risk" ? "risk profile & medical history" : "screening outcome"}</span> for{" "}
+            <span className="font-semibold">{biodata.fullName || clientId}</span>.
+          </span>
+          <button
+            type="button"
+            className="font-semibold underline"
+            onClick={() => router.push(`/ncsr/client-details?clientId=${encodeURIComponent(clientId)}`)}
+          >
+            Back to client record
+          </button>
+        </div>
+      )}
+
       {/* Step progress */}
-      {!["lookup", "registration", "otpConsent"].includes(currentKey) && (
+      {!focus && !["lookup", "registration", "otpConsent"].includes(currentKey) && (
         <div className="mb-6 flex flex-wrap gap-2">
           {STEPS.map((key, i) => {
             if (key === "otpConsent" && clientId) return null;
@@ -1405,7 +1689,7 @@ export default function ClinicalScreeningPage() {
 
             <button
               type="button"
-              onClick={() => goTo("registration")}
+              onClick={startNewRegistration}
               className="inline-flex items-center gap-1.5 text-sm font-semibold text-green-700 hover:text-green-800"
             >
               <UserPlus className="w-4 h-4" /> Skip — register a new client
@@ -1417,15 +1701,42 @@ export default function ClinicalScreeningPage() {
           <div className="space-y-4">
             <h3 className="text-lg font-semibold text-gray-800 dark:text-white">B. Registration</h3>
             {clientId && (
-              <p className="text-xs text-green-700">
-                Existing client — SMS consent is not required.
-              </p>
+              <div className="rounded-xl border border-green-200 bg-green-50 p-3 text-sm text-green-800 space-y-1">
+                <p className="font-semibold">Existing client — SMS consent is not required.</p>
+                <p className="text-xs">
+                  To only correct this client&apos;s details, use <b>Save changes only</b> (no visit is recorded).
+                  Use <b>Save &amp; Continue</b> to start a new screening visit.
+                </p>
+              </div>
+            )}
+            {biodataNotice && (
+              <div className="rounded-xl border border-green-300 bg-green-100 p-3 text-sm font-semibold text-green-900 flex items-start justify-between gap-3">
+                <span>{biodataNotice}</span>
+                <button type="button" className="text-xs underline shrink-0" onClick={() => { resetClientState(); goTo("lookup"); }}>
+                  Done — search another client
+                </button>
+              </div>
+            )}
+            {formErrors.length > 0 && (
+              <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">
+                <p className="font-semibold">Please fix the following (everything you entered is still here):</p>
+                <ul className="mt-1 list-disc pl-5 space-y-0.5">
+                  {formErrors.map((m) => (
+                    <li key={m}>{m}</li>
+                  ))}
+                </ul>
+              </div>
             )}
             <div className="grid grid-cols-2 gap-4">
               <Label className="col-span-2">
                 <span className="text-sm font-semibold">Full Name *</span>
                 <Input
                   className="mt-2 rounded-2xl h-12"
+                  name="ncsr-client-fullname"
+                  autoComplete="off"
+                  autoCorrect="off"
+                  spellCheck={false}
+                  data-lpignore="true"
                   value={biodata.fullName}
                   onChange={(e) => setBiodata((p) => ({ ...p, fullName: e.target.value }))}
                 />
@@ -1483,6 +1794,9 @@ export default function ClinicalScreeningPage() {
                     <span className="text-sm font-semibold">Caregiver's Name</span>
                     <Input
                       id="caregiverName"
+                      name="ncsr-caregiver-name"
+                      autoComplete="off"
+                      data-lpignore="true"
                       className="mt-2 rounded-2xl h-12"
                       value={biodata.caregiverName}
                       onChange={(e) => setBiodata((p) => ({ ...p, caregiverName: e.target.value }))}
@@ -1536,6 +1850,18 @@ export default function ClinicalScreeningPage() {
                   className="mt-2 rounded-2xl h-12"
                   value={biodata.nin}
                   onChange={(e) => setBiodata((p) => ({ ...p, nin: e.target.value }))}
+                  autoComplete="off"
+                />
+              </Label>
+              <Label>
+                <span className="text-sm font-semibold">Hospital Number <span className="text-gray-400 font-normal">(optional)</span></span>
+                <Input
+                  className="mt-2 rounded-2xl h-12"
+                  name="ncsr-hospital-number"
+                  autoComplete="off"
+                  placeholder="Facility folder / file number"
+                  value={biodata.hospitalNumber}
+                  onChange={(e) => setBiodata((p) => ({ ...p, hospitalNumber: e.target.value }))}
                 />
               </Label>
               <Label className="col-span-2">
@@ -1619,6 +1945,9 @@ export default function ClinicalScreeningPage() {
                   <span className="text-sm font-semibold">Name</span>
                   <Input
                     className="mt-2 rounded-2xl h-12"
+                    name="ncsr-nok-name"
+                    autoComplete="off"
+                    data-lpignore="true"
                     value={biodata.nextOfKinName}
                     onChange={(e) => setBiodata((p) => ({ ...p, nextOfKinName: e.target.value }))}
                   />
@@ -1752,7 +2081,24 @@ export default function ClinicalScreeningPage() {
               return (
                 <div key={ct} className="border-t border-gray-100 dark:border-gray-700 pt-6 first:border-t-0 first:pt-0">
                   <p className="text-sm font-bold text-green-700 uppercase tracking-wide mb-3">{cancerLabel(ct)}</p>
+                  {ct === "cervical" && hpvLab.released && (
+                    <div className="mb-3 rounded-xl border border-green-200 bg-green-50 text-green-900 text-sm p-3 flex gap-2">
+                      <Lock className="w-4 h-4 mt-0.5 shrink-0" />
+                      <span>
+                        The HPV result comes from the testing module, so the HPV fields are locked. To correct it, edit the result on the Samples &amp; Test Results page.
+                      </span>
+                    </div>
+                  )}
                   <GroupedForm
+                    lockedFields={
+                      ct !== "cervical"
+                        ? undefined
+                        : hpvLab.released
+                        ? ["methodHpv", "hpvResult", "hpvGenotype", "hpvSampleDate", "hpvResultDate"]
+                        : hpvLab.hasSample
+                        ? ["hpvSampleDate"]
+                        : undefined
+                    }
                     groups={groupsWithFacilities}
                     values={screenings[ct] || {}}
                     errors={screeningErrors[ct] || {}}
@@ -1764,6 +2110,31 @@ export default function ClinicalScreeningPage() {
                       });
                     }}
                   />
+
+                  {/* Samples and lab results for this client. Same records as the Samples & Test Results pages. */}
+                  {clientId && (
+                    <LabTestsPanel
+                      clientId={clientId}
+                      cancerType={ct}
+                      visitId={visitId}
+                      acceptSampleId={labHpv?.sampleId ?? null}
+                      onHpvState={setHpvLab}
+                      hpvFormEmpty={ct === "cervical" && !screenings.cervical?.hpvResult}
+                      onHpvResult={(v) =>
+                        setScreenings((prev) => ({
+                          ...prev,
+                          cervical: { ...(prev.cervical || {}), methodHpv: true, ...v },
+                        }))
+                      }
+                      onHpvSample={(v) =>
+                        setScreenings((prev) => {
+                          const cur = prev.cervical || {};
+                          if (cur.hpvSampleDate) return prev;
+                          return { ...prev, cervical: { ...cur, methodHpv: true, ...v } };
+                        })
+                      }
+                    />
+                  )}
                 </div>
               );
             })}
@@ -1790,7 +2161,11 @@ export default function ClinicalScreeningPage() {
                 <button
                   key={opt.value}
                   type="button"
-                  onClick={() => setOutcome((p) => ({ ...p, overallOutcome: opt.value }))}
+                  onClick={() => {
+                    // The facility list differs for diagnosis vs urgent treatment, so clear a choice that may not be valid.
+                    if (opt.value !== outcome.overallOutcome) setReferralFacilityId("");
+                    setOutcome((p) => ({ ...p, overallOutcome: opt.value }));
+                  }}
                   className={`text-left px-4 py-3 rounded-xl border-2 transition-colors ${
                     outcome.overallOutcome === opt.value ? opt.tone + " border-2" : "border-gray-200 text-gray-600 hover:border-gray-300"
                   }`}
@@ -1814,21 +2189,21 @@ export default function ClinicalScreeningPage() {
 
             {/* Referral — facility is chosen manually, never auto-assigned */}
             {needsReferral && (
-              <Label>
-                <span className="text-sm font-semibold">Refer client to *</span>
-                <Select
-                  className="mt-2 rounded-2xl h-12"
+              <div>
+                <span className="text-sm font-semibold block">{outcome.overallOutcome === "urgent_referral" ? "Refer urgently for treatment to *" : "Refer for further diagnosis to *"}</span>
+                <SearchableSelect
                   value={referralFacilityId}
-                  onChange={(e) => setReferralFacilityId(e.target.value)}
-                >
-                  <option value="">Select referral facility</option>
-                  {referralFacilities.map((f) => (
-                    <option key={f.facilityId} value={f.facilityId}>
-                      {f.facilityName}{f.facilityState ? ` - ${f.facilityState}` : ""}
-                    </option>
-                  ))}
-                </Select>
-              </Label>
+                  onChange={setReferralFacilityId}
+                  placeholder={outcome.overallOutcome === "urgent_referral" ? "Select treatment centre" : "Select facility for further diagnosis"}
+                  searchPlaceholder="Search by name or state…"
+                  emptyText="No facility matches your search"
+                  options={(outcome.overallOutcome === "urgent_referral" ? treatmentCenters : diagnosticCenters).map((f) => ({
+                    value: String(f.facilityId),
+                    label: f.facilityName,
+                    hint: f.facilityState || undefined,
+                  }))}
+                />
+              </div>
             )}
 
             <Label>
@@ -1851,7 +2226,7 @@ export default function ClinicalScreeningPage() {
             <p className="text-sm text-gray-500">
               {needsReferral ? (
                 <span className="inline-flex items-center gap-1.5 text-red-600 font-semibold">
-                  <AlertTriangle className="w-4 h-4" /> This client needs referral — please action promptly.
+                  <AlertTriangle className="w-4 h-4" /> {outcome.overallOutcome === "urgent_referral" ? "This client needs urgent referral for treatment — please action immediately." : "This client needs referral for further diagnosis — please action promptly."}
                 </span>
               ) : (
                 "All findings have been saved to the client's record."
@@ -1897,6 +2272,17 @@ export default function ClinicalScreeningPage() {
             >
               View Client Record
             </Button>
+            {origin && (
+              <div>
+                <Button
+                  layout="outline"
+                  onClick={() => router.push(origin)}
+                  className="mt-2 h-12 px-6 rounded-2xl"
+                >
+                  {backLabel}
+                </Button>
+              </div>
+            )}
           </div>
         )}
 
@@ -1905,20 +2291,32 @@ export default function ClinicalScreeningPage() {
           <div className="flex items-center justify-between pt-4 border-t border-gray-100 dark:border-gray-700">
             <button
               type="button"
-              onClick={back}
+              onClick={focus ? () => router.push(`/ncsr/client-details?clientId=${encodeURIComponent(clientId)}`) : back}
               className="inline-flex items-center gap-1 text-sm font-semibold text-gray-500 hover:text-gray-700"
             >
               <ChevronLeft className="w-4 h-4" /> Back
             </button>
 
             {currentKey === "registration" && (
-              <Button onClick={submitRegistration} disabled={busy} className="h-11 px-5 rounded-2xl bg-green-700 border-green-700 hover:bg-green-800">
-                {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <span className="inline-flex items-center gap-1">Save & Continue <ChevronRight className="w-4 h-4" /></span>}
-              </Button>
+              <div className="flex flex-col-reverse sm:flex-row gap-2 items-stretch sm:items-center">
+                {clientId && (
+                  <Button
+                    layout="outline"
+                    onClick={saveBiodataOnly}
+                    disabled={busy}
+                    className="h-11 px-5 rounded-2xl border-green-700 text-green-700 hover:bg-green-50"
+                  >
+                    Save changes only
+                  </Button>
+                )}
+                <Button onClick={submitRegistration} disabled={busy} className="h-11 px-5 rounded-2xl bg-green-700 border-green-700 hover:bg-green-800">
+                  {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <span className="inline-flex items-center justify-center gap-1">Save & Continue <ChevronRight className="w-4 h-4" /></span>}
+                </Button>
+              </div>
             )}
             {currentKey === "riskVerify" && (
               <Button onClick={submitRiskAndHistory} disabled={busy} className="h-11 px-5 rounded-2xl bg-green-700 border-green-700 hover:bg-green-800">
-                {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : "Save & Continue"}
+                {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : focus === "risk" ? "Save & back to record" : "Save & Continue"}
               </Button>
             )}
             {currentKey === "cancerTypeSelect" && (
@@ -1938,7 +2336,7 @@ export default function ClinicalScreeningPage() {
             )}
             {currentKey === "outcome" && (
               <Button onClick={submitOutcome} disabled={busy} className="h-11 px-5 rounded-2xl bg-green-700 border-green-700 hover:bg-green-800">
-                {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : "Finish"}
+                {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : focus === "outcome" ? "Save & back to record" : "Finish"}
               </Button>
             )}
           </div>

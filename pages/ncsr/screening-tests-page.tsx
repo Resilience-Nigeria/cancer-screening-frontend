@@ -76,8 +76,21 @@ const emptySample = () => ({
   notes: "",
 });
 
+// Used when this page is shown inside the clinical screening page's result modal (?embed=1): no menu or sidebar.
+function EmbedShell({ children }: { children: React.ReactNode }) {
+  return <div className="p-3 sm:p-5 bg-gray-50 dark:bg-gray-900 min-h-screen">{children}</div>;
+}
+
 export default function ScreeningTestsPage() {
   const router = useRouter();
+  const embed = router.query.embed === "1";
+  const Shell: React.ComponentType<{ children: React.ReactNode }> = embed ? EmbedShell : (Layout as any);
+
+  // Tell the clinical screening page (the parent window) that something was saved, or that we are done.
+  const notifyParent = (type: "ncsr-lab-saved" | "ncsr-lab-close", extra: Record<string, any> = {}) => {
+    if (!embed || typeof window === "undefined" || window.parent === window) return;
+    window.parent.postMessage({ type, ...extra }, window.location.origin);
+  };
   const [tab, setTab] = useState<Tab>("collect");
   const [busy, setBusy] = useState(false);
 
@@ -201,6 +214,7 @@ export default function ScreeningTestsPage() {
         notes: sample.notes.trim() || null,
       });
       setSavedSample(data?.sample ?? null);
+      notifyParent("ncsr-lab-saved", { sampleId: data?.sample?.sampleId, kind: "sample" });
       toast.success(`${test.label} ${collectNoun(test)} recorded.`);
     } catch (err: any) {
       toast.error(friendlyError(err, "Could not save."));
@@ -394,6 +408,7 @@ export default function ScreeningTestsPage() {
         pickAttachment(null);
       }
       setResultSaved(saved);
+      notifyParent("ncsr-lab-saved", { sampleId: saved?.sampleId ?? selected?.sampleId, kind: "result" });
       loadSamples();
     } catch (err: any) {
       toast.error(friendlyError(err, "Could not save the result."));
@@ -403,7 +418,7 @@ export default function ScreeningTestsPage() {
   }
 
   const goToClinical = (clientId: string) =>
-    router.push({ pathname: CLINICAL_SCREENING_PATH, query: { search: clientId, fromLab: "hpv" } });
+    router.push({ pathname: CLINICAL_SCREENING_PATH, query: { search: clientId } });
 
   const inputClass = "mt-2 rounded-2xl h-12";
   const pill = (active: boolean) =>
@@ -412,7 +427,7 @@ export default function ScreeningTestsPage() {
     }`;
 
   return (
-    <Layout>
+    <Shell>
       <div className="mb-4 sm:mb-6">
         <PageTitle>Sample Collection & Test Results</PageTitle>
         <p className="text-sm text-gray-500 mt-1">
@@ -1020,10 +1035,10 @@ export default function ScreeningTestsPage() {
                     <span>{step.text}</span>
                   </div>
                   <div className="flex flex-col sm:flex-row gap-3 justify-center">
-                    <Button layout="outline" className="rounded-xl" onClick={() => setSelected(null)}>
+                    <Button layout="outline" className="rounded-xl" onClick={() => (embed ? notifyParent("ncsr-lab-close") : setSelected(null))}>
                       Done
                     </Button>
-                    {step.tone !== "ok" && (
+                    {step.tone !== "ok" && !embed && (
                       <Button
                         className="rounded-xl bg-green-700 border-green-700 hover:bg-green-800"
                         onClick={() => goToClinical(selected.clientId)}
@@ -1045,6 +1060,6 @@ export default function ScreeningTestsPage() {
           onClose={() => setViewerOpen(false)}
         />
       )}
-    </Layout>
+    </Shell>
   );
 }

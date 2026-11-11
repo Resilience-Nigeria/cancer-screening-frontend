@@ -54,8 +54,8 @@ import VisitDetailsFields, { initialVisitMeta, ageFromDob, VisitMeta } from "../
 import { CERVICAL_RISK_GROUPS, cervicalRiskPatch } from "../../lib/cervicalRisk";
 import DateOfBirthField from "../components/DateOfBirthField";
 import BiodataExtraFields from "../components/BiodataExtraFields";
-import LabTestsPanel from "../../components/LabTestsPanel";
-import SearchableSelect from "../../components/SearchableSelect";
+import LabTestsPanel from "../components/LabTestsPanel";
+import SearchableSelect from "../components/SearchableSelect";
 import { getPreviousRoute, routeLabel } from "../../lib/routeHistory";
 
 // ---------------------------------------------------------------------------
@@ -249,6 +249,22 @@ function blankBiodata(): Record<string, any> {
     phoneNotClients: false,
     caregiverName: "",
     caregiverPhoneNumber: "",
+    dobEstimated: false,
+    dobMode: "date",
+    age: "",
+    hasCaregiver: false,
+  };
+}
+
+// Extra, UI-only biodata keys: how the birth date was entered and whether a caregiver exists.
+function biodataExtras(c: any) {
+  const estimated = !!c?.dobEstimated;
+  const dob = (c?.dateOfBirth || "").slice(0, 10);
+  return {
+    dobEstimated: estimated,
+    dobMode: estimated ? "age" : "date",
+    age: estimated && dob ? String(Math.max(0, new Date().getFullYear() - Number(dob.slice(0, 4)))) : "",
+    hasCaregiver: !!(c?.caregiverName || c?.caregiverPhoneNumber || c?.phoneNotClients),
   };
 }
 
@@ -348,7 +364,9 @@ export default function ClinicalScreeningPage() {
       setScreenings((prev) => {
         const cur = prev.cervical || {};
         if (cur.hpvResult) return prev;   // never overwrite what is already recorded
-        return { ...prev, cervical: { ...cur, methodHpv: true, ...labHpv } };
+        const { sampleId: _sampleId, ...fields } = labHpv;
+        const finding = fields.hpvResult === "positive" ? "suspicious" : fields.hpvResult === "negative" ? "non_suspicious" : cur.screeningResult;
+        return { ...prev, cervical: { ...cur, methodHpv: true, ...fields, ...(finding ? { screeningResult: finding } : {}) } };
       });
       toast.success("HPV method selected and the lab result filled in.");
     }
@@ -368,12 +386,34 @@ export default function ClinicalScreeningPage() {
   // breast and cervical are selected.
   const riskGroupsForVerify = useMemo(() => {
     const base = getRiskGroupsFor(cancerTypes, biodata.gender);
-    return dedupeFields(
+    const merged = dedupeFields(
       cancerTypes.includes("cervical") && biodata.gender !== "male"
         ? [...base, ...CERVICAL_RISK_GROUPS]
         : base
     );
+    // Last menstrual period and age at first menstruation are not always known, so they are optional.
+    return merged.map((g) => ({
+      ...g,
+      fields: g.fields.map((f) =>
+        /menstrua|menarche|\blmp\b/i.test(`${f.name} ${f.label}`)
+          ? { ...f, required: false, label: /optional/i.test(f.label) ? f.label : `${f.label} (optional)` }
+          : f
+      ),
+    }));
   }, [cancerTypes, biodata.gender]);
+
+  // The cervical risk section already asks about earlier cervical screening. When it does, the general
+  // "Previous cancer screening" question is dropped for cervical clients so the history is asked once.
+  const medicalHistoryGroup = useMemo<FieldGroup>(() => {
+    const cervicalAsksScreening =
+      cancerTypes.includes("cervical") &&
+      riskGroupsForVerify.some((g) =>
+        g.fields.some((f) => /screen/i.test(`${f.name} ${f.label}`) && !/^previousScreening/.test(f.name))
+      );
+    return cervicalAsksScreening
+      ? { ...MEDICAL_HISTORY_GROUP, fields: MEDICAL_HISTORY_GROUP.fields.filter((f) => !/^previousScreening/.test(f.name)) }
+      : MEDICAL_HISTORY_GROUP;
+  }, [cancerTypes, riskGroupsForVerify]);
 
   // Prefill physical exam weight/height from the risk profile
   useEffect(() => {
@@ -719,6 +759,7 @@ export default function ClinicalScreeningPage() {
           phoneNotClients: !!found.phoneNotClients,
           caregiverName: found.caregiverName || "",
           caregiverPhoneNumber: found.caregiverPhoneNumber || "",
+          ...biodataExtras(found),
         });
 
         // Opened from the Client Summary "Edit Details" button: go straight to the biodata form.
@@ -930,14 +971,19 @@ export default function ClinicalScreeningPage() {
   // The exact client payload sent to the API. If the client has no phone of their own, the
   // caregiver's number becomes the contact number and is flagged as not belonging to the client.
   function clientPayload() {
-    const clientPhone = (biodata.phoneNumber || "").trim();
-    const caregiverPhone = (biodata.caregiverPhoneNumber || "").trim();
+    // UI-only keys never go to the API.
+    const { dobMode, age, hasCaregiver, ...data } = biodata;
+    const clientPhone = (data.phoneNumber || "").trim();
+    const caregiverPhone = hasCaregiver ? (data.caregiverPhoneNumber || "").trim() : "";
+    const caregiverName = hasCaregiver ? (data.caregiverName || "").trim() : "";
     const usingCaregiverAsContact = !clientPhone && !!caregiverPhone;
     return {
-      ...biodata,
+      ...data,
+      dateOfBirth: data.dateOfBirth || "",
+      dobEstimated: dobMode === "age",
       phoneNumber: clientPhone || caregiverPhone,
-      phoneNotClients: !!biodata.phoneNotClients || usingCaregiverAsContact,
-      caregiverName: (biodata.caregiverName || "").trim() || null,
+      phoneNotClients: (hasCaregiver && !!data.phoneNotClients) || usingCaregiverAsContact,
+      caregiverName: caregiverName || null,
       caregiverPhoneNumber: caregiverPhone || null,
     };
   }
@@ -947,7 +993,11 @@ export default function ClinicalScreeningPage() {
     if (!clientId) return;
     const contact = clientPayload();
     if (!biodata.fullName || !biodata.gender || !contact.phoneNumber) {
-      toast.error("Full name, sex, and a phone number (the client's or a caregiver's) are required.");
+      toast.error("Full name, sex, and a phone number are required.");
+      return;
+    }
+    if (!contact.dateOfBirth) {
+      toast.error("Enter a date of birth, or switch to Age and enter the client's age.");
       return;
     }
     setBusy(true);
@@ -980,7 +1030,11 @@ export default function ClinicalScreeningPage() {
     setBiodataNotice("");
     const contact = clientPayload();
     if (!biodata.fullName || !biodata.gender || !contact.phoneNumber) {
-      toast.error("Full name, sex, and a phone number (the client's or a caregiver's) are required.");
+      toast.error("Full name, sex, and a phone number are required.");
+      return;
+    }
+    if (!contact.dateOfBirth) {
+      toast.error("Enter a date of birth, or switch to Age and enter the client's age.");
       return;
     }
     if (contact.phoneNumber !== biodata.phoneNumber || contact.phoneNotClients !== !!biodata.phoneNotClients) {
@@ -1144,6 +1198,7 @@ export default function ClinicalScreeningPage() {
       phoneNotClients: !!c.phoneNotClients,
       caregiverName: c.caregiverName || "",
       caregiverPhoneNumber: c.caregiverPhoneNumber || "",
+      ...biodataExtras(c),
     });
     setDuplicateMatch(null);
     setBusy(true);
@@ -1180,6 +1235,8 @@ export default function ClinicalScreeningPage() {
         screeningCategory: "new_client",
         otpSkipped: !!skip,
         otpSkipReason: skip?.reason ?? null,
+        // Kept so a record captured offline can still be traced after it syncs.
+        offlineId: typeof navigator !== "undefined" && navigator.onLine === false ? tempClient : undefined,
       };
       const { data, queued } = await sendOrQueue({
         method: "post",
@@ -1742,11 +1799,58 @@ export default function ClinicalScreeningPage() {
                 />
               </Label>
               <div className="col-span-2">
-                <span className="text-sm font-semibold">Date of Birth</span>
-                <DateOfBirthField
-                  value={biodata.dateOfBirth}
-                  onChange={(v) => setBiodata((p) => ({ ...p, dateOfBirth: v }))}
-                />
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-sm font-semibold">
+                    {biodata.dobMode === "age" ? "Age *" : "Date of Birth *"}
+                  </span>
+                  <div className="inline-flex rounded-xl border border-gray-200 dark:border-gray-600 overflow-hidden text-xs">
+                    {(["date", "age"] as const).map((m) => (
+                      <button
+                        key={m}
+                        type="button"
+                        onClick={() => setBiodata((p) => ({ ...p, dobMode: m }))}
+                        className={`px-3 py-1.5 ${biodata.dobMode === m ? "bg-green-700 text-white" : "bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300"}`}
+                      >
+                        {m === "date" ? "Date of birth" : "Age"}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                {biodata.dobMode === "age" ? (
+                  <>
+                    <Input
+                      type="number"
+                      inputMode="numeric"
+                      min={0}
+                      max={120}
+                      className="mt-2 rounded-2xl h-12"
+                      placeholder="Age in years"
+                      value={biodata.age}
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        const n = Number(v);
+                        const ok = v !== "" && Number.isFinite(n) && n >= 0 && n <= 120;
+                        setBiodata((p) => ({
+                          ...p,
+                          age: v,
+                          dobEstimated: true,
+                          // Stored as 1 January of the birth year.
+                          dateOfBirth: ok ? `${new Date().getFullYear() - n}-01-01` : "",
+                        }));
+                      }}
+                    />
+                    {biodata.dateOfBirth ? (
+                      <p className="mt-1 text-xs text-gray-500">
+                        Will be recorded as born in {biodata.dateOfBirth.slice(0, 4)} (estimated).
+                      </p>
+                    ) : null}
+                  </>
+                ) : (
+                  <DateOfBirthField
+                    value={biodata.dateOfBirth}
+                    onChange={(v) => setBiodata((p) => ({ ...p, dateOfBirth: v, dobEstimated: false }))}
+                  />
+                )}
               </div>
               <Label>
                 <span className="text-sm font-semibold">Sex *</span>
@@ -1763,7 +1867,7 @@ export default function ClinicalScreeningPage() {
               <div>
                 <Label>
                   <span className="text-sm font-semibold">
-                    Phone Number{biodata.caregiverPhoneNumber ? "" : " *"}
+                    Phone Number{biodata.hasCaregiver && biodata.caregiverPhoneNumber ? "" : " *"}
                   </span>
                   <Input
                     className="mt-2 rounded-2xl h-12"
@@ -1774,21 +1878,33 @@ export default function ClinicalScreeningPage() {
                     }}
                   />
                 </Label>
-                <label className="mt-2 flex items-center gap-2 text-xs text-gray-600 dark:text-gray-300">
+                <label className="mt-3 flex items-center gap-2 text-sm font-semibold text-gray-700 dark:text-gray-300">
+                  <input
+                    type="checkbox"
+                    checked={!!biodata.hasCaregiver}
+                    onChange={(e) =>
+                      setBiodata((p) => ({
+                        ...p,
+                        hasCaregiver: e.target.checked,
+                        ...(e.target.checked ? {} : { caregiverName: "", caregiverPhoneNumber: "", phoneNotClients: false }),
+                      }))
+                    }
+                  />
+                  Does the client have a caregiver?
+                </label>
+              </div>
+
+              {biodata.hasCaregiver ? (
+              <div className="col-span-2 rounded-2xl border border-gray-100 dark:border-gray-700 p-4">
+                <p className="text-sm font-semibold text-gray-700 dark:text-gray-300">Caregiver</p>
+                <label className="mt-1 mb-3 flex items-center gap-2 text-xs text-gray-600 dark:text-gray-300">
                   <input
                     type="checkbox"
                     checked={!!biodata.phoneNotClients}
                     onChange={(e) => setBiodata((p) => ({ ...p, phoneNotClients: e.target.checked }))}
                   />
-                  This number doesn't belong to the client
+                  The phone number above belongs to the caregiver
                 </label>
-              </div>
-
-              <div className="col-span-2 rounded-2xl border border-gray-100 dark:border-gray-700 p-4">
-                <p className="text-sm font-semibold text-gray-700 dark:text-gray-300">Caregiver</p>
-                <p className="text-xs text-gray-500 mb-3">
-                  Use this if the client has no phone. With no client phone number, the caregiver's number is used for contact.
-                </p>
                 <div className="grid grid-cols-2 gap-4">
                   <Label>
                     <span className="text-sm font-semibold">Caregiver's Name</span>
@@ -1814,6 +1930,7 @@ export default function ClinicalScreeningPage() {
                   </Label>
                 </div>
               </div>
+              ) : null}
               <Label>
                 <span className="text-sm font-semibold">Email Address <span className="text-gray-400 font-normal">(optional)</span></span>
                 <Input
@@ -2023,7 +2140,7 @@ export default function ClinicalScreeningPage() {
               onChange={(name, value) => setRisk((p) => ({ ...p, [name]: value }))}
             />
             <GroupedForm
-              groups={[MEDICAL_HISTORY_GROUP]}
+              groups={[medicalHistoryGroup]}
               values={risk}
               errors={{}}
               onChange={(name, value) => setRisk((p) => ({ ...p, [name]: value }))}
@@ -2081,11 +2198,15 @@ export default function ClinicalScreeningPage() {
               return (
                 <div key={ct} className="border-t border-gray-100 dark:border-gray-700 pt-6 first:border-t-0 first:pt-0">
                   <p className="text-sm font-bold text-green-700 uppercase tracking-wide mb-3">{cancerLabel(ct)}</p>
-                  {ct === "cervical" && hpvLab.released && (
+                  {ct === "cervical" && (
                     <div className="mb-3 rounded-xl border border-green-200 bg-green-50 text-green-900 text-sm p-3 flex gap-2">
                       <Lock className="w-4 h-4 mt-0.5 shrink-0" />
                       <span>
-                        The HPV result comes from the testing module, so the HPV fields are locked. To correct it, edit the result on the Samples &amp; Test Results page.
+                        {hpvLab.released
+                          ? "The HPV result below comes from the testing module. To correct it, edit the result there."
+                          : hpvLab.hasSample
+                          ? "The HPV sample is recorded. The result will appear here once it is entered in the testing module."
+                          : "Test results are not typed on this form. Use “Tests for this visit” below to record the HPV sample and enter its result."}
                       </span>
                     </div>
                   )}
@@ -2093,11 +2214,9 @@ export default function ClinicalScreeningPage() {
                     lockedFields={
                       ct !== "cervical"
                         ? undefined
-                        : hpvLab.released
+                        : hpvLab.released || hpvLab.hasSample
                         ? ["methodHpv", "hpvResult", "hpvGenotype", "hpvSampleDate", "hpvResultDate"]
-                        : hpvLab.hasSample
-                        ? ["hpvSampleDate"]
-                        : undefined
+                        : ["hpvResult", "hpvGenotype", "hpvSampleDate", "hpvResultDate"]
                     }
                     groups={groupsWithFacilities}
                     values={screenings[ct] || {}}
@@ -2123,7 +2242,17 @@ export default function ClinicalScreeningPage() {
                       onHpvResult={(v) =>
                         setScreenings((prev) => ({
                           ...prev,
-                          cervical: { ...(prev.cervical || {}), methodHpv: true, ...v },
+                          cervical: {
+                            ...(prev.cervical || {}),
+                            methodHpv: true,
+                            ...v,
+                            // the finding follows the lab result
+                            ...(v.hpvResult === "positive"
+                              ? { screeningResult: "suspicious" }
+                              : v.hpvResult === "negative"
+                              ? { screeningResult: "non_suspicious" }
+                              : {}),
+                          },
                         }))
                       }
                       onHpvSample={(v) =>

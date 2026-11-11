@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/router";
 import { Button, Input, Label, Select } from "@roketid/windmill-react-ui";
-import { Search, Loader2, CheckCircle, AlertTriangle, ClipboardCheck, Activity } from "lucide-react";
+import { Search, Loader2, CheckCircle, AlertTriangle, ClipboardCheck, Activity, Paperclip, X } from "lucide-react";
 import toast from "react-hot-toast";
 
 import Layout from "../containers/Layout";
@@ -9,6 +9,9 @@ import PageTitle from "../components/Typography/PageTitle";
 import api from "../../lib/api";
 import { friendlyError } from "../../lib/apiError";
 import { ageFromDob } from "../components/VisitDetailsFields";
+import ResultAttachmentViewer from "../components/ResultAttachmentViewer";
+import { HPV_RISK_OPTIONS, HPV_TRUENAT_CATEGORIES, VIRAL_LOAD_LABEL, hpvGroupCode, hpvRiskLabel } from "../../lib/hpvRisk";
+import { ACCEPTED_ATTACHMENTS, MAX_ATTACHMENT_MB, prepareImage } from "../../lib/imageUpload";
 import {
   CANCER_TYPES,
   ScreeningTest,
@@ -17,6 +20,7 @@ import {
   collectNoun,
   deriveResult,
   findTest,
+  inconclusiveRun,
   nextStep,
   resultLabel,
   testsFor,
@@ -27,6 +31,14 @@ const CLINICAL_SCREENING_PATH = "/ncsr/clinical-screening";
 
 type Tab = "collect" | "results";
 type StatusFilter = "collected" | "result_released";
+
+// Written out in full so Tailwind keeps these classes.
+const LOAD_TONE: Record<string, string> = {
+  very_low: "bg-green-100 text-green-800 border-green-500",
+  low: "bg-yellow-100 text-yellow-800 border-yellow-500",
+  medium: "bg-orange-100 text-orange-800 border-orange-500",
+  high: "bg-red-100 text-red-700 border-red-500",
+};
 
 const todayStr = () => new Date().toISOString().slice(0, 10);
 
@@ -87,8 +99,11 @@ export default function ScreeningTestsPage() {
   const [samples, setSamples] = useState<any[]>([]);
   const [listLoading, setListLoading] = useState(false);
   const [selected, setSelected] = useState<any>(null);
-  const [resultForm, setResultForm] = useState({ resultDate: todayStr(), result: "", resultValue: "", detail: "", resultNotes: "" });
+  const [resultForm, setResultForm] = useState<{ resultDate: string; result: string; resultValue: string; detail: string; resultNotes: string; meta: Record<string, any> }>({ resultDate: todayStr(), result: "", resultValue: "", detail: "", resultNotes: "", meta: {} });
   const [resultSaved, setResultSaved] = useState<any>(null);
+  const [attachFile, setAttachFile] = useState<File | null>(null);
+  const [attachPreview, setAttachPreview] = useState("");
+  const [viewerOpen, setViewerOpen] = useState(false);
 
   const selectedTest = findTest(selected?.testType);
   const clientAge = useMemo(() => ageFromDob(client?.dateOfBirth?.slice(0, 10)), [client]);
@@ -97,7 +112,11 @@ export default function ScreeningTestsPage() {
   useEffect(() => {
     if (!router.isReady) return;
     const { tab: qTab, cancer, test: qTest, search } = router.query;
-    if (qTab === "results") setTab("results");
+    if (qTab === "results") {
+      setTab("results");
+      // ?tab=results&search=<clientId> opens the pending list already filtered to that client
+      if (typeof search === "string" && search) setListSearch(search);
+    }
     if (typeof cancer === "string" && CANCER_TYPES.some((c) => c.value === cancer)) setCancerType(cancer);
     if (typeof qTest === "string" && findTest(qTest)) {
       setTestKey(qTest);
@@ -220,7 +239,41 @@ export default function ScreeningTestsPage() {
     if (tab === "results") loadSamples();
   }, [tab, statusFilter, filterCancer, filterTest]);
 
+  function pickAttachment(file: File | null) {
+    if (attachPreview) URL.revokeObjectURL(attachPreview);
+    setAttachPreview("");
+    if (!file) {
+      setAttachFile(null);
+      return;
+    }
+    const okType = /^image\/(jpeg|png|webp)$/.test(file.type) || file.type === "application/pdf";
+    if (!okType) {
+      toast.error("Choose a photo (JPG, PNG, WebP) or a PDF.");
+      return;
+    }
+    if (file.size > 25 * 1024 * 1024) {
+      toast.error("That file is too large.");
+      return;
+    }
+    setAttachFile(file);
+    if (file.type.startsWith("image/")) setAttachPreview(URL.createObjectURL(file));
+  }
+
+  async function removeAttachment() {
+    if (!selected) return;
+    if (!window.confirm("Remove the attached image from this result?")) return;
+    try {
+      await api.delete(`/screening-samples/${selected.sampleId}/attachment`);
+      setSelected((p: any) => ({ ...p, hasAttachment: false }));
+      loadSamples();
+      toast.success("Image removed.");
+    } catch (err: any) {
+      toast.error(friendlyError(err, "Could not remove the image."));
+    }
+  }
+
   function openResultForm(s: any) {
+    pickAttachment(null);
     setSelected(s);
     setResultSaved(null);
     setResultForm({
@@ -229,6 +282,7 @@ export default function ScreeningTestsPage() {
       resultValue: s.resultValue != null ? String(s.resultValue) : "",
       detail: s.resultDetail || "",
       resultNotes: s.resultNotes || "",
+      meta: s.resultMeta || {},
     });
   }
 
@@ -236,14 +290,29 @@ export default function ScreeningTestsPage() {
   const derived = selectedTest?.value && resultForm.resultValue !== ""
     ? deriveResult(selectedTest, parseFloat(resultForm.resultValue))
     : null;
-  const effectiveResult = selectedTest?.value ? derived || "" : resultForm.result;
+  const runInvalid = !!selectedTest && inconclusiveRun(selectedTest, resultForm.meta);
+  const effectiveResult = runInvalid ? "" : selectedTest?.value ? derived || "" : resultForm.result;
+  const isHpvPositive = selectedTest?.key === "hpv_dna" && effectiveResult === "positive";
+  // Truenat cannot name the genotype: it reports a category (16/18, 31/33/35/45/52/58, or others) and a level.
+  // Other platforms name the genotype directly.
+  const useGroups = isHpvPositive && resultForm.meta.assay !== "Other platform";
+  const groupCode = useGroups ? hpvGroupCode(resultForm.meta) : "";
+  const effectiveDetail = useGroups ? groupCode : resultForm.detail;
   const needsDetail = !!selectedTest?.detail && selectedTest.detail.requiredFor.includes(effectiveResult);
-
   async function saveResult() {
     if (!selected || !selectedTest) return;
     const sampleDate = String(selected.sampleDate).slice(0, 10);
 
-    if (selectedTest.value) {
+    for (const f of selectedTest.extraFields ?? []) {
+      if (f.required && !String(resultForm.meta[f.name] ?? "").trim()) {
+        toast.error(`Select or enter: ${f.label}.`);
+        return;
+      }
+    }
+
+    if (runInvalid) {
+      // Nothing more to validate: an invalid run is saved as inconclusive.
+    } else if (selectedTest.value) {
       const v = parseFloat(resultForm.resultValue);
       if (Number.isNaN(v)) {
         toast.error(`Enter the ${selectedTest.value.label}.`);
@@ -257,8 +326,16 @@ export default function ScreeningTestsPage() {
       toast.error("Select the result.");
       return;
     }
-    if (needsDetail && !resultForm.detail) {
+    if (useGroups && !groupCode) {
+      toast.error("Select the Truenat category: HPV-HR 16/18, HPV-HR 31/33/35/45/52/58 or Others.");
+      return;
+    }
+    if (needsDetail && !effectiveDetail) {
       toast.error(`Select the ${selectedTest.detail!.label.toLowerCase()}.`);
+      return;
+    }
+    if (isHpvPositive && !resultForm.meta.riskCategory) {
+      toast.error("Select the viral load concentration (very low, low, medium or high).");
       return;
     }
     if (!resultForm.resultDate) {
@@ -280,13 +357,43 @@ export default function ScreeningTestsPage() {
         resultDate: resultForm.resultDate,
         resultNotes: resultForm.resultNotes.trim() || null,
       };
-      if (selectedTest.value) payload.resultValue = parseFloat(resultForm.resultValue);
+      if (selectedTest.extraFields?.length || isHpvPositive) {
+        const meta: Record<string, any> = { ...resultForm.meta };
+        if (!isHpvPositive) {
+          for (const k of ["riskCategory", "hrCategory", "ct", "riskSuggested", "riskOverridden", "hr1618", "level1618", "ct1618", "hrOther", "levelOther", "ctOther"]) delete meta[k];
+        } else {
+          for (const k of ["riskSuggested", "riskOverridden", "hr1618", "level1618", "ct1618", "hrOther", "levelOther", "ctOther"]) delete meta[k];
+          if (!useGroups) { delete meta.hrCategory; delete meta.ct; }
+        }
+        payload.resultMeta = meta;
+      }
+      if (runInvalid) payload.result = null;
+      else if (selectedTest.value) payload.resultValue = parseFloat(resultForm.resultValue);
       else payload.result = resultForm.result;
-      if (selectedTest.detail && needsDetail) payload[selectedTest.detail.name] = resultForm.detail;
+      if (selectedTest.detail && needsDetail) payload[selectedTest.detail.name] = effectiveDetail;
 
       const { data } = await api.patch(`/screening-samples/${selected.sampleId}/result`, payload);
-      setResultSaved(data?.sample ?? { ...selected, ...payload, result: effectiveResult, resultDetail: resultForm.detail });
+      let saved = data?.sample ?? { ...selected, ...payload, result: effectiveResult, resultDetail: resultForm.detail };
       toast.success("Result recorded.");
+
+      // Optional printout image. The result is already saved, so an upload problem never loses it.
+      if (attachFile) {
+        try {
+          const file = await prepareImage(attachFile);
+          if (file.size > MAX_ATTACHMENT_MB * 1024 * 1024) throw new Error("too large");
+          const form = new FormData();
+          form.append("file", file);
+          const up = await api.post(`/screening-samples/${selected.sampleId}/attachment`, form, {
+            headers: { "Content-Type": "multipart/form-data" },
+          });
+          saved = up.data?.sample ?? { ...saved, hasAttachment: true };
+          toast.success("Image attached.");
+        } catch (e: any) {
+          toast.error("The result is saved, but the image could not be uploaded. Open the sample again to retry.");
+        }
+        pickAttachment(null);
+      }
+      setResultSaved(saved);
       loadSamples();
     } catch (err: any) {
       toast.error(friendlyError(err, "Could not save the result."));
@@ -296,7 +403,7 @@ export default function ScreeningTestsPage() {
   }
 
   const goToClinical = (clientId: string) =>
-    router.push({ pathname: CLINICAL_SCREENING_PATH, query: { search: clientId } });
+    router.push({ pathname: CLINICAL_SCREENING_PATH, query: { search: clientId, fromLab: "hpv" } });
 
   const inputClass = "mt-2 rounded-2xl h-12";
   const pill = (active: boolean) =>
@@ -348,6 +455,13 @@ export default function ScreeningTestsPage() {
               <p className="text-xs text-gray-500">
                 {test.kind === "procedure" ? "Write this reference on the request form." : "Write this reference on the sample and the lab form."}
               </p>
+              {test.key === "hpv_dna" && (
+                <p className="text-xs text-blue-800 bg-blue-50 border border-blue-200 rounded-xl p-3 text-left max-w-md mx-auto">
+                  <b>Tip:</b> when the lab loads this sample on the Truenat machine, type <b>{savedSample.sampleRef}</b> in the
+                  machine&apos;s <b>Patient ID</b> field (not a running number like 001). The printout then matches this record
+                  without any guessing.
+                </p>
+              )}
               <div className="flex flex-col sm:flex-row gap-3 justify-center pt-2">
                 <Button layout="outline" className="rounded-xl" onClick={resetCollect}>
                   Record another {test.label}
@@ -654,7 +768,44 @@ export default function ScreeningTestsPage() {
                     />
                   </Label>
 
-                  {selectedTest.value ? (
+                  {selectedTest.extraFields?.map((f) => (
+                    <Label key={f.name} className={f.name === "runStatus" ? "sm:col-span-2" : ""}>
+                      <span className="text-sm font-semibold">
+                        {f.label}
+                        {f.required ? " *" : <span className="text-gray-400 font-normal"> (optional)</span>}
+                      </span>
+                      {f.type === "select" ? (
+                        <Select
+                          className={inputClass}
+                          value={resultForm.meta[f.name] ?? ""}
+                          onChange={(e) => setResultForm((p) => ({ ...p, meta: { ...p.meta, [f.name]: e.target.value } }))}
+                        >
+                          <option value="">Select</option>
+                          {f.options?.map((o) => (
+                            <option key={o} value={o}>{o}</option>
+                          ))}
+                        </Select>
+                      ) : (
+                        <Input
+                          type={f.type === "number" ? "number" : "text"}
+                          inputMode={f.type === "number" ? "decimal" : undefined}
+                          step={f.type === "number" ? "0.01" : undefined}
+                          className={inputClass}
+                          autoComplete="off"
+                          value={resultForm.meta[f.name] ?? ""}
+                          onChange={(e) => setResultForm((p) => ({ ...p, meta: { ...p.meta, [f.name]: e.target.value } }))}
+                        />
+                      )}
+                    </Label>
+                  ))}
+
+                  {runInvalid && (
+                    <div className="sm:col-span-2 rounded-xl border border-blue-200 bg-blue-50 text-blue-800 text-sm p-3">
+                      The machine run is not valid, so this will be saved as <b>inconclusive</b> and a repeat test will be needed.
+                    </div>
+                  )}
+
+                  {runInvalid ? null : selectedTest.value ? (
                     <Label>
                       <span className="text-sm font-semibold">
                         {selectedTest.value.label} ({selectedTest.value.unit}) *
@@ -675,7 +826,7 @@ export default function ScreeningTestsPage() {
                       <Select
                         className={inputClass}
                         value={resultForm.result}
-                        onChange={(e) => setResultForm((p) => ({ ...p, result: e.target.value, detail: "" }))}
+                        onChange={(e) => setResultForm((p) => ({ ...p, result: e.target.value, detail: "", meta: { ...p.meta, riskCategory: "" } }))}
                       >
                         <option value="">Select</option>
                         {selectedTest.results.map((o) => (
@@ -695,13 +846,20 @@ export default function ScreeningTestsPage() {
                     </div>
                   )}
 
-                  {needsDetail && selectedTest.detail && (
+                  {needsDetail && selectedTest.detail && !useGroups && (
                     <Label className="sm:col-span-2">
                       <span className="text-sm font-semibold">{selectedTest.detail.label} *</span>
                       <Select
                         className={inputClass}
                         value={resultForm.detail}
-                        onChange={(e) => setResultForm((p) => ({ ...p, detail: e.target.value }))}
+                        onChange={(e) =>
+                          setResultForm((p) => ({
+                            ...p,
+                            detail: e.target.value,
+                            // Suggest the risk category from the genotype; it can still be changed below.
+                            meta: p.meta,
+                          }))
+                        }
                       >
                         <option value="">Select</option>
                         {selectedTest.detail.options.map((o) => (
@@ -709,6 +867,79 @@ export default function ScreeningTestsPage() {
                         ))}
                       </Select>
                     </Label>
+                  )}
+
+                  {useGroups && (
+                    <div className="sm:col-span-2">
+                      <span className="text-sm font-semibold block mb-1">Category detected on the Truenat report *</span>
+                      <div className="space-y-2" role="radiogroup" aria-label="Truenat HPV category">
+                        {HPV_TRUENAT_CATEGORIES.map((c) => {
+                          const on = resultForm.meta.hrCategory === c.value;
+                          return (
+                            <label
+                              key={c.value}
+                              className={`flex items-center gap-3 rounded-xl border-2 px-3 py-3 cursor-pointer transition ${
+                                on ? "border-red-400 bg-red-50 dark:bg-red-900/10" : "border-gray-200 hover:border-gray-300"
+                              }`}
+                            >
+                              <input
+                                type="radio"
+                                name="truenatCategory"
+                                checked={on}
+                                onChange={() => setResultForm((p) => ({ ...p, meta: { ...p.meta, hrCategory: c.value } }))}
+                              />
+                              <span className="text-sm font-medium text-gray-800 dark:text-gray-100">{c.label}</span>
+                            </label>
+                          );
+                        })}
+                      </div>
+                      <p className="text-xs text-gray-500 mt-1.5">
+                        Truenat cannot say which genotype in the category it is, so only one category is recorded.
+                      </p>
+                    </div>
+                  )}
+
+                  {isHpvPositive && (
+                    <div className="sm:col-span-2 space-y-4">
+                      <div>
+                        <span className="text-sm font-semibold block mb-1">{VIRAL_LOAD_LABEL} *</span>
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2" role="radiogroup" aria-label="Viral load concentration">
+                          {HPV_RISK_OPTIONS.map((o) => {
+                            const on = resultForm.meta.riskCategory === o.value;
+                            return (
+                              <button
+                                key={o.value}
+                                type="button"
+                                role="radio"
+                                aria-checked={on}
+                                onClick={() => setResultForm((p) => ({ ...p, meta: { ...p.meta, riskCategory: o.value } }))}
+                                className={`rounded-xl border-2 px-2 py-2.5 text-sm font-semibold transition ${
+                                  on ? LOAD_TONE[o.value] : "border-gray-200 text-gray-600 hover:border-gray-300"
+                                }`}
+                              >
+                                {o.label}
+                              </button>
+                            );
+                          })}
+                        </div>
+                        <p className="text-xs text-gray-500 mt-1.5">The concentration printed next to the detected category on the report.</p>
+                      </div>
+                      {useGroups && (
+                        <Label className="block sm:max-w-xs">
+                          <span className="text-sm font-semibold">Ct value <span className="text-gray-400 font-normal">(optional)</span></span>
+                          <Input
+                            type="number"
+                            inputMode="decimal"
+                            step="0.01"
+                            min={0}
+                            max={60}
+                            className={inputClass}
+                            value={resultForm.meta.ct ?? ""}
+                            onChange={(e) => setResultForm((p) => ({ ...p, meta: { ...p.meta, ct: e.target.value } }))}
+                          />
+                        </Label>
+                      )}
+                    </div>
                   )}
 
                   <Label className="sm:col-span-2">
@@ -720,6 +951,45 @@ export default function ScreeningTestsPage() {
                       onChange={(e) => setResultForm((p) => ({ ...p, resultNotes: e.target.value }))}
                     />
                   </Label>
+
+                  {/* Optional printout / photo from the lab machine */}
+                  <div className="sm:col-span-2 rounded-2xl border border-dashed border-gray-300 dark:border-gray-600 p-3 space-y-2">
+                    <p className="text-sm font-semibold flex items-center gap-2">
+                      <Paperclip className="w-4 h-4" /> Result printout / photo{" "}
+                      <span className="text-gray-400 font-normal">(optional)</span>
+                    </p>
+                    {selected.hasAttachment && !attachFile && (
+                      <div className="flex flex-wrap items-center gap-3 text-sm">
+                        <span className="text-green-700 font-medium">An image is already attached.</span>
+                        <button type="button" className="underline text-green-700 font-semibold" onClick={() => setViewerOpen(true)}>View</button>
+                        <button type="button" className="underline text-red-600 font-semibold" onClick={removeAttachment}>Remove</button>
+                      </div>
+                    )}
+                    {attachFile ? (
+                      <div className="flex items-center gap-3">
+                        {attachPreview ? (
+                          <img src={attachPreview} alt="Selected printout" className="h-20 w-20 rounded-xl object-cover border border-gray-200" />
+                        ) : (
+                          <span className="text-xs rounded-xl bg-gray-100 px-3 py-2">PDF</span>
+                        )}
+                        <div className="min-w-0 flex-1">
+                          <p className="text-xs font-semibold text-gray-700 truncate">{attachFile.name}</p>
+                          <p className="text-xs text-gray-500">{(attachFile.size / 1024 / 1024).toFixed(1)} MB · uploads when you save</p>
+                        </div>
+                        <button type="button" onClick={() => pickAttachment(null)} aria-label="Remove selected file">
+                          <X className="w-4 h-4 text-gray-500" />
+                        </button>
+                      </div>
+                    ) : (
+                      <input
+                        type="file"
+                        accept={ACCEPTED_ATTACHMENTS}
+                        onChange={(e) => pickAttachment(e.target.files?.[0] ?? null)}
+                        className="block w-full text-sm text-gray-600 file:mr-3 file:rounded-xl file:border-0 file:bg-green-700 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-white hover:file:bg-green-800"
+                      />
+                    )}
+                    <p className="text-xs text-gray-500">Take a photo of the machine printout or choose a file. JPG, PNG, WebP or PDF.</p>
+                  </div>
                 </div>
                 <div className="flex justify-end">
                   <Button
@@ -734,7 +1004,7 @@ export default function ScreeningTestsPage() {
             )}
 
             {selected && selectedTest && resultSaved && (() => {
-              const step = nextStep(selectedTest, resultSaved.result, resultSaved.resultDetail);
+              const step = nextStep(selectedTest, resultSaved.result, resultSaved.resultDetail, resultSaved.resultMeta ?? resultForm.meta);
               return (
                 <div className="space-y-4 text-center py-4">
                   <CheckCircle className="w-12 h-12 text-green-600 mx-auto" />
@@ -742,7 +1012,8 @@ export default function ScreeningTestsPage() {
                   <p className="text-sm text-gray-500 break-words">
                     {selected.client?.fullName || selected.clientId} · {selectedTest.label}: {resultLabel(selectedTest, resultSaved.result)}
                     {resultSaved.resultValue != null && selectedTest.value ? ` (${resultSaved.resultValue} ${selectedTest.value.unit})` : ""}
-                    {resultSaved.resultDetail ? ` · ${resultSaved.resultDetail}` : ""} · released {prettyDate(resultSaved.resultDate)}
+                    {resultSaved.resultDetail ? ` · ${resultSaved.resultDetail}` : ""}
+                    {(resultSaved.resultMeta?.riskCategory || (isHpvPositive && resultForm.meta.riskCategory)) ? ` · viral load ${hpvRiskLabel(resultSaved.resultMeta?.riskCategory || resultForm.meta.riskCategory).toLowerCase()}` : ""} · released {prettyDate(resultSaved.resultDate)}
                   </p>
                   <div className={`text-left text-sm rounded-xl border p-3 flex gap-2 ${toneClass[step.tone]}`}>
                     {step.tone === "warn" && <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />}
@@ -766,6 +1037,13 @@ export default function ScreeningTestsPage() {
             })()}
           </div>
         </div>
+      )}
+      {viewerOpen && selected && (
+        <ResultAttachmentViewer
+          sampleId={selected.sampleId}
+          title={`${selectedTest?.label ?? "Result"} · ${selected.sampleRef}`}
+          onClose={() => setViewerOpen(false)}
+        />
       )}
     </Layout>
   );
