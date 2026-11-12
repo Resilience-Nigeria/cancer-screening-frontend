@@ -6,6 +6,7 @@ import { Clock, X } from "lucide-react";
 import api from "../lib/api";
 
 type Overdue = {
+  scope?: "all" | "facilities" | "facility";
   days: number;
   total: number;
   byFacility: { facilityId: number; facilityName: string; facilityState?: string | null; count: number; oldest?: string | null }[];
@@ -18,9 +19,9 @@ const RESULTS_PATH = "/ncsr/screening-tests-page?tab=results";
 let shownThisLoad = false;
 
 /**
- * Admin-only pop-up: samples / tests still waiting for a result after 7 days.
- * Shows once on every page load / reload while anything is overdue (not on every in-app page change). Non-admins get a 403 from the API and see nothing.
- * Mount it once in the main layout so it appears wherever an admin lands.
+ * Pop-up for staff: samples / tests still waiting for a result after 7 days. Super / NICRAT admins see
+ * every facility, hospital admins their facilities, everyone else (desk officers) only their own facility.
+ * Shows once on every page load / reload while anything is overdue (not on every in-app page change).
  */
 export default function OverdueResultsAlert() {
   const [data, setData] = useState<Overdue | null>(null);
@@ -56,7 +57,9 @@ export default function OverdueResultsAlert() {
             <h3 id="overdue-title" className="text-lg font-semibold text-gray-800 dark:text-white">Test results overdue</h3>
             <p className="mt-1 text-sm text-gray-600 dark:text-gray-300">
               <b>{data.total}</b> sample{data.total === 1 ? "" : "s"} / test{data.total === 1 ? "" : "s"} {data.total === 1 ? "has" : "have"} been waiting
-              for a result for more than {data.days} days. Please follow up with the lab or facility.
+              for a result for more than {data.days} days
+              {data.scope === "facility" ? " at your facility" : data.scope === "facilities" ? " in your facilities" : " across all facilities"}.
+              {data.scope === "facility" ? " Please follow up with the lab and enter the results." : " Please follow up with the lab or facility."}
             </p>
           </div>
           <button type="button" onClick={() => setOpen(false)} aria-label="Close" className="p-1 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700">
@@ -65,7 +68,7 @@ export default function OverdueResultsAlert() {
         </div>
 
         <div className="flex-1 overflow-y-auto px-6 space-y-4">
-          {data.byFacility.length > 0 && (
+          {data.byFacility.length > 1 && (
             <div>
               <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-2">By facility</p>
               <ul className="space-y-1.5 text-sm">
