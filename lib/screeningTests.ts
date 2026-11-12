@@ -2,11 +2,15 @@ import catalog from "./screeningTests.json";
 
 export type Severity = "normal" | "abnormal" | "urgent" | "neutral";
 export type ResultOption = { value: string; label: string; severity: Severity };
+export type ExtraOption = string | { value: string; label: string };
 export type ExtraField = {
   name: string;
   label: string;
   type: "select" | "text" | "number";
-  options?: string[];
+  /** Plain values, or { value, label } pairs when the stored value differs from what is shown. */
+  options?: ExtraOption[];
+  /** Show (and require) this field only when another field has one of these values. */
+  showWhen?: { field: string; in: string[] };
   required?: boolean;
   min?: number;
   max?: number;
@@ -29,6 +33,18 @@ export type ScreeningTest = {
   detail?: { name: string; label: string; requiredFor: string[]; options: { value: string; label: string }[] };
 };
 
+/** Options of an extra field as { value, label }. */
+export const extraOptions = (f: ExtraField): { value: string; label: string }[] =>
+  (f.options ?? []).map((o) => (typeof o === "string" ? { value: o, label: o } : o));
+
+/** Whether an extra field applies, given the answers so far. */
+export const extraVisible = (f: ExtraField, meta?: Record<string, any> | null): boolean =>
+  !f.showWhen || f.showWhen.in.includes(String(meta?.[f.showWhen.field] ?? ""));
+
+/** Display text for a stored extra-field value. */
+export const extraValueLabel = (f: ExtraField | undefined, v: any): string =>
+  (f && extraOptions(f).find((o) => o.value === String(v))?.label) ?? String(v ?? "");
+
 export const CANCER_TYPES: { value: string; label: string }[] = catalog.cancerTypes;
 export const TESTS: ScreeningTest[] = catalog.tests as ScreeningTest[];
 
@@ -48,6 +64,19 @@ export function deriveResult(t: ScreeningTest, value: number): string | null {
   }
   return null;
 }
+
+/**
+ * Results are grouped as Non-suspicious, Suspicious or Inconclusive. "abnormal" is no longer used:
+ * older records that still have it count as suspicious.
+ */
+export type Finding = "non_suspicious" | "suspicious" | "inconclusive";
+export const findingOf = (severity?: string | null): Finding =>
+  severity === "urgent" || severity === "abnormal" ? "suspicious" : severity === "neutral" || !severity ? "inconclusive" : "non_suspicious";
+export const FINDING_LABEL: Record<Finding, string> = {
+  non_suspicious: "Non-suspicious",
+  suspicious: "Suspicious",
+  inconclusive: "Inconclusive",
+};
 
 export const resultLabel = (t: ScreeningTest | undefined, result?: string | null) =>
   t?.results.find((r) => r.value === result)?.label ?? result ?? "";
@@ -90,7 +119,7 @@ export function nextStep(
   if (severity === "urgent") {
     return {
       tone: "warn",
-      text: "Suspicious or malignant finding. Arrange urgent diagnostic evaluation or referral (Stage 3) and tell the client promptly.",
+      text: "Suspicious result. Continue in the clinical screening to arrange the next test, diagnostic evaluation or referral (Stage 3), and tell the client promptly.",
     };
   }
   if (severity === "abnormal") {

@@ -17,6 +17,8 @@ import {
   ClipboardList,
   UserCheck,
   Send,
+  Trash2,
+  ScrollText,
 } from "lucide-react";
 import { ComponentType } from "react";
 
@@ -119,6 +121,8 @@ const routes: IRoute[] = [
   { path: "/ncsr/facility-map", icon: MapPinned, name: "Facility Map" },
   { path: "/ncsr/roles", icon: Settings, name: "Role Data Scope" },
   { path: "/ncsr/settings", icon: Settings, name: "Settings" },
+  { path: "/ncsr/activity-logs", icon: ScrollText, name: "Activity Log" },
+  { path: "/ncsr/deleted-records", icon: Trash2, name: "Deleted Records" },
 ];
 
 export type { IRoute };

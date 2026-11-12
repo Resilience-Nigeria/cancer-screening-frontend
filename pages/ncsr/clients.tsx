@@ -189,6 +189,24 @@ export default function ClientsIndexPage() {
   const [formData, setFormData] = useState<ClientForm>(initialFormData);
   const [formErrors, setFormErrors] = useState<string[]>([]);
 
+  // Admin-only correction of state / LGA of residence. It changes the Client ID, so it takes two confirmations.
+  const [canChangeResidence, setCanChangeResidence] = useState(false);
+  const [residenceDialog, setResidenceDialog] = useState<null | {
+    phase: 1 | 2;
+    oldId: string;
+    newId: string;
+    reason: string;
+    payload: Record<string, any>;
+  }>(null);
+
+  useEffect(() => {
+    api
+      .get("/clients/id-change-access")
+      .then(({ data }) => setCanChangeResidence(!!data?.canChangeResidence))
+      // If the check itself fails, keep the fields editable; the server still refuses non-admins.
+      .catch(() => setCanChangeResidence(true));
+  }, []);
+
   const resultsPerPage = 10;
 
   async function fetchClients() {
@@ -388,12 +406,17 @@ function openEditModal(client: Client) {
     if (!payload.screeningCategory) delete payload.screeningCategory;
     if (!payload.registrationDate) delete payload.registrationDate;
 
+    await saveClient(payload);
+  }
+
+  async function saveClient(payload: Record<string, any>) {
     setIsSubmitting(true);
     setFormErrors([]);
 
     try {
       if (editingClient) {
-        // Details only. This never creates a visit.
+        // Details only. This never creates a visit. If an admin changed the state/LGA of residence,
+        // the server answers 409 with the new Client ID and we ask for confirmation first.
         await api.patch(`/clients/${editingClient.clientId}`, payload);
         toast.success("Client details updated.");
       } else {
@@ -403,6 +426,11 @@ function openEditModal(client: Client) {
       closeModal();
       fetchClients(); // Refresh the list
     } catch (err: any) {
+      const d = err?.response?.data;
+      if (editingClient && err?.response?.status === 409 && d?.requiresIdChange) {
+        setResidenceDialog({ phase: 1, oldId: d.oldClientId, newId: d.newClientId, reason: "", payload });
+        return;
+      }
       // Keep the modal open and everything typed; list exactly what the server rejected.
       const errors = err?.response?.data?.errors;
       if (errors && typeof errors === "object") {
@@ -414,6 +442,38 @@ function openEditModal(client: Client) {
             `Failed to ${editingClient ? "update" : "add"} client. Please try again.`
         );
       }
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+
+  async function confirmResidenceChange() {
+    const d = residenceDialog;
+    if (!d || !editingClient) return;
+    if (d.reason.trim().length < 5) {
+      toast.error("Give a short reason for the change.");
+      return;
+    }
+    setIsSubmitting(true);
+    try {
+      const { data } = await api.patch(`/clients/${editingClient.clientId}`, {
+        ...d.payload,
+        confirmIdChange: true,
+        idChangeReason: d.reason.trim(),
+      });
+      const newId = data?.client?.clientId || d.newId;
+      toast.success(`Client updated. The Client ID is now ${newId}.`);
+      setResidenceDialog(null);
+      closeModal();
+      fetchClients();
+    } catch (err: any) {
+      const errors = err?.response?.data?.errors;
+      toast.error(
+        errors && typeof errors === "object"
+          ? String(Object.values(errors).flat()[0])
+          : err?.response?.data?.message || "Could not change the Client ID."
+      );
     } finally {
       setIsSubmitting(false);
     }
@@ -878,7 +938,7 @@ function openEditModal(client: Client) {
                           onChange={handleInputChange}
                           className="mt-1 rounded-xl"
                           required={!editingClient}
-                          disabled={isSubmitting}
+                          disabled={isSubmitting || (!!editingClient && !canChangeResidence)}
                         >
                           <option value="">Select State</option>
                           {nigerianStates.map((state) => (
@@ -899,7 +959,7 @@ function openEditModal(client: Client) {
                           onChange={handleInputChange}
                           className="mt-1 rounded-xl"
                           required={!editingClient}
-                          disabled={!formData.stateOfResidence || isSubmitting}
+                          disabled={!formData.stateOfResidence || isSubmitting || (!!editingClient && !canChangeResidence)}
                         >
                           <option value="">Select LGA</option>
                           {formData.stateOfResidence && lgasByState[getStateCode(formData.stateOfResidence)]?.map((lga) => (
@@ -910,6 +970,13 @@ function openEditModal(client: Client) {
                         </Select>
                       </Label>
                     </div>
+                    {editingClient && (
+                      <p className="mt-2 text-xs text-gray-500">
+                        {canChangeResidence
+                          ? "Changing the state or LGA changes the Client ID. You will be asked to confirm."
+                          : "The state and LGA of residence can only be changed by an admin, because the Client ID is based on them."}
+                      </p>
+                    )}
                   </div>
 
                   {/* Address */}
@@ -1410,6 +1477,55 @@ function openEditModal(client: Client) {
           </div>
         ) : null}
       </div>
+      {residenceDialog && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 p-4" role="dialog" aria-modal="true">
+          <div className="w-full max-w-lg rounded-3xl bg-white dark:bg-gray-800 p-6 shadow-2xl">
+            {residenceDialog.phase === 1 ? (
+              <>
+                <h3 className="text-lg font-semibold text-gray-800 dark:text-white">This will change the Client ID</h3>
+                <p className="mt-2 text-sm text-gray-600 dark:text-gray-300">
+                  The Client ID is built from the state and LGA of residence. Saving this correction gives the client a new ID, and the new ID replaces the old one everywhere in the app (visits, results, referrals, risk profile and more).
+                </p>
+                <div className="mt-4 rounded-2xl bg-amber-50 border border-amber-200 p-4 text-sm space-y-2">
+                  <div className="flex justify-between gap-3"><span className="text-gray-600">Current ID</span><span className="font-mono font-semibold break-all text-right">{residenceDialog.oldId}</span></div>
+                  <div className="flex justify-between gap-3"><span className="text-gray-600">New ID</span><span className="font-mono font-semibold break-all text-right text-green-800">{residenceDialog.newId}</span></div>
+                  <div className="flex justify-between gap-3"><span className="text-gray-600">Residence</span><span className="font-semibold text-right">{formData.lgaOfResidence}, {formData.stateOfResidence}</span></div>
+                </div>
+                <p className="mt-3 text-xs text-gray-500">The old ID will still find this client in search, and the change is logged.</p>
+                <div className="mt-5 flex flex-col-reverse sm:flex-row gap-2 sm:justify-end">
+                  <Button layout="outline" className="rounded-2xl" onClick={() => setResidenceDialog(null)}>Cancel</Button>
+                  <Button className="rounded-2xl bg-green-700 border-green-700 hover:bg-green-800" onClick={() => setResidenceDialog({ ...residenceDialog, phase: 2 })}>
+                    I understand, continue
+                  </Button>
+                </div>
+              </>
+            ) : (
+              <>
+                <h3 className="text-lg font-semibold text-gray-800 dark:text-white">Are you sure?</h3>
+                <p className="mt-2 text-sm text-gray-600 dark:text-gray-300">
+                  <span className="font-mono">{residenceDialog.oldId}</span> will become <span className="font-mono font-semibold">{residenceDialog.newId}</span> for every record of this client.
+                </p>
+                <label className="block mt-4 text-sm font-semibold text-gray-700 dark:text-gray-300">
+                  Reason for the correction
+                  <textarea
+                    rows={2}
+                    value={residenceDialog.reason}
+                    onChange={(e) => setResidenceDialog({ ...residenceDialog, reason: e.target.value })}
+                    className="mt-1 w-full rounded-2xl border border-gray-200 dark:border-gray-600 dark:bg-gray-900 p-3 text-sm"
+                    placeholder="e.g. Wrong LGA selected at registration"
+                  />
+                </label>
+                <div className="mt-5 flex flex-col-reverse sm:flex-row gap-2 sm:justify-end">
+                  <Button layout="outline" className="rounded-2xl" disabled={isSubmitting} onClick={() => setResidenceDialog({ ...residenceDialog, phase: 1 })}>Back</Button>
+                  <Button className="rounded-2xl bg-red-600 border-red-600 hover:bg-red-700" disabled={isSubmitting} onClick={confirmResidenceChange}>
+                    {isSubmitting ? "Changing…" : "Yes, change the Client ID"}
+                  </Button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
     </Layout>
   );
 }

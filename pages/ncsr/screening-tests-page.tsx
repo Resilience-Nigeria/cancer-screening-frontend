@@ -10,6 +10,7 @@ import api from "../../lib/api";
 import { friendlyError } from "../../lib/apiError";
 import { ageFromDob } from "../components/VisitDetailsFields";
 import ResultAttachmentViewer from "../components/ResultAttachmentViewer";
+import SampleDeleteButton from "../components/SampleDeleteButton";
 import { HPV_RISK_OPTIONS, HPV_TRUENAT_CATEGORIES, VIRAL_LOAD_LABEL, hpvGroupCode, hpvRiskLabel } from "../../lib/hpvRisk";
 import { ACCEPTED_ATTACHMENTS, MAX_ATTACHMENT_MB, prepareImage } from "../../lib/imageUpload";
 import {
@@ -24,6 +25,8 @@ import {
   nextStep,
   resultLabel,
   testsFor,
+  extraOptions,
+  extraVisible,
 } from "../../lib/screeningTests";
 
 // Route of the Stage 2 clinical screening page (it reads ?search= on load). Change if yours differs.
@@ -76,21 +79,8 @@ const emptySample = () => ({
   notes: "",
 });
 
-// Used when this page is shown inside the clinical screening page's result modal (?embed=1): no menu or sidebar.
-function EmbedShell({ children }: { children: React.ReactNode }) {
-  return <div className="p-3 sm:p-5 bg-gray-50 dark:bg-gray-900 min-h-screen">{children}</div>;
-}
-
 export default function ScreeningTestsPage() {
   const router = useRouter();
-  const embed = router.query.embed === "1";
-  const Shell: React.ComponentType<{ children: React.ReactNode }> = embed ? EmbedShell : (Layout as any);
-
-  // Tell the clinical screening page (the parent window) that something was saved, or that we are done.
-  const notifyParent = (type: "ncsr-lab-saved" | "ncsr-lab-close", extra: Record<string, any> = {}) => {
-    if (!embed || typeof window === "undefined" || window.parent === window) return;
-    window.parent.postMessage({ type, ...extra }, window.location.origin);
-  };
   const [tab, setTab] = useState<Tab>("collect");
   const [busy, setBusy] = useState(false);
 
@@ -214,7 +204,6 @@ export default function ScreeningTestsPage() {
         notes: sample.notes.trim() || null,
       });
       setSavedSample(data?.sample ?? null);
-      notifyParent("ncsr-lab-saved", { sampleId: data?.sample?.sampleId, kind: "sample" });
       toast.success(`${test.label} ${collectNoun(test)} recorded.`);
     } catch (err: any) {
       toast.error(friendlyError(err, "Could not save."));
@@ -318,7 +307,7 @@ export default function ScreeningTestsPage() {
     const sampleDate = String(selected.sampleDate).slice(0, 10);
 
     for (const f of selectedTest.extraFields ?? []) {
-      if (f.required && !String(resultForm.meta[f.name] ?? "").trim()) {
+      if (f.required && extraVisible(f, resultForm.meta) && !String(resultForm.meta[f.name] ?? "").trim()) {
         toast.error(`Select or enter: ${f.label}.`);
         return;
       }
@@ -373,6 +362,8 @@ export default function ScreeningTestsPage() {
       };
       if (selectedTest.extraFields?.length || isHpvPositive) {
         const meta: Record<string, any> = { ...resultForm.meta };
+        // Answers to questions that no longer apply (e.g. discharge type when there is no discharge) are not saved.
+        for (const f of selectedTest.extraFields ?? []) if (!extraVisible(f, meta)) delete meta[f.name];
         if (!isHpvPositive) {
           for (const k of ["riskCategory", "hrCategory", "ct", "riskSuggested", "riskOverridden", "hr1618", "level1618", "ct1618", "hrOther", "levelOther", "ctOther"]) delete meta[k];
         } else {
@@ -408,7 +399,6 @@ export default function ScreeningTestsPage() {
         pickAttachment(null);
       }
       setResultSaved(saved);
-      notifyParent("ncsr-lab-saved", { sampleId: saved?.sampleId ?? selected?.sampleId, kind: "result" });
       loadSamples();
     } catch (err: any) {
       toast.error(friendlyError(err, "Could not save the result."));
@@ -427,7 +417,7 @@ export default function ScreeningTestsPage() {
     }`;
 
   return (
-    <Shell>
+    <Layout>
       <div className="mb-4 sm:mb-6">
         <PageTitle>Sample Collection & Test Results</PageTitle>
         <p className="text-sm text-gray-500 mt-1">
@@ -761,14 +751,25 @@ export default function ScreeningTestsPage() {
 
             {selected && selectedTest && !resultSaved && (
               <>
-                <div>
-                  <h3 className="text-lg font-semibold text-gray-800 dark:text-white break-words">
-                    {selected.client?.fullName || selected.clientId}
-                  </h3>
-                  <p className="text-xs text-gray-500">
-                    {selectedTest.label} · {selected.sampleRef} · {selectedTest.kind === "procedure" ? "performed" : "sample taken"}{" "}
-                    {prettyDate(selected.sampleDate)}
-                  </p>
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <h3 className="text-lg font-semibold text-gray-800 dark:text-white break-words">
+                      {selected.client?.fullName || selected.clientId}
+                    </h3>
+                    <p className="text-xs text-gray-500">
+                      {selectedTest.label} · {selected.sampleRef} · {selectedTest.kind === "procedure" ? "performed" : "sample taken"}{" "}
+                      {prettyDate(selected.sampleDate)}
+                    </p>
+                  </div>
+                  {/* Wrong sample? Admins delete it; others send a deletion request. Soft delete, restorable. */}
+                  <SampleDeleteButton
+                    sampleId={selected.sampleId}
+                    label={`${selectedTest.label} · ${selected.sampleRef}`}
+                    onDone={() => {
+                      setSelected(null);
+                      loadSamples();
+                    }}
+                  />
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <Label>
@@ -783,7 +784,7 @@ export default function ScreeningTestsPage() {
                     />
                   </Label>
 
-                  {selectedTest.extraFields?.map((f) => (
+                  {selectedTest.extraFields?.filter((f) => extraVisible(f, resultForm.meta)).map((f) => (
                     <Label key={f.name} className={f.name === "runStatus" ? "sm:col-span-2" : ""}>
                       <span className="text-sm font-semibold">
                         {f.label}
@@ -796,8 +797,8 @@ export default function ScreeningTestsPage() {
                           onChange={(e) => setResultForm((p) => ({ ...p, meta: { ...p.meta, [f.name]: e.target.value } }))}
                         >
                           <option value="">Select</option>
-                          {f.options?.map((o) => (
-                            <option key={o} value={o}>{o}</option>
+                          {extraOptions(f).map((o) => (
+                            <option key={o.value} value={o.value}>{o.label}</option>
                           ))}
                         </Select>
                       ) : (
@@ -1035,10 +1036,10 @@ export default function ScreeningTestsPage() {
                     <span>{step.text}</span>
                   </div>
                   <div className="flex flex-col sm:flex-row gap-3 justify-center">
-                    <Button layout="outline" className="rounded-xl" onClick={() => (embed ? notifyParent("ncsr-lab-close") : setSelected(null))}>
+                    <Button layout="outline" className="rounded-xl" onClick={() => setSelected(null)}>
                       Done
                     </Button>
-                    {step.tone !== "ok" && !embed && (
+                    {step.tone !== "ok" && (
                       <Button
                         className="rounded-xl bg-green-700 border-green-700 hover:bg-green-800"
                         onClick={() => goToClinical(selected.clientId)}
@@ -1060,6 +1061,6 @@ export default function ScreeningTestsPage() {
           onClose={() => setViewerOpen(false)}
         />
       )}
-    </Shell>
+    </Layout>
   );
 }

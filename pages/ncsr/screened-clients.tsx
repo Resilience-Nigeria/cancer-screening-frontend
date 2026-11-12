@@ -1,24 +1,34 @@
 import React, { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/router";
 import { Button, Input, Select, Pagination } from "@roketid/windmill-react-ui";
-import { Search, Loader2, X, FlaskConical, Eye, Stethoscope, Building2, BarChart3, ChevronDown, ChevronUp } from "lucide-react";
+import { Search, Loader2, X, FlaskConical, Eye, Stethoscope, Building2, BarChart3, ChevronDown, ChevronUp, AlertTriangle, Copy } from "lucide-react";
 import toast from "react-hot-toast";
 
 import Layout from "../containers/Layout";
 import PageTitle from "../components/Typography/PageTitle";
 import api from "../../lib/api";
 import { friendlyError } from "../../lib/apiError";
-import { CANCER_TYPES, cancerName } from "../../lib/screeningTests";
+import { CANCER_TYPES, cancerName, findTest, resultLabel, findingOf, FINDING_LABEL } from "../../lib/screeningTests";
 
 const PER_PAGE = 20;
 
+// Positive = suspicious, negative = non-suspicious (same grouping as the All Test Results page).
 const resultStyle: Record<string, string> = {
   suspicious: "bg-red-100 text-red-700",
+  positive: "bg-red-100 text-red-700",
   non_suspicious: "bg-green-100 text-green-800",
   negative: "bg-green-100 text-green-800",
-  positive: "bg-red-100 text-red-700",
+  inconclusive: "bg-gray-100 text-gray-700",
+  awaiting: "bg-amber-100 text-amber-800",
 };
-const resultText: Record<string, string> = { suspicious: "Suspicious", non_suspicious: "Non-suspicious", negative: "Negative", positive: "Positive" };
+const resultText: Record<string, string> = {
+  suspicious: "Suspicious",
+  positive: "Suspicious",
+  non_suspicious: "Non-suspicious",
+  negative: "Non-suspicious",
+  inconclusive: "Inconclusive",
+  awaiting: "Awaiting lab result",
+};
 
 const fmt = (d?: string | null) =>
   d ? new Date(`${String(d).slice(0, 10)}T00:00:00`).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : "—";
@@ -28,7 +38,7 @@ type Tile = { key: string; label: string; value: number; tone: string; apply: ()
 export default function ScreenedClientsPage() {
   const router = useRouter();
   const [rows, setRows] = useState<any[]>([]);
-  const [summary, setSummary] = useState({ screened: 0, suspicious: 0, nonSuspicious: 0, awaiting: 0, urgentLabs: 0 });
+  const [summary, setSummary] = useState({ screened: 0, suspicious: 0, nonSuspicious: 0, awaiting: 0, urgentLabs: 0, duplicates: 0, noSample: 0 });
   const [total, setTotal] = useState(0);
   const [facilityStats, setFacilityStats] = useState<any[]>([]);
   const [screenerStats, setScreenerStats] = useState<any[]>([]);
@@ -49,11 +59,23 @@ export default function ScreenedClientsPage() {
   const [ready, setReady] = useState(false);
   const reqId = useRef(0);
 
+  // Warning pop-up: shown every time the page loads (or reloads) while there are records to fix.
+  // "Remind me later" closes it until the next load; the chip at the top reopens it.
+  const [attentionOpen, setAttentionOpen] = useState(false);
+  const attentionShown = useRef(false);
+  const needsAttention = (summary.noSample ?? 0) > 0 || (summary.duplicates ?? 0) > 0;
+  useEffect(() => {
+    if (!needsAttention || attentionShown.current) return;
+    attentionShown.current = true;
+    setAttentionOpen(true);
+  }, [needsAttention]);
+  const closeAttention = () => setAttentionOpen(false);
+
   // Deep links: ?lab=pending · ?result=suspicious · ?cancerType=cervical
   useEffect(() => {
     if (!router.isReady) return;
     const q = router.query;
-    if (typeof q.lab === "string") setLab(q.lab);
+    if (typeof q.lab === "string") setLab(q.lab === "urgent" || q.lab === "abnormal" ? "suspicious" : q.lab);
     if (typeof q.result === "string") setResult(q.result);
     if (typeof q.cancerType === "string") setCancerType(q.cancerType);
     if (typeof q.facilityId === "string") setFacilityId(q.facilityId);
@@ -105,16 +127,17 @@ export default function ScreenedClientsPage() {
 
   const tiles: Tile[] = [
     { key: "all", label: "Screened clients", value: summary.screened, tone: "text-gray-800 dark:text-white", active: !result && !lab, apply: () => { setResult(""); setLab(""); } },
-    { key: "susp", label: "Suspicious findings", value: summary.suspicious, tone: "text-red-600", active: result === "suspicious", apply: () => { setLab(""); setResult("suspicious"); } },
-    { key: "ok", label: "Non-suspicious findings", value: summary.nonSuspicious ?? 0, tone: "text-green-700", active: result === "non_suspicious", apply: () => { setLab(""); setResult("non_suspicious"); } },
+    { key: "susp", label: "Suspicious (incl. positive results)", value: summary.suspicious, tone: "text-red-600", active: result === "suspicious", apply: () => { setLab(""); setResult("suspicious"); } },
+    { key: "ok", label: "Non-suspicious (incl. negative results)", value: summary.nonSuspicious ?? 0, tone: "text-green-700", active: result === "non_suspicious", apply: () => { setLab(""); setResult("non_suspicious"); } },
     { key: "wait", label: "Awaiting lab result", value: summary.awaiting, tone: "text-amber-600", active: lab === "pending", apply: () => { setResult(""); setLab("pending"); } },
-    { key: "urg", label: "Urgent lab results", value: summary.urgentLabs, tone: "text-red-600", active: lab === "urgent", apply: () => { setResult(""); setLab("urgent"); } },
+    { key: "nosample", label: "Result without a sample", value: summary.noSample ?? 0, tone: "text-amber-700", active: lab === "no_sample", apply: () => { setResult(""); setLab("no_sample"); } },
+    { key: "dup", label: "Possible duplicate results", value: summary.duplicates ?? 0, tone: "text-amber-700", active: lab === "duplicates", apply: () => { setResult(""); setLab("duplicates"); } },
   ];
 
   const open = (id: string) => router.push(`/ncsr/client-details?clientId=${encodeURIComponent(id)}`);
   const screenAgain = (id: string) => router.push(`/ncsr/clinical-screening?search=${encodeURIComponent(id)}`);
   const labs = (id: string, tab?: string) =>
-    router.push(tab ? `/ncsr/test-results?clientId=${encodeURIComponent(id)}` : `/ncsr/screening-tests-page?tab=results&search=${encodeURIComponent(id)}`);
+    router.push(tab ? `/ncsr/test-results-page?clientId=${encodeURIComponent(id)}` : `/ncsr/screening-tests-page?tab=results&search=${encodeURIComponent(id)}`);
 
   const fieldClass = "rounded-2xl h-11";
 
@@ -146,9 +169,14 @@ export default function ScreenedClientsPage() {
   const Badges = ({ c }: { c: any }) => (
     <div className="flex flex-wrap gap-1.5">
       {c.screenings.map((s: any) => (
-        <span key={s.cancerType} className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold ${resultStyle[s.screeningResult] ?? "bg-gray-100 text-gray-700"}`}>
+        <span
+          key={s.cancerType}
+          className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold ${resultStyle[s.screeningResult] ?? "bg-gray-100 text-gray-700"}`}
+          title={s.source === "lab" ? "Taken from the lab result (no finding on the screening form)" : undefined}
+        >
           {cancerName(s.cancerType)}
           <span className="font-normal">· {resultText[s.screeningResult] ?? "No result"}</span>
+          {s.source === "lab" && <span className="font-normal opacity-70">(lab)</span>}
         </span>
       ))}
     </div>
@@ -156,41 +184,148 @@ export default function ScreenedClientsPage() {
 
   const LabLine = ({ c }: { c: any }) => {
     const l = c.labs;
-    if (!l.pending && !l.released) return <span className="text-xs text-gray-400">No lab tests</span>;
     const tests: any[] = c.tests ?? [];
+    if (tests.length === 0) return <span className="text-xs text-gray-400">No lab tests</span>;
+    const suspicious = l.suspicious ?? l.urgent ?? 0;
+    const normal = l.normal ?? Math.max(0, l.released - suspicious);
     return (
       <div className="space-y-1.5">
-      {tests.length > 0 && (
-        <ul className="text-xs text-gray-700 dark:text-gray-200 space-y-0.5">
-          {tests.map((t, i) => (
-            <li key={i} className="break-words">
-              <span className="font-medium">{String(t.testType ?? "Test").replace(/_/g, " ")}</span>
-              <span className="text-gray-500"> · {t.status === "result_released" ? String(t.result ?? "released").replace(/_/g, " ") : "awaiting result"}</span>
-            </li>
-          ))}
+        <ul className="text-xs text-gray-700 dark:text-gray-200 space-y-1">
+          {tests.map((t, i) => {
+            const test = findTest(t.testType);
+            const finding = t.status === "result_released" ? findingOf(t.severity) : null;
+            return (
+              <li key={t.sampleId ?? i} className="break-words">
+                <span className="font-medium">{test?.label ?? String(t.testType ?? "Test").replace(/_/g, " ")}</span>
+                <span className="text-gray-500">
+                  {" · "}
+                  {t.status === "result_released"
+                    ? `${resultLabel(test, t.result) || "released"} · ${FINDING_LABEL[finding!]}`
+                    : t.status === "booked"
+                    ? "booked"
+                    : "awaiting result"}
+                  {t.date ? ` · ${fmt(t.date)}` : ""}
+                </span>
+                {t.duplicate && (
+                  <span className="ml-1 inline-flex items-center gap-0.5 rounded-full bg-amber-100 text-amber-800 px-1.5 py-0.5 text-[10px] font-semibold align-middle">
+                    <Copy className="w-2.5 h-2.5" /> duplicate
+                  </span>
+                )}
+              </li>
+            );
+          })}
         </ul>
-      )}
-      <div className="flex flex-wrap gap-1.5 text-xs">
-        {l.pending > 0 && <span className="rounded-full bg-amber-100 text-amber-800 px-2 py-0.5 font-semibold">{l.pending} awaiting</span>}
-        {l.urgent > 0 && <span className="rounded-full bg-red-100 text-red-700 px-2 py-0.5 font-semibold">{l.urgent} urgent</span>}
-        {l.abnormal > 0 && <span className="rounded-full bg-amber-100 text-amber-800 px-2 py-0.5 font-semibold">{l.abnormal} abnormal</span>}
-        {l.released - l.urgent - l.abnormal > 0 && (
-          <span className="rounded-full bg-green-100 text-green-800 px-2 py-0.5 font-semibold">{l.released - l.urgent - l.abnormal} normal / other</span>
+        <div className="flex flex-wrap gap-1.5 text-xs">
+          {l.pending > 0 && <span className="rounded-full bg-amber-100 text-amber-800 px-2 py-0.5 font-semibold">{l.pending} awaiting</span>}
+          {suspicious > 0 && <span className="rounded-full bg-red-100 text-red-700 px-2 py-0.5 font-semibold">{suspicious} suspicious</span>}
+          {normal > 0 && <span className="rounded-full bg-green-100 text-green-800 px-2 py-0.5 font-semibold">{normal} non-suspicious</span>}
+          {(l.inconclusive ?? 0) > 0 && <span className="rounded-full bg-gray-100 text-gray-700 px-2 py-0.5 font-semibold">{l.inconclusive} inconclusive</span>}
+        </div>
+        {(l.duplicates ?? 0) > 0 && (
+          <button
+            type="button"
+            onClick={() => labs(c.clientId, "results")}
+            className="inline-flex items-center gap-1 text-xs font-semibold text-amber-800 underline"
+          >
+            <Copy className="w-3 h-3" /> {l.duplicates} possible duplicate results: review and delete
+          </button>
         )}
-      </div>
       </div>
     );
   };
+
+  // Results typed on the screening form without a sample / test in the testing module.
+  const MissingSample = ({ c }: { c: any }) =>
+    (c.missingSample?.length ?? 0) > 0 ? (
+      <div className="rounded-xl border border-amber-200 bg-amber-50 text-amber-900 p-2.5 text-xs space-y-1">
+        {c.missingSample.map((m: any) => (
+          <p key={m.cancerType} className="flex items-start gap-1.5">
+            <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+            <span>
+              <b>{cancerName(m.cancerType)}:</b> {m.note}
+            </span>
+          </p>
+        ))}
+        <button type="button" onClick={() => screenAgain(c.clientId)} className="font-semibold underline">
+          Record the sample / test
+        </button>
+      </div>
+    ) : null;
 
   return (
     <Layout>
       <PageTitle>Screened Clients</PageTitle>
       <p className="-mt-4 mb-5 text-sm text-gray-500">
-        Everyone who has had at least one screening, with their findings and lab results in one place.
+        Everyone who has had at least one screening, with their findings and lab results in one place. Positive results are
+        counted as suspicious and negative results as non-suspicious, the same as on All Test Results.
       </p>
 
+      {/* Small reminder that reopens the warning after it was closed */}
+      {needsAttention && !attentionOpen && (
+        <button
+          type="button"
+          onClick={() => setAttentionOpen(true)}
+          className="mb-5 inline-flex items-center gap-2 rounded-full border border-amber-200 bg-amber-50 text-amber-900 px-3 py-1.5 text-xs font-semibold"
+        >
+          <AlertTriangle className="w-4 h-4 text-amber-600" /> Records need your attention
+        </button>
+      )}
+
+      {/* Warning pop-up: results without a sample and possible duplicates */}
+      {attentionOpen && needsAttention && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" role="dialog" aria-modal="true" aria-labelledby="attention-title">
+          <div className="w-full max-w-lg rounded-3xl bg-white dark:bg-gray-800 shadow-2xl p-6">
+            <div className="flex items-start gap-3">
+              <div className="p-2 rounded-full bg-amber-100 text-amber-600 shrink-0">
+                <AlertTriangle className="w-5 h-5" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <h3 id="attention-title" className="text-lg font-semibold text-gray-800 dark:text-white">Records need your attention</h3>
+                <div className="mt-3 space-y-3 text-sm text-gray-700 dark:text-gray-300">
+                  {summary.noSample > 0 && (
+                    <div className="rounded-2xl border border-amber-200 bg-amber-50 dark:bg-gray-900 p-3">
+                      <p>
+                        <b>{summary.noSample}</b> client{summary.noSample === 1 ? " has" : "s have"} a screening result entered without a sample or
+                        test in the testing module. Record the sample / test, or correct the result.
+                      </p>
+                      <Button
+                        size="small"
+                        className="mt-2 rounded-xl bg-amber-600 border-amber-600 hover:bg-amber-700"
+                        onClick={() => { setResult(""); setLab("no_sample"); closeAttention(); }}
+                      >
+                        Show these clients
+                      </Button>
+                    </div>
+                  )}
+                  {summary.duplicates > 0 && (
+                    <div className="rounded-2xl border border-amber-200 bg-amber-50 dark:bg-gray-900 p-3">
+                      <p>
+                        <b>{summary.duplicates}</b> client{summary.duplicates === 1 ? " has" : "s have"} possible duplicate results (same test, same
+                        sample date). Review them and delete the extra record.
+                      </p>
+                      <Button
+                        size="small"
+                        className="mt-2 rounded-xl bg-amber-600 border-amber-600 hover:bg-amber-700"
+                        onClick={() => { setResult(""); setLab("duplicates"); closeAttention(); }}
+                      >
+                        Show duplicates
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+            <div className="mt-5 flex justify-end">
+              <Button layout="outline" className="rounded-2xl" onClick={closeAttention}>
+                Remind me later
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Summary tiles double as quick filters */}
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-5">
+      <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-3 mb-5">
         {tiles.map((t) => (
           <button
             key={t.key}
@@ -328,8 +463,9 @@ export default function ScreenedClientsPage() {
           <Select className={fieldClass} value={lab} onChange={(e) => setLab(e.target.value)} aria-label="Lab status">
             <option value="">Any lab status</option>
             <option value="pending">Awaiting a result</option>
-            <option value="abnormal">Abnormal or urgent result</option>
-            <option value="urgent">Urgent result</option>
+            <option value="suspicious">Suspicious lab result</option>
+            <option value="no_sample">Result without a sample</option>
+            <option value="duplicates">Possible duplicate results</option>
           </Select>
           <Input type="date" className={fieldClass} value={dateFrom} max={dateTo || undefined} onChange={(e) => setDateFrom(e.target.value)} aria-label="Screened from" />
           <Input type="date" className={fieldClass} value={dateTo} min={dateFrom || undefined} onChange={(e) => setDateTo(e.target.value)} aria-label="Screened to" />
@@ -385,6 +521,7 @@ export default function ScreenedClientsPage() {
                 </button>
                 <div className="mt-3 space-y-2">
                   <Badges c={c} />
+                  <MissingSample c={c} />
                   <LabLine c={c} />
                   {c.screenedAt && (
                     <p className="text-xs text-gray-600 flex items-start gap-1"><Building2 className="w-3 h-3 mt-0.5 shrink-0 text-gray-400" /> Screened at {c.screenedAt.facilityName}{c.otherFacilities > 0 ? ` (+${c.otherFacilities} more)` : ""}{c.screenedBy ? ` · by ${c.screenedBy}` : ""}</p>
@@ -401,8 +538,8 @@ export default function ScreenedClientsPage() {
           </div>
 
           {/* Desktop: table */}
-          <div className="hidden lg:block rounded-2xl bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 overflow-hidden">
-            <table className="w-full text-sm">
+          <div className="hidden lg:block rounded-2xl bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 overflow-x-auto">
+            <table className="w-full text-sm whitespace-normal">
               <thead className="bg-gray-50 dark:bg-gray-700 text-left text-xs uppercase tracking-wide text-gray-500">
                 <tr>
                   <th className="px-4 py-3">Client</th>
@@ -426,8 +563,8 @@ export default function ScreenedClientsPage() {
                       </button>
                     </td>
                     <td className="px-4 py-3"><ScreenedAt c={c} /></td>
-                    <td className="px-4 py-3"><Badges c={c} /></td>
-                    <td className="px-4 py-3"><LabLine c={c} /></td>
+                    <td className="px-4 py-3 max-w-[18rem]"><div className="space-y-2"><Badges c={c} /><MissingSample c={c} /></div></td>
+                    <td className="px-4 py-3 max-w-[18rem]"><LabLine c={c} /></td>
                     <td className="px-4 py-3 whitespace-nowrap text-gray-600">
                       {fmt(c.lastScreeningDate)}
                       <p className="text-xs text-gray-400">{c.visitCount} visit{c.visitCount === 1 ? "" : "s"}</p>
