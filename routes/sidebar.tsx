@@ -19,6 +19,7 @@ import {
   Send,
   Trash2,
   ScrollText,
+  Flower2,
 } from "lucide-react";
 import { ComponentType } from "react";
 
@@ -110,6 +111,15 @@ const routes: IRoute[] = [
   },
   { path: "/ncsr/treatments", icon: Activity, name: "Treatment Tracking" },
   { path: "/ncsr/follow-up-schedules", icon: LinkIcon, name: "Follow-up Schedules" },
+
+  {
+    // Bloom mobile app: dashboard linking to Bookings, Cases and Health Workers.
+    // Stays highlighted on those pages too (/ncsr/bloom-bookings, /ncsr/bloom-cases, /ncsr/bloom-navigators).
+    path: "/ncsr/bloom",
+    icon: Flower2,
+    name: "Bloom",
+    checkActive: (pathname) => pathname === "/ncsr/bloom" || pathname.startsWith("/ncsr/bloom-") || pathname.startsWith("/ncsr/bloom/"),
+  },
 
   // Admin-only routes — visibility comes from menu_visibility_rules
   // (Settings > Menu Visibility), not hardcoded here.
