@@ -1,0 +1,1145 @@
+"use client";
+
+import { useState, useEffect, useMemo } from "react";
+import {
+  Users,
+  UserCog,
+  Building2,
+  Mail,
+  Phone,
+  Shield,
+  Search,
+  Filter,
+  Plus,
+  Edit2,
+  Trash2,
+  Eye,
+  ChevronDown,
+  X,
+  Loader2,
+  AlertCircle,
+  Info,
+} from "lucide-react";
+import api from "../../lib/api";
+import toast from "react-hot-toast";
+import Layout from "../containers/Layout";
+import { getUser } from "../../lib/auth";
+
+interface Facility {
+  id: number;
+  facilityName: string;
+  facilityCode: string;
+  facilityId: string;
+}
+
+interface Organization {
+  id: number;
+  organizationName: string;
+  organizationId?: string;
+  // Add other fields from your API response if needed
+}
+
+interface User {
+  id: number;
+  firstName: string;
+  lastName: string;
+  email: string;
+  phoneNumber: string;
+  alternatePhoneNumber?: string;
+  role: string;
+  status: "active" | "inactive";
+  facilityId: number;
+  facility: Facility | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+interface Stats {
+  total: number;
+  active: number;
+  inactive: number;
+  byRole: Record<string, number>;
+}
+
+interface Role {
+  roleId: string;
+  roleName: string;
+  roleDescription: string;
+}
+
+interface FormData {
+  firstName: string;
+  lastName: string;
+  email: string;
+  phoneNumber: string;
+  alternatePhoneNumber: string;
+  role: string;
+  facilityId: string;
+  organizationId?: string;
+  status: "active" | "inactive";
+}
+
+export default function UsersManagementPage() {
+  const [users, setUsers] = useState<User[]>([]);
+  const [facilities, setFacilities] = useState<Facility[]>([]);
+  const [organizations, setOrganizations] = useState<Organization[]>([]);
+  const [roles, setRoles] = useState<Role[]>([]);
+  const [stats, setStats] = useState<Stats>({
+    total: 0,
+    active: 0,
+    inactive: 0,
+    byRole: {},
+  });
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [filterFacility, setFilterFacility] = useState<string>("all");
+  const [filterRole, setFilterRole] = useState<string>("all");
+  const [filterStatus, setFilterStatus] = useState<string>("all");
+  const [showFilters, setShowFilters] = useState(false);
+  const [selectedUser, setSelectedUser] = useState<User | null>(null);
+  const [showModal, setShowModal] = useState(false);
+  const [modalMode, setModalMode] = useState<"view" | "add" | "edit">("view");
+
+  // Additional per-user facility access grants
+  const [grantsUser, setGrantsUser] = useState<User | null>(null);
+  const [userGrants, setUserGrants] = useState<any[]>([]);
+  const [allFacilitiesForGrants, setAllFacilitiesForGrants] = useState<Facility[]>([]);
+  const [grantsLoading, setGrantsLoading] = useState(false);
+  const [grantFacilityId, setGrantFacilityId] = useState("");
+  const [grantSaving, setGrantSaving] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [currentUser, setCurrentUser] = useState<any>(null);
+  const [formData, setFormData] = useState<FormData>({
+    firstName: "",
+    lastName: "",
+    email: "",
+    phoneNumber: "",
+    alternatePhoneNumber: "",
+    role: "",
+    facilityId: "",
+    organizationId: "",
+    status: "active",
+  });
+
+  // Get current user role
+  const currentUserRole = currentUser?.user_role?.roleName || currentUser?.role;
+  const isHospitalAdmin = currentUserRole === 'NAVIGATOR' || currentUserRole === 'HOSPITAL_ADMIN';
+  const isSuperAdmin = currentUserRole === 'NICRAT_SUPER_ADMIN';
+  const isPartner = currentUserRole === 'PARTNER';
+
+  useEffect(() => {
+    const userData = getUser();
+    setCurrentUser(userData);
+    
+    fetchUsers();
+    fetchFacilities();
+    fetchOrganizations();
+    fetchRoles();
+  }, []);
+
+  async function fetchUsers() {
+    try {
+      setLoading(true);
+      setError(null);
+      const { data } = await api.get("/users");
+
+      if (data.status) {
+        setUsers(data.users);
+        setStats(data.stats);
+      }
+    } catch (err: any) {
+      setError(err?.response?.data?.message || "Failed to load users");
+      console.error("Error fetching users:", err);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function fetchFacilities() {
+    try {
+      const { data } = await api.get("/users/facilities");
+      if (data.status) {
+        setFacilities(data.facilities);
+      }
+    } catch (err) {
+      console.error("Error fetching facilities:", err);
+    }
+  }
+
+  async function fetchOrganizations() {
+    try {
+      const { data } = await api.get("/users/organizations"); // Adjust endpoint if needed
+      if (data.status) {
+        setOrganizations(data.organizations || data.data || []);
+      }
+    } catch (err) {
+      console.error("Error fetching organizations:", err);
+    }
+  }
+
+  async function fetchRoles() {
+    try {
+      const { data } = await api.get("/users/roles");
+      if (data.status) {
+        setRoles(data.roles);
+      }
+    } catch (err) {
+      console.error("Error fetching roles:", err);
+    }
+  }
+
+  const selectedRole = roles.find(
+  (r) => String(r.roleId) === String(formData.role)
+);
+
+const isPartnerRole = selectedRole?.roleName === "PARTNER";
+
+  const filteredUsers = useMemo(() => {
+    return users.filter((user) => {
+      const matchesSearch =
+        user.firstName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        user.lastName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        user.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        user.phoneNumber.toLowerCase().includes(searchQuery.toLowerCase());
+
+      const matchesFacility =
+        filterFacility === "all" || user.facilityId.toString() === filterFacility;
+
+      const matchesRole = filterRole === "all" || user.role === filterRole;
+
+      const matchesStatus =
+        filterStatus === "all" || user.status === filterStatus;
+
+      return matchesSearch && matchesFacility && matchesRole && matchesStatus;
+    });
+  }, [users, searchQuery, filterFacility, filterRole, filterStatus]);
+
+  function openModal(mode: "view" | "add" | "edit", user?: User) {
+    setModalMode(mode);
+    setSelectedUser(user || null);
+
+    if (mode === "add") {
+      const initialFacilityId = isHospitalAdmin && currentUser?.facilityId 
+        ? currentUser.facilityId.toString() 
+        : "";
+
+      setFormData({
+        firstName: "",
+        lastName: "",
+        email: "",
+        phoneNumber: "",
+        alternatePhoneNumber: "",
+        role: "",
+        facilityId: initialFacilityId,
+        organizationId: "",
+        status: "active",
+      });
+    } else if (user) {
+      setFormData({
+        firstName: user.firstName,
+        lastName: user.lastName,
+        email: user.email,
+        phoneNumber: user.phoneNumber,
+        alternatePhoneNumber: user.alternatePhoneNumber || "",
+        role: user.role,
+        facilityId: user.facilityId.toString(),
+        organizationId: "",
+        status: user.status,
+      });
+    }
+
+    setShowModal(true);
+  }
+
+  function closeModal() {
+    setShowModal(false);
+    setSelectedUser(null);
+    setSubmitting(false);
+  }
+
+  async function openGrantsModal(user: User) {
+    setGrantsUser(user);
+    setGrantFacilityId("");
+    setGrantsLoading(true);
+    try {
+      const [grantsRes, facilitiesRes] = await Promise.all([
+        api.get(`/users/${user.id}/facility-grants`),
+        allFacilitiesForGrants.length ? Promise.resolve(null) : api.get("/facilities"),
+      ]);
+      setUserGrants(grantsRes.data.grants || []);
+      if (facilitiesRes) {
+        setAllFacilitiesForGrants(facilitiesRes.data.facilities || facilitiesRes.data.data || []);
+      }
+    } catch {
+      toast.error("Could not load this user's facility access.");
+    } finally {
+      setGrantsLoading(false);
+    }
+  }
+
+  function closeGrantsModal() {
+    setGrantsUser(null);
+    setUserGrants([]);
+  }
+
+  async function addFacilityGrant() {
+    if (!grantsUser || !grantFacilityId) return;
+    setGrantSaving(true);
+    try {
+      const { data } = await api.post(`/users/${grantsUser.id}/facility-grants`, {
+        facilityId: Number(grantFacilityId),
+      });
+      setUserGrants((prev) => [...prev, data.grant]);
+      setGrantFacilityId("");
+      toast.success("Facility access granted.");
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message ?? "Could not grant access to this facility.");
+    } finally {
+      setGrantSaving(false);
+    }
+  }
+
+  async function removeFacilityGrant(facilityId: number) {
+    if (!grantsUser) return;
+    try {
+      await api.delete(`/users/${grantsUser.id}/facility-grants/${facilityId}`);
+      setUserGrants((prev) => prev.filter((g) => g.facilityId !== facilityId));
+      toast.success("Facility access removed.");
+    } catch {
+      toast.error("Could not remove this facility.");
+    }
+  }
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setSubmitting(true);
+
+    try {
+      const payload = { ...formData };
+
+      // Remove organizationId if not PARTNER
+      const selectedRole = roles.find(
+  (r) => String(r.roleId) === String(formData.role)
+);
+
+if (selectedRole?.roleName !== "PARTNER") {
+  delete (payload as any).organizationId;
+}
+
+      if (modalMode === "add") {
+        const { data } = await api.post("/users", payload);
+        if (data.status) {
+          await fetchUsers();
+          closeModal();
+          alert(`✅ User created successfully!\n\nLogin credentials have been sent to ${formData.email}`);
+        }
+      } else if (modalMode === "edit" && selectedUser) {
+        const { data } = await api.put(`/users/${selectedUser.id}`, payload);
+        if (data.status) {
+          await fetchUsers();
+          closeModal();
+          alert("User updated successfully!");
+        }
+      }
+    } catch (err: any) {
+      alert(err?.response?.data?.message || "Operation failed");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function handleDelete(user: User) {
+    if (!confirm(`Are you sure you want to delete ${user.firstName} ${user.lastName}?`)) {
+      return;
+    }
+
+    try {
+      const { data } = await api.delete(`/users/${user.id}`);
+      if (data.status) {
+        await fetchUsers();
+      }
+    } catch (err: any) {
+      alert(err?.response?.data?.message || "Failed to delete user");
+    }
+  }
+
+  function getRoleBadgeColor(role: string) {
+    const colors: Record<string, string> = {
+      'NICRAT_SUPER_ADMIN': 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400',
+      'NICRAT_ADMIN': 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
+      'NAVIGATOR': 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
+      'HOSPITAL_ADMIN': 'bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-400',
+      'NURSE': 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400',
+      'DOCTOR': 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400',
+      'PARTNER': 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400',
+      
+      'super_admin': 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400',
+      'facility_admin': 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
+      'admin': 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
+      'doctor': 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
+      'nurse': 'bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-400',
+      'data_clerk': 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400',
+    };
+    return colors[role] || 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-400';
+  }
+
+  function formatRoleName(roleName: string): string {
+    return roleName
+      .split('_')
+      .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+      .join(' ');
+  }
+
+  function getRoleLabel(role: string) {
+    const roleObj = roles.find((r) => r.roleId === role);
+    return roleObj?.roleName ? formatRoleName(roleObj.roleName) : formatRoleName(role);
+  }
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center">
+          <Loader2 className="w-8 h-8 animate-spin text-green-600 mx-auto mb-4" />
+          <p className="text-gray-600 dark:text-gray-400">Loading users...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center">
+          <AlertCircle className="w-12 h-12 text-red-600 mx-auto mb-4" />
+          <p className="text-gray-900 dark:text-white font-semibold mb-2">
+            Error Loading Users
+          </p>
+          <p className="text-gray-600 dark:text-gray-400 mb-4">{error}</p>
+          <button
+            onClick={fetchUsers}
+            className="px-6 py-2.5 rounded-xl bg-green-600 text-white hover:bg-green-700 transition-colors"
+          >
+            Try Again
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <Layout>
+      <div className="p-4 sm:p-6 lg:p-8">
+        {/* Header */}
+        <div className="mb-8">
+          <div className="flex items-center gap-3 mb-2">
+            <div className="flex items-center justify-center w-12 h-12 rounded-2xl bg-green-600 shadow-lg">
+              <Users className="w-6 h-6 text-white" />
+            </div>
+            <div>
+              <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
+                Users Management
+              </h1>
+              <p className="text-sm text-gray-600 dark:text-gray-400 mt-0.5">
+                Manage system users, roles, and facility assignments
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* Stats Cards - unchanged */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+          {/* ... (same as original) */}
+          <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 border border-gray-200 dark:border-gray-700 shadow-sm hover:shadow-md transition-shadow">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center justify-center w-10 h-10 rounded-xl bg-blue-100 dark:bg-blue-900/30">
+                <Users className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+              </div>
+              <span className="text-2xl font-bold text-gray-900 dark:text-white">
+                {stats.total}
+              </span>
+            </div>
+            <p className="text-sm font-medium text-gray-600 dark:text-gray-400">Total Users</p>
+          </div>
+
+          <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 border border-gray-200 dark:border-gray-700 shadow-sm hover:shadow-md transition-shadow">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center justify-center w-10 h-10 rounded-xl bg-green-100 dark:bg-green-900/30">
+                <UserCog className="w-5 h-5 text-green-600 dark:text-green-400" />
+              </div>
+              <span className="text-2xl font-bold text-gray-900 dark:text-white">
+                {stats.active}
+              </span>
+            </div>
+            <p className="text-sm font-medium text-gray-600 dark:text-gray-400">Active Users</p>
+          </div>
+
+          <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 border border-gray-200 dark:border-gray-700 shadow-sm hover:shadow-md transition-shadow">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center justify-center w-10 h-10 rounded-xl bg-orange-100 dark:bg-orange-900/30">
+                <Shield className="w-5 h-5 text-orange-600 dark:text-orange-400" />
+              </div>
+              <span className="text-2xl font-bold text-gray-900 dark:text-white">
+                {stats.byRole?.admin || 0}
+              </span>
+            </div>
+            <p className="text-sm font-medium text-gray-600 dark:text-gray-400">Administrators</p>
+          </div>
+
+          <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 border border-gray-200 dark:border-gray-700 shadow-sm hover:shadow-md transition-shadow">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center justify-center w-10 h-10 rounded-xl bg-purple-100 dark:bg-purple-900/30">
+                <Building2 className="w-5 h-5 text-purple-600 dark:text-purple-400" />
+              </div>
+              <span className="text-2xl font-bold text-gray-900 dark:text-white">
+                {facilities.length}
+              </span>
+            </div>
+            <p className="text-sm font-medium text-gray-600 dark:text-gray-400">Facilities</p>
+          </div>
+        </div>
+
+        {/* Search and Filters - unchanged */}
+        <div className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-200 dark:border-gray-700 p-6 mb-6 shadow-sm">
+          <div className="flex flex-col lg:flex-row gap-4">
+            <div className="flex-1">
+              <div className="relative">
+                <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                <input
+                  type="text"
+                  placeholder="Search by name, email, or phone..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full pl-12 pr-4 py-3 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white placeholder-gray-500 focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all"
+                />
+              </div>
+            </div>
+
+            <button
+              onClick={() => setShowFilters(!showFilters)}
+              className="flex items-center justify-center gap-2 px-6 py-3 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors font-medium"
+            >
+              <Filter className="w-5 h-5" />
+              Filters
+              <ChevronDown className={`w-4 h-4 transition-transform ${showFilters ? "rotate-180" : ""}`} />
+            </button>
+
+            <button
+              onClick={() => openModal("add")}
+              className="flex items-center justify-center gap-2 px-6 py-3 rounded-xl bg-green-600 text-white hover:bg-green-700 shadow-lg transition-all font-semibold"
+            >
+              <Plus className="w-5 h-5" />
+              Add User
+            </button>
+          </div>
+
+          {showFilters && (
+            <div className="mt-6 pt-6 border-t border-gray-200 dark:border-gray-700 grid grid-cols-1 md:grid-cols-3 gap-4">
+              {isSuperAdmin && (
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
+                    Facility
+                  </label>
+                  <select
+                    value={filterFacility}
+                    onChange={(e) => setFilterFacility(e.target.value)}
+                    className="w-full px-4 py-2.5 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                  >
+                    <option value="all">All Facilities</option>
+                    {facilities.map((facility) => (
+                      <option key={facility.facilityId} value={facility.facilityId}>
+                        {facility.facilityName}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
+                  Role
+                </label>
+                <select
+                  value={filterRole}
+                  onChange={(e) => setFilterRole(e.target.value)}
+                  className="w-full px-4 py-2.5 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                >
+                  <option value="all">All Roles</option>
+                  {roles.map((role) => (
+                    <option key={role.roleId} value={role.roleName}>
+  {formatRoleName(role.roleName)}
+</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
+                  Status
+                </label>
+                <select
+                  value={filterStatus}
+                  onChange={(e) => setFilterStatus(e.target.value)}
+                  className="w-full px-4 py-2.5 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                >
+                  <option value="all">All Status</option>
+                  <option value="active">Active</option>
+                  <option value="inactive">Inactive</option>
+                </select>
+              </div>
+            </div>
+          )}
+        </div>
+
+      {/* Table View (Desktop) - Hidden on Mobile */}
+      <div className="hidden lg:block bg-white dark:bg-gray-800 rounded-2xl border border-gray-200 dark:border-gray-700 shadow-sm overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <thead className="bg-gray-50 dark:bg-gray-900/50">
+              <tr>
+                <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider">
+                  Name
+                </th>
+                <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider">
+                  Email
+                </th>
+                <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider">
+                  Phone
+                </th>
+                <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider">
+                  Role
+                </th>
+                <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider">
+                  Facility
+                </th>
+                <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider">
+                  Status
+                </th>
+                <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider">
+                  Actions
+                </th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+              {filteredUsers.map((user) => (
+                <tr
+                  key={user.id}
+                  className="hover:bg-gray-50 dark:hover:bg-gray-900/30 transition-colors"
+                >
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <div className="text-sm font-medium text-gray-900 dark:text-white">
+                      {user.firstName} {user.lastName}
+                    </div>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <div className="text-sm text-gray-600 dark:text-gray-400">
+                      {user.email}
+                    </div>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <div className="text-sm text-gray-600 dark:text-gray-400">
+                      {user.phoneNumber}
+                    </div>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <span
+                      className={`inline-flex px-3 py-1 rounded-full text-xs font-semibold ${getRoleBadgeColor(
+                        user.role
+                      )}`}
+                    >
+                      {getRoleLabel(user.role)}
+                    </span>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <div className="text-sm text-gray-600 dark:text-gray-400">
+                      {user.facility?.facilityName || "N/A"}
+                    </div>
+                    <div className="text-xs text-gray-500 dark:text-gray-500">
+                      {user.facility?.facilityCode}
+                    </div>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <span
+                      className={`inline-flex px-3 py-1 rounded-full text-xs font-semibold ${
+                        user.status === "active"
+                          ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
+                          : "bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-400"
+                      }`}
+                    >
+                      {user.status === "active" ? "Active" : "Inactive"}
+                    </span>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => openModal("view", user)}
+                        className="p-2 rounded-lg text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                        title="View"
+                      >
+                        <Eye className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={() => openModal("edit", user)}
+                        className="p-2 rounded-lg text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                        title="Edit"
+                      >
+                        <Edit2 className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={() => openGrantsModal(user)}
+                        className="p-2 rounded-lg text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                        title="Manage Facility Access"
+                      >
+                        <Building2 className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={() => handleDelete(user)}
+                        className="p-2 rounded-lg text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+                        title="Delete"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        {filteredUsers.length === 0 && (
+          <div className="text-center py-12">
+            <Users className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
+              No users found
+            </h3>
+            <p className="text-gray-600 dark:text-gray-400">
+              Try adjusting your search or filters
+            </p>
+          </div>
+        )}
+      </div>
+
+      {/* Card View (Mobile) - Hidden on Desktop */}
+      <div className="lg:hidden grid grid-cols-1 gap-6">
+        {filteredUsers.map((user) => (
+          <div
+            key={user.id}
+            className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-200 dark:border-gray-700 p-6 shadow-sm hover:shadow-xl transition-all duration-300"
+          >
+            <div className="flex items-start justify-between mb-4">
+              <div className="flex-1">
+                <h3 className="font-bold text-lg text-gray-900 dark:text-white">
+                  {user.firstName} {user.lastName}
+                </h3>
+                <span
+                  className={`inline-block px-3 py-1 rounded-full text-xs font-semibold mt-2 ${getRoleBadgeColor(
+                    user.role
+                  )}`}
+                >
+                  {getRoleLabel(user.role)}
+                </span>
+              </div>
+
+              <span
+                className={`px-3 py-1 rounded-full text-xs font-semibold ${
+                  user.status === "active"
+                    ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
+                    : "bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-400"
+                }`}
+              >
+                {user.status === "active" ? "Active" : "Inactive"}
+              </span>
+            </div>
+
+            <div className="space-y-3 mb-6">
+              <div className="flex items-center gap-3">
+                <Mail className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                <span className="text-sm text-gray-600 dark:text-gray-400 truncate">
+                  {user.email}
+                </span>
+              </div>
+
+              <div className="flex items-center gap-3">
+                <Phone className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                <span className="text-sm text-gray-600 dark:text-gray-400">
+                  {user.phoneNumber}
+                </span>
+              </div>
+
+              {user.facility && (
+                <div className="flex items-center gap-3">
+                  <Building2 className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                  <div className="text-sm text-gray-600 dark:text-gray-400">
+                    <p className="font-medium text-gray-900 dark:text-white">
+                      {user.facility.facilityName}
+                    </p>
+                    <p className="text-xs">{user.facility.facilityCode}</p>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => openModal("view", user)}
+                className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-green-600 text-white hover:bg-green-700 transition-colors font-medium"
+              >
+                <Eye className="w-4 h-4" />
+                View
+              </button>
+              <button
+                onClick={() => openModal("edit", user)}
+                className="flex items-center justify-center w-10 h-10 rounded-xl border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+              >
+                <Edit2 className="w-4 h-4" />
+              </button>
+              <button
+                onClick={() => openGrantsModal(user)}
+                className="flex items-center justify-center w-10 h-10 rounded-xl border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                title="Manage Facility Access"
+              >
+                <Building2 className="w-4 h-4" />
+              </button>
+              <button
+                onClick={() => handleDelete(user)}
+                className="flex items-center justify-center w-10 h-10 rounded-xl border border-red-300 dark:border-red-600 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+              >
+                <Trash2 className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        ))}
+
+        {filteredUsers.length === 0 && (
+          <div className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-200 dark:border-gray-700 p-12 text-center">
+            <div className="flex items-center justify-center w-16 h-16 mx-auto mb-4 rounded-2xl bg-gray-100 dark:bg-gray-700">
+              <Users className="w-8 h-8 text-gray-400" />
+            </div>
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
+              No users found
+            </h3>
+            <p className="text-gray-600 dark:text-gray-400 mb-6">
+              Try adjusting your search or filters
+            </p>
+            <button
+              onClick={() => {
+                setSearchQuery("");
+                setFilterFacility("all");
+                setFilterRole("all");
+                setFilterStatus("all");
+              }}
+              className="px-6 py-2.5 rounded-xl bg-green-600 text-white hover:bg-green-700 transition-colors font-medium"
+            >
+              Clear Filters
+            </button>
+          </div>
+        )}
+      </div>
+
+      {showModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
+            <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-hidden animate-in zoom-in-95 duration-200">
+              <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700">
+                <h2 className="text-xl font-bold text-gray-900 dark:text-white">
+                  {modalMode === "add" ? "Add New User" : modalMode === "edit" ? "Edit User" : "User Details"}
+                </h2>
+                <button
+                  onClick={closeModal}
+                  className="flex items-center justify-center w-10 h-10 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                >
+                  <X className="w-5 h-5 text-gray-500" />
+                </button>
+              </div>
+
+              <div className="p-6 overflow-y-auto max-h-[calc(90vh-140px)]">
+                {modalMode === "view" && selectedUser ? (
+                  // View mode unchanged - same as original
+                 <div className="space-y-6">
+                  <div>
+                    <h3 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">
+                      {selectedUser.firstName} {selectedUser.lastName}
+                    </h3>
+                    <span
+                      className={`inline-block px-3 py-1 rounded-full text-xs font-semibold ${getRoleBadgeColor(
+                        selectedUser.role
+                      )}`}
+                    >
+                      {getRoleLabel(selectedUser.role)}
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div>
+                      <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
+                        Email
+                      </label>
+                      <p className="text-gray-900 dark:text-white">
+                        {selectedUser.email}
+                      </p>
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
+                        Phone Number
+                      </label>
+                      <p className="text-gray-900 dark:text-white">
+                        {selectedUser.phoneNumber}
+                      </p>
+                    </div>
+
+                    {selectedUser.alternatePhoneNumber && (
+                      <div>
+                        <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
+                          Alternate Phone
+                        </label>
+                        <p className="text-gray-900 dark:text-white">
+                          {selectedUser.alternatePhoneNumber}
+                        </p>
+                      </div>
+                    )}
+
+                    <div>
+                      <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
+                        Status
+                      </label>
+                      <p className="text-gray-900 dark:text-white capitalize">
+                        {selectedUser.status}
+                      </p>
+                    </div>
+
+                    <div className="md:col-span-2">
+                      <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
+                        Facility
+                      </label>
+                      <p className="text-gray-900 dark:text-white">
+                        {selectedUser.facility?.facilityName} (
+                        {selectedUser.facility?.facilityCode})
+                      </p>
+                    </div>
+                  </div>
+                </div>
+                ) : (
+                  <form onSubmit={handleSubmit} className="space-y-6">
+                    {/* Info boxes unchanged */}
+                    {modalMode === "add" && (
+                      <div className="flex items-start gap-3 p-4 rounded-xl bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800">
+                        <Info className="w-5 h-5 text-blue-600 dark:text-blue-400 flex-shrink-0 mt-0.5" />
+                        <div className="flex-1">
+                          <p className="text-sm font-semibold text-blue-900 dark:text-blue-100 mb-1">
+                            Automatic Password Generation
+                          </p>
+                          <p className="text-xs text-blue-700 dark:text-blue-300">
+                            A secure password will be automatically generated and sent to the user's email address along with their login credentials.
+                          </p>
+                        </div>
+                      </div>
+                    )}
+
+                    {isHospitalAdmin && modalMode === "add" && currentUser?.facility && (
+                      <div className="flex items-start gap-3 p-4 rounded-xl bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800">
+                        <Building2 className="w-5 h-5 text-green-600 dark:text-green-400 flex-shrink-0 mt-0.5" />
+                        <div className="flex-1">
+                          <p className="text-sm font-semibold text-green-900 dark:text-green-100 mb-1">
+                            Facility Assignment
+                          </p>
+                          <p className="text-xs text-green-700 dark:text-green-300">
+                            New user will be assigned to your facility: <strong>{currentUser.facility.facilityName}</strong>
+                          </p>
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      {/* Basic fields unchanged */}
+                      <div>
+                        <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">First Name *</label>
+                        <input type="text" value={formData.firstName} onChange={(e) => setFormData({ ...formData, firstName: e.target.value })} required
+                          className="w-full px-4 py-2.5 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-green-500 focus:border-transparent" />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Last Name *</label>
+                        <input type="text" value={formData.lastName} onChange={(e) => setFormData({ ...formData, lastName: e.target.value })} required
+                          className="w-full px-4 py-2.5 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-green-500 focus:border-transparent" />
+                      </div>
+
+                      <div className="md:col-span-2">
+                        <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Email *</label>
+                        <input type="email" value={formData.email} onChange={(e) => setFormData({ ...formData, email: e.target.value })} required
+                          className="w-full px-4 py-2.5 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-green-500 focus:border-transparent" />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Phone Number *</label>
+                        <input type="tel" value={formData.phoneNumber} onChange={(e) => setFormData({ ...formData, phoneNumber: e.target.value })} required
+                          className="w-full px-4 py-2.5 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-green-500 focus:border-transparent" />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Alternate Phone</label>
+                        <input type="tel" value={formData.alternatePhoneNumber} onChange={(e) => setFormData({ ...formData, alternatePhoneNumber: e.target.value })}
+                          className="w-full px-4 py-2.5 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-green-500 focus:border-transparent" />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Role *</label>
+                        <select
+                          value={formData.role}
+                          onChange={(e) => setFormData({ ...formData, role: e.target.value })}
+                          required
+                          className="w-full px-4 py-2.5 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                        >
+                          <option value="">Select Role</option>
+                          {roles.map((role) => (
+                            <option key={role.roleId} value={role.roleId}>
+                              {formatRoleName(role.roleName)}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      {/* Conditional Dropdown */}
+                      {isSuperAdmin && (
+  isPartnerRole ? (
+                          
+                          <div>
+                            <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
+                              Organization *
+                            </label>
+                            <select
+                              value={formData.organizationId || ""}
+                              onChange={(e) => setFormData({ ...formData, organizationId: e.target.value })}
+                              required
+                              className="w-full px-4 py-2.5 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                            >
+                              <option value="">Select Organization</option>
+                              {organizations.map((org) => (
+                                <option key={org.id} value={org.id || org.organizationId}>
+                                  {org.organizationName}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        ) : (
+                          <div>
+                            <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
+                              Facility *
+                            </label>
+                            <select
+                              value={formData.facilityId}
+                              onChange={(e) => setFormData({ ...formData, facilityId: e.target.value })}
+                              required
+                              className="w-full px-4 py-2.5 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                            >
+                              <option value="">Select Facility</option>
+                              {facilities.map((facility) => (
+                                <option key={facility.facilityId} value={facility.facilityId}>
+                                  {facility.facilityName}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        )
+                      )}
+
+                      <div>
+                        <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Status</label>
+                        <select
+                          value={formData.status}
+                          onChange={(e) => setFormData({ ...formData, status: e.target.value as "active" | "inactive" })}
+                          className="w-full px-4 py-2.5 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                        >
+                          <option value="active">Active</option>
+                          <option value="inactive">Inactive</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-end gap-3 pt-6 border-t border-gray-200 dark:border-gray-700">
+                      <button type="button" onClick={closeModal} disabled={submitting}
+                        className="px-6 py-2.5 rounded-xl border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors font-medium disabled:opacity-50">
+                        Cancel
+                      </button>
+                      <button type="submit" disabled={submitting}
+                        className="flex items-center gap-2 px-6 py-2.5 rounded-xl bg-green-600 text-white hover:bg-green-700 transition-colors font-semibold disabled:opacity-50">
+                        {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
+                        {submitting ? "Saving..." : modalMode === "add" ? "Add User" : "Save Changes"}
+                      </button>
+                    </div>
+                  </form>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Additional Facility Access modal */}
+        {grantsUser && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+            <div className="max-w-md w-full bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-6">
+              <div className="flex items-center justify-between mb-1">
+                <h3 className="text-lg font-bold text-gray-800 dark:text-white">Additional Facility Access</h3>
+                <button onClick={closeGrantsModal} className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700">
+                  <X className="w-4 h-4 text-gray-500" />
+                </button>
+              </div>
+              <p className="text-sm text-gray-500 mb-4">
+                For <span className="font-semibold">{grantsUser.firstName} {grantsUser.lastName}</span> — on top of
+                whatever their role's scope already grants, not instead of it.
+              </p>
+
+              {grantsLoading ? (
+                <div className="flex justify-center py-6">
+                  <Loader2 className="w-6 h-6 animate-spin text-green-600" />
+                </div>
+              ) : (
+                <>
+                  <div className="space-y-2 mb-4 max-h-56 overflow-y-auto">
+                    {userGrants.length === 0 ? (
+                      <p className="text-xs text-gray-400 italic py-2">No additional facilities granted yet.</p>
+                    ) : (
+                      userGrants.map((g) => (
+                        <div key={g.grantId} className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-900/40 rounded-xl">
+                          <span className="text-sm text-gray-700 dark:text-gray-300">{g.facility?.facilityName}</span>
+                          <button
+                            onClick={() => removeFacilityGrant(g.facilityId)}
+                            className="text-xs text-red-600 hover:text-red-700 font-medium"
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      ))
+                    )}
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <select
+                      value={grantFacilityId}
+                      onChange={(e) => setGrantFacilityId(e.target.value)}
+                      className="flex-1 px-3 py-2.5 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-sm text-gray-800 dark:text-white focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                    >
+                      <option value="">Select a facility to add</option>
+                      {allFacilitiesForGrants
+                        .filter((f) => !userGrants.some((g) => g.facilityId === Number(f.id)))
+                        .map((f) => (
+                          <option key={f.id} value={f.id}>{f.facilityName}</option>
+                        ))}
+                    </select>
+                    <button
+                      onClick={addFacilityGrant}
+                      disabled={!grantFacilityId || grantSaving}
+                      className="px-4 py-2.5 rounded-xl bg-green-600 text-white hover:bg-green-700 transition-colors font-medium disabled:opacity-50 whitespace-nowrap"
+                    >
+                      {grantSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : "Add"}
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+    </Layout>
+  );
+}
