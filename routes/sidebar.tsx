@@ -20,6 +20,8 @@ import {
   Trash2,
   ScrollText,
   Flower2,
+  MailCheck,
+
 } from "lucide-react";
 import { ComponentType } from "react";
 
@@ -133,6 +135,7 @@ const routes: IRoute[] = [
   { path: "/ncsr/settings", icon: Settings, name: "Settings" },
   { path: "/ncsr/activity-logs", icon: ScrollText, name: "Activity Log" },
   { path: "/ncsr/deleted-records", icon: Trash2, name: "Deleted Records" },
+  { path: "/ncsr/report-settings", icon: MailCheck, name: "Report Settings" },
 ];
 
 export type { IRoute };

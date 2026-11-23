@@ -71,7 +71,7 @@ export default function ScreenedClientsPage() {
   }, [needsAttention]);
   const closeAttention = () => setAttentionOpen(false);
 
-  // Deep links: ?lab=pending · ?result=suspicious · ?cancerType=cervical
+  // Deep links: ?lab=pending · ?result=suspicious · ?cancerType=cervical · ?dateFrom=YYYY-MM-DD (used by the dashboard)
   useEffect(() => {
     if (!router.isReady) return;
     const q = router.query;
@@ -79,6 +79,8 @@ export default function ScreenedClientsPage() {
     if (typeof q.result === "string") setResult(q.result);
     if (typeof q.cancerType === "string") setCancerType(q.cancerType);
     if (typeof q.facilityId === "string") setFacilityId(q.facilityId);
+    if (typeof q.dateFrom === "string") setDateFrom(q.dateFrom);
+    if (typeof q.dateTo === "string") setDateTo(q.dateTo);
     setReady(true);
   }, [router.isReady]);
 

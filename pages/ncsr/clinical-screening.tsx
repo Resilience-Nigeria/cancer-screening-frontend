@@ -411,9 +411,20 @@ export default function ClinicalScreeningPage() {
       riskGroupsForVerify.some((g) =>
         g.fields.some((f) => /screen/i.test(`${f.name} ${f.label}`) && !/^previousScreening/.test(f.name))
       );
-    return cervicalAsksScreening
-      ? { ...MEDICAL_HISTORY_GROUP, fields: MEDICAL_HISTORY_GROUP.fields.filter((f) => !/^previousScreening/.test(f.name)) }
-      : MEDICAL_HISTORY_GROUP;
+    // Exposure to ionizing radiation is not asked for cervical screening (it stays for the other cancer types).
+    // To bring it back for cervical, set HIDE_RADIATION_FOR_CERVICAL to false.
+    const HIDE_RADIATION_FOR_CERVICAL = true;
+    const hideRadiation =
+      HIDE_RADIATION_FOR_CERVICAL && cancerTypes.length > 0 && cancerTypes.every((ct) => ct === "cervical");
+
+    return {
+      ...MEDICAL_HISTORY_GROUP,
+      fields: MEDICAL_HISTORY_GROUP.fields.filter(
+        (f) =>
+          !(cervicalAsksScreening && /^previousScreening/.test(f.name)) &&
+          !(hideRadiation && /^ionizingRadiation/.test(f.name))
+      ),
+    };
   }, [cancerTypes, riskGroupsForVerify]);
 
   // Prefill physical exam weight/height from the risk profile

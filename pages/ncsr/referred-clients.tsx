@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/router";
 import { Button, Input, Select, Pagination } from "@roketid/windmill-react-ui";
-import { Search, Loader2, X, ArrowRight, Phone, Mail, Inbox, Send, Layers, FlaskConical, ClipboardCheck, FileText, UserRound } from "lucide-react";
+import { Search, Loader2, X, ArrowRight, Phone, Mail, Inbox, Send, Layers, FlaskConical, ClipboardCheck, FileText, UserRound, AlertTriangle, Home } from "lucide-react";
 import toast from "react-hot-toast";
 
 import Layout from "../containers/Layout";
@@ -12,6 +12,7 @@ import { nextToolFor } from "../../lib/referralStage";
 
 const PER_PAGE = 20;
 const SAMPLES_PATH = "/ncsr/screening-tests-page";
+const RESULTS_PATH = "/ncsr/test-results-page";
 
 const STAGE_LABEL: Record<string, string> = {
   screening_to_confirmation: "Stage 2 → Stage 3",
@@ -24,9 +25,13 @@ const statusStyle: Record<string, string> = {
   completed: "bg-green-100 text-green-800",
   declined: "bg-red-100 text-red-700",
   cancelled: "bg-gray-100 text-gray-600",
+  form_only: "bg-orange-100 text-orange-800",
 };
 
+const STATUS_LABEL: Record<string, string> = { form_only: "Marked on form only" };
+
 const human = (v?: string | null) => (v ? v.replace(/_/g, " ").replace(/^\w/, (c) => c.toUpperCase()) : "—");
+const statusName = (v?: string | null) => (v && STATUS_LABEL[v]) || human(v);
 const stageName = (t?: string | null) => (t && STAGE_LABEL[t]) || human(t);
 
 const fmt = (d?: string | null) =>
@@ -48,7 +53,7 @@ export default function ReferredClientsPage() {
   const router = useRouter();
   const [rows, setRows] = useState<any[]>([]);
   const [types, setTypes] = useState<string[]>([]);
-  const [summary, setSummary] = useState<any>({ total: 0, active: 0, pending: 0, accepted: 0, completed: 0 });
+  const [summary, setSummary] = useState<any>({ total: 0, clients: 0, active: 0, pending: 0, accepted: 0, completed: 0, declined: 0, sameFacility: 0, formOnly: 0 });
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
@@ -61,6 +66,7 @@ export default function ReferredClientsPage() {
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [ready, setReady] = useState(false);
+  const [nonce, setNonce] = useState(0); // forces a reload (e.g. after clearing only the search box)
   const reqId = useRef(0);
 
   // Deep links: ?direction=received (old Linked Clients link) · ?status=pending · ?type=screening_to_confirmation
@@ -106,10 +112,10 @@ export default function ReferredClientsPage() {
     setPage(1);
     load(1);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ready, status, type, direction, dateFrom, dateTo]);
+  }, [ready, status, type, direction, dateFrom, dateTo, nonce]);
 
   const filtersActive = !!(search || type || direction || dateFrom || dateTo || status !== "active");
-  const clearFilters = () => { setSearch(""); setStatus("active"); setType(""); setDirection(""); setDateFrom(""); setDateTo(""); };
+  const clearFilters = () => { setSearch(""); setStatus("active"); setType(""); setDirection(""); setDateFrom(""); setDateTo(""); setNonce((n) => n + 1); };
 
   const tiles = [
     { key: "active", label: "Active", value: summary.active, tone: "text-gray-800 dark:text-white", on: status === "active", apply: () => setStatus("active") },
@@ -117,6 +123,9 @@ export default function ReferredClientsPage() {
     { key: "accepted", label: "Accepted", value: summary.accepted, tone: "text-blue-600", on: status === "accepted", apply: () => setStatus("accepted") },
     { key: "completed", label: "Completed", value: summary.completed, tone: "text-green-700", on: status === "completed", apply: () => setStatus("completed") },
     { key: "all", label: "All referrals", value: summary.total, tone: "text-gray-500", on: status === "", apply: () => setStatus("") },
+    ...(summary.formOnly > 0 || status === "form_only"
+      ? [{ key: "form_only", label: "Marked on form only", value: summary.formOnly, tone: "text-orange-600", on: status === "form_only", apply: () => setStatus("form_only") }]
+      : []),
   ];
 
   // ── Navigation into the next stage and the lab pages ─────────────────────────
@@ -132,6 +141,7 @@ export default function ReferredClientsPage() {
   }
 
   async function setReferralStatus(r: any, next: "accepted" | "completed" | "declined", quiet = false) {
+    if (!r.referralId) return false;
     if (!quiet) {
       const verb = { accepted: "accept", completed: "mark as completed", declined: "decline" }[next];
       if (!window.confirm(`Do you want to ${verb} the referral for ${r.client?.fullName ?? r.clientId}?`)) return false;
@@ -171,7 +181,13 @@ export default function ReferredClientsPage() {
     return <span className={`text-xs ${d > 14 ? "text-red-600 font-semibold" : "text-gray-500"}`}>{d === 0 ? "today" : `${d} day${d === 1 ? "" : "s"} waiting`}</span>;
   };
 
-  const FromTo = ({ r }: { r: any }) => (
+  const FromTo = ({ r }: { r: any }) => r.formOnly ? (
+    <span className="inline-flex flex-wrap items-center gap-1 text-sm">
+      <span>{r.fromFacility?.facilityName ?? "—"}</span>
+      <ArrowRight className="w-3 h-3 text-gray-400 shrink-0" />
+      <span className="font-semibold text-orange-700">No facility recorded</span>
+    </span>
+  ) : (
     <span className="inline-flex flex-wrap items-center gap-1 text-sm">
       <span>{r.fromFacility?.facilityName ?? r.from_facility?.facilityName ?? "—"}</span>
       <ArrowRight className="w-3 h-3 text-gray-400 shrink-0" />
@@ -199,6 +215,11 @@ export default function ReferredClientsPage() {
     const open = r.status === "pending" || r.status === "accepted";
     return (
       <div className="flex flex-wrap gap-2">
+        {r.formOnly && (
+          <Button size="small" className="rounded-xl bg-orange-600 border-orange-600 hover:bg-orange-700" onClick={() => openRecord(r.clientId)} title="Open the record and refer the client to a facility">
+            <span className="inline-flex items-center gap-1">Record the referral <ArrowRight className="w-3 h-3" /></span>
+          </Button>
+        )}
         {r.canUpdate && open && tool && (
           <Button size="small" className="rounded-xl bg-green-700 border-green-700 hover:bg-green-800" disabled={busy} onClick={() => startStage(r)}>
             <span className="inline-flex items-center gap-1">{r.status === "pending" ? `Accept & ${tool.label}` : tool.label} <ArrowRight className="w-3 h-3" /></span>
@@ -216,7 +237,7 @@ export default function ReferredClientsPage() {
         <Button size="small" layout="outline" className="rounded-xl" onClick={() => router.push(`${SAMPLES_PATH}?tab=results&search=${q(r.clientId)}`)} title="Enter results for samples already taken">
           <span className="inline-flex items-center gap-1"><ClipboardCheck className="w-3 h-3" /> Enter results</span>
         </Button>
-        <Button size="small" layout="outline" className="rounded-xl" onClick={() => router.push(`/ncsr/test-results?clientId=${q(r.clientId)}`)} title="All results for this client">
+        <Button size="small" layout="outline" className="rounded-xl" onClick={() => router.push(`${RESULTS_PATH}?clientId=${q(r.clientId)}`)} title="All results for this client">
           <span className="inline-flex items-center gap-1"><FileText className="w-3 h-3" /> Results</span>
         </Button>
         <Button size="small" layout="outline" className="rounded-xl" onClick={() => openRecord(r.clientId)}>
@@ -251,7 +272,7 @@ export default function ReferredClientsPage() {
         })}
       </div>
 
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 mb-5">
+      <div className={`grid grid-cols-2 sm:grid-cols-3 ${tiles.length > 5 ? "lg:grid-cols-6" : "lg:grid-cols-5"} gap-3 mb-5`}>
         {tiles.map((t) => (
           <button
             key={t.key}
@@ -264,6 +285,13 @@ export default function ReferredClientsPage() {
           </button>
         ))}
       </div>
+
+      {(summary.clients > 0 || summary.sameFacility > 0) && (
+        <p className="-mt-2 mb-4 text-xs text-gray-500">
+          {summary.clients.toLocaleString()} client{summary.clients === 1 ? "" : "s"} across {summary.total.toLocaleString()} referral{summary.total === 1 ? "" : "s"}
+          {summary.sameFacility > 0 && <> · {summary.sameFacility.toLocaleString()} continue at the same facility (it offers the next stage)</>}
+        </p>
+      )}
 
       <div className="rounded-2xl bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 p-3 sm:p-4 mb-5 space-y-3">
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
@@ -278,6 +306,7 @@ export default function ReferredClientsPage() {
             <option value="accepted">Accepted</option>
             <option value="completed">Completed</option>
             <option value="declined">Declined</option>
+            <option value="form_only">Marked "Referred" on form only</option>
           </Select>
           <Input type="date" className={fieldClass} value={dateFrom} max={dateTo || undefined} onChange={(e) => setDateFrom(e.target.value)} aria-label="Referred from" />
           <Input type="date" className={fieldClass} value={dateTo} min={dateFrom || undefined} onChange={(e) => setDateTo(e.target.value)} aria-label="Referred to" />
@@ -308,14 +337,41 @@ export default function ReferredClientsPage() {
       ) : rows.length === 0 ? (
         <div className="rounded-2xl bg-white dark:bg-gray-800 border border-dashed border-gray-300 dark:border-gray-600 p-10 text-center">
           <Inbox className="w-10 h-10 mx-auto text-gray-300 mb-3" />
-          <p className="font-semibold text-gray-700 dark:text-gray-200">{filtersActive ? "No referrals match these filters." : "No active referrals right now."}</p>
-          <p className="text-xs text-gray-400 mt-1">Clients referred to your facility will show up here.</p>
-          {filtersActive && <Button layout="outline" className="mt-4 rounded-2xl" onClick={clearFilters}>Reset filters</Button>}
+          <p className="font-semibold text-gray-700 dark:text-gray-200">
+            {status === "active" ? "No active referrals right now." : status === "form_only" ? "No clients marked \"Referred\" without a referral record." : "No referrals match these filters."}
+          </p>
+          {status === "active" && summary.total > 0 ? (
+            <p className="text-xs text-gray-500 mt-1">
+              {summary.total.toLocaleString()} referral{summary.total === 1 ? " has" : "s have"} already been completed or declined.
+            </p>
+          ) : (
+            <p className="text-xs text-gray-400 mt-1">Clients referred to or from your facility will show up here.</p>
+          )}
+          <div className="mt-4 flex flex-wrap justify-center gap-2">
+            {status !== "" && summary.total > 0 && (
+              <Button className="rounded-2xl bg-green-700 border-green-700 hover:bg-green-800" onClick={() => setStatus("")}>Show all referrals</Button>
+            )}
+            {status !== "form_only" && summary.formOnly > 0 && (
+              <Button layout="outline" className="rounded-2xl" onClick={() => setStatus("form_only")}>
+                Show {summary.formOnly.toLocaleString()} marked on form only
+              </Button>
+            )}
+            {filtersActive && <Button layout="outline" className="rounded-2xl" onClick={clearFilters}>Reset filters</Button>}
+          </div>
         </div>
       ) : (
         <div className={`space-y-3 ${loading ? "opacity-60" : ""} transition`}>
+          {status === "form_only" && (
+            <div className="rounded-2xl border border-orange-200 bg-orange-50 p-3 sm:p-4 text-sm text-orange-900 flex gap-2">
+              <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+              <span>
+                These clients were marked <b>Referred</b> on a screening form, but no referral to a facility was recorded, so the
+                receiving facility can't see them. Open each record and refer the client to the right facility.
+              </span>
+            </div>
+          )}
           {rows.map((r) => (
-            <div key={r.referralId} className="rounded-2xl bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 p-4 sm:p-5 shadow-sm">
+            <div key={r.key ?? r.referralId} className="rounded-2xl bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 p-4 sm:p-5 shadow-sm">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div className="min-w-0">
                   <button type="button" className="text-left" onClick={() => openRecord(r.clientId)}>
@@ -325,14 +381,21 @@ export default function ReferredClientsPage() {
                   <Contact r={r} />
                 </div>
                 <div className="flex flex-col items-end gap-1">
-                  <span className={`text-xs font-semibold px-2 py-1 rounded-full ${statusStyle[r.status] ?? "bg-gray-100 text-gray-700"}`}>{human(r.status)}</span>
-                  <span className="text-xs text-gray-500">{stageName(r.referralType)}</span>
+                  <span className={`text-xs font-semibold px-2 py-1 rounded-full whitespace-nowrap ${statusStyle[r.status] ?? "bg-gray-100 text-gray-700"}`}>{statusName(r.status)}</span>
+                  <span className="text-xs text-gray-500 text-right">
+                    {r.formOnly ? (r.cancerTypes ?? []).map(human).join(", ") : stageName(r.referralType)}
+                  </span>
+                  {r.sameFacility && (
+                    <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-teal-50 text-teal-700">
+                      <Home className="w-3 h-3" /> Continues at this facility
+                    </span>
+                  )}
                 </div>
               </div>
 
               <div className="mt-3 space-y-1">
                 <FromTo r={r} />
-                <p className="text-xs text-gray-500">Referred {fmt(r.referralDate)} <Waiting r={r} /></p>
+                <p className="text-xs text-gray-500">{r.formOnly ? "Screened" : "Referred"} {fmt(r.referralDate)} <Waiting r={r} /></p>
                 <Navigator r={r} />
                 {r.notes && <p className="text-xs text-gray-600 line-clamp-3">{r.notes}</p>}
               </div>

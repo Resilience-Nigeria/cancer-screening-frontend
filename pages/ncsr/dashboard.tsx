@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/router";
 import Link from "next/link";
 import toast from "react-hot-toast";
@@ -43,14 +43,20 @@ import {
   HeartHandshake,
   FlaskConical,
   FileCheck2,
+  Clock,
+  Copy,
+  CalendarClock,
+  Trash2,
+  TestTube2,
 } from "lucide-react";
 
 type ScreeningActivity = {
-  visitId: number;
+  visitId: number | string;
+  kind?: "visit" | "lab";
   clientName: string;
   screeningId: string;
   screeningType: string;
-  status: "Completed" | "Pending" | "Referred" | "Follow-up";
+  status: string;
   facility: string;
   date: string;
 };
@@ -67,7 +73,15 @@ type DashboardStats = {
   liverScreenings: number;
   positiveFindings: number;
   totalReferred: number;
+  referredFormOnly: number;
   activeTreatmentPlans: number;
+  screenedClients: number;
+  awaitingResults: number;
+  overdueResults: number;
+  bookedTests: number;
+  duplicateResults: number;
+  resultsWithoutSample: number;
+  pendingDeletionRequests: number | null;
 };
 
 type Facility = {
@@ -171,7 +185,7 @@ function ModuleCard({
       <p className={`mt-1 text-[11px] sm:text-xs leading-4 ${noteColor}`}>{note}</p>
       {onClick && (
         <div className="mt-2 flex items-center text-xs font-medium text-green-600 dark:text-green-400">
-          <span>View screenings</span>
+          <span>View clients</span>
           <ArrowUpRight className="w-3 h-3 ml-1" />
         </div>
       )}
@@ -184,7 +198,7 @@ function ActivityCard({
   getBadgeType,
 }: {
   item: ScreeningActivity;
-  getBadgeType: (status: ScreeningActivity["status"]) => string;
+  getBadgeType: (status: string) => string;
 }) {
   return (
     <div className="rounded-2xl bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 shadow-sm p-4">
@@ -265,7 +279,15 @@ function Dashboard() {
     liverScreenings: 0,
     positiveFindings: 0,
     totalReferred: 0,
+    referredFormOnly: 0,
     activeTreatmentPlans: 0,
+    screenedClients: 0,
+    awaitingResults: 0,
+    overdueResults: 0,
+    bookedTests: 0,
+    duplicateResults: 0,
+    resultsWithoutSample: 0,
+    pendingDeletionRequests: null,
   });
   const [activities, setActivities] = useState<ScreeningActivity[]>([]);
   const [page, setPage] = useState(1);
@@ -336,12 +358,20 @@ function Dashboard() {
           0,
         liverScreenings:
           statsData.liverScreenings ?? statsData.liver_screenings ?? 0,
+        // Suspicious findings: same rule as Screened Clients (positive = suspicious, lab results included).
         positiveFindings:
-          statsData.positiveFindings ?? statsData.positive_findings ?? 0,
-          totalReferred:
-  statsData.totalReferred ?? statsData.total_referred ?? 0,
+          statsData.suspiciousFindings ?? statsData.positiveFindings ?? statsData.positive_findings ?? 0,
+        totalReferred: statsData.totalReferred ?? statsData.total_referred ?? 0,
+        referredFormOnly: statsData.referredFormOnly ?? 0,
         activeTreatmentPlans:
           statsData.activeTreatmentPlans ?? statsData.active_treatment_plans ?? 0,
+        screenedClients: statsData.screenedClients ?? 0,
+        awaitingResults: statsData.awaitingResults ?? 0,
+        overdueResults: statsData.overdueResults ?? 0,
+        bookedTests: statsData.bookedTests ?? 0,
+        duplicateResults: statsData.duplicateResults ?? 0,
+        resultsWithoutSample: statsData.resultsWithoutSample ?? 0,
+        pendingDeletionRequests: statsData.pendingDeletionRequests ?? null,
       });
     } catch (err: any) {
       console.error("Error fetching stats:", err);
@@ -389,6 +419,7 @@ function Dashboard() {
             item.clientId ??
             item.client?.client_id ??
             "—",
+          kind: item.kind,
           screeningType: item.screeningType ?? item.screening_type ?? "General Screening",
           status: item.status ?? "Pending",
           facility:
@@ -421,9 +452,14 @@ function Dashboard() {
     setPage(1);
   }
 
-  // Auto-apply filters when they change
+  // Auto-apply filters when they change (skipped on first render: the effects below load the page once).
+  const filtersMounted = useRef(false);
   useEffect(() => {
     if (!hasNationalAccess) return;
+    if (!filtersMounted.current) {
+      filtersMounted.current = true;
+      return;
+    }
     
     // Update filters applied status
     const hasActiveFilters = 
@@ -453,56 +489,65 @@ function Dashboard() {
     setPage(p);
   }
 
-  // Navigation handlers for clickable cards
+  // Navigation handlers for clickable cards — every card opens the page whose list matches its number.
+  const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toLocaleDateString("en-CA");
+  const screened = (q: Record<string, string>) =>
+    router.push(`/ncsr/screened-clients?${new URLSearchParams(q).toString()}`);
+
   function handleAllClientsClick() {
     router.push("/ncsr/clients");
   }
 
   function handleScreeningsThisMonthClick() {
-    router.push("/ncsr/visits?filter=this_month");
+    screened({ dateFrom: monthStart });
   }
 
   function handlePendingFollowUpsClick() {
-    router.push("/ncsr/visits?filter=pending_followups");
+    router.push("/ncsr/follow-up-schedules");
   }
 
   function handleReferralAlertsClick() {
-    router.push("/ncsr/referrals");
+    router.push("/ncsr/referred-clients?direction=received&status=active"); // same count as Referred Clients → Incoming → Active
   }
 
   function handleCervicalScreeningsClick() {
-    router.push("/ncsr/screenings?type=cervical");
+    screened({ cancerType: "cervical" });
   }
 
   function handleBreastScreeningsClick() {
-    router.push("/ncsr/screenings?type=breast");
+    screened({ cancerType: "breast" });
   }
 
   function handleProstateScreeningsClick() {
-    router.push("/ncsr/screenings?type=prostate");
+    screened({ cancerType: "prostate" });
   }
 
   function handleColorectalScreeningsClick() {
-    router.push("/ncsr/screenings?type=colorectal");
+    screened({ cancerType: "colorectal" });
   }
 
   function handleLiverScreeningsClick() {
-    router.push("/ncsr/screenings?type=liver");
+    screened({ cancerType: "liver" });
   }
 
   function handlePositiveFindingsClick() {
-    router.push("/ncsr/positive-findings");
+    screened({ result: "suspicious" });
   }
 
-  function getBadgeType(status: ScreeningActivity["status"]) {
+  function getBadgeType(status: string) {
     switch (status) {
       case "Completed":
+      case "Screened":
+      case "Result released":
         return "success";
       case "Pending":
+      case "Awaiting result":
         return "warning";
       case "Referred":
+      case "Suspicious result":
         return "danger";
       case "Follow-up":
+      case "Booked":
         return "primary";
       default:
         return "neutral";
@@ -511,8 +556,8 @@ function Dashboard() {
 
 
   function handleTotalReferredClick() {
-  router.push("/ncsr/referred");
-}
+    router.push("/ncsr/referred-clients?direction=sent&status=all"); // clients this facility referred onwards
+  }
 
   if (loading && activities.length === 0) {
     return (
@@ -792,7 +837,7 @@ function Dashboard() {
               </div>
             </Link>
             )}
-            <Link className="block h-full" href="/ncsr/referred">
+            <Link className="block h-full" href="/ncsr/referred-clients?direction=received">
               <div className="cursor-pointer rounded-2xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-750 transition-colors p-4 sm:p-6 shadow-sm h-full">
                 <ArrowUpRight className="w-6 h-6 mb-3 text-blue-700" />
                 <p className="font-semibold text-gray-800 dark:text-white">Linked Clients</p>
@@ -820,9 +865,9 @@ function Dashboard() {
         />
 
         <StatCard
-          title="Screenings This Month"
+          title="Screened This Month"
           value={stats.screeningsThisMonth.toLocaleString()}
-          note="Click to view this month's visits"
+          note="Clients screened or tested this month"
           icon={
             <Stethoscope className="w-5 h-5 text-emerald-700 dark:text-emerald-100" />
           }
@@ -834,7 +879,7 @@ function Dashboard() {
         <StatCard
           title="Pending Follow-ups"
           value={stats.pendingFollowUps.toLocaleString()}
-          note="Click to view pending cases"
+          note="Click to view follow-up schedules"
           icon={
             <ClipboardList className="w-5 h-5 text-amber-700 dark:text-amber-100" />
           }
@@ -844,9 +889,9 @@ function Dashboard() {
         />
 
         <StatCard
-          title="Referral Alerts"
+          title="Referrals Awaiting Action"
           value={stats.referralAlerts.toLocaleString()}
-          note="Click to view urgent cases"
+          note="Referred to your facility, not yet completed"
           icon={
             <AlertTriangle className="w-5 h-5 text-red-700 dark:text-red-100" />
           }
@@ -856,16 +901,20 @@ function Dashboard() {
         />
 
         <StatCard
-  title="Total Clients Referred"
-  value={stats.totalReferred.toLocaleString()}
-  note="Click to view all referrals"
-  icon={
-    <ArrowUpRight className="w-5 h-5 text-blue-700 dark:text-blue-100" />
-  }
-  iconWrapperClass="bg-blue-100 dark:bg-blue-700"
-  onClick={handleTotalReferredClick}
-  clickable
-/>
+          title="Total Clients Referred"
+          value={stats.totalReferred.toLocaleString()}
+          note={
+            stats.referredFormOnly > 0
+              ? `${stats.referredFormOnly.toLocaleString()} marked "Referred" on the form, no referral recorded`
+              : "Referred onwards (referral recorded or marked on the form)"
+          }
+          icon={
+            <ArrowUpRight className="w-5 h-5 text-blue-700 dark:text-blue-100" />
+          }
+          iconWrapperClass="bg-blue-100 dark:bg-blue-700"
+          onClick={handleTotalReferredClick}
+          clickable
+        />
 
         <StatCard
           title="Active Treatment Plans"
@@ -885,51 +934,110 @@ function Dashboard() {
         <ModuleCard
           title="Cervical Screening"
           value={stats.cervicalScreenings.toLocaleString()}
-          note="View all cervical screenings"
+          note="Clients screened (form or lab test)"
           icon={<ArrowUpRight className="w-4 h-4 text-green-600" />}
           onClick={handleCervicalScreeningsClick}
         />
         <ModuleCard
           title="Breast Screening"
           value={stats.breastScreenings.toLocaleString()}
-          note="View all breast screenings"
+          note="Clients screened (form or lab test)"
           icon={<ArrowUpRight className="w-4 h-4 text-green-600" />}
           onClick={handleBreastScreeningsClick}
         />
         <ModuleCard
           title="Prostate Screening"
           value={stats.prostateScreenings.toLocaleString()}
-          note="View all prostate screenings"
+          note="Clients screened (form or lab test)"
           icon={<ArrowUpRight className="w-4 h-4 text-green-600" />}
           onClick={handleProstateScreeningsClick}
         />
         <ModuleCard
           title="Colorectal Screening"
           value={stats.colorectalScreenings.toLocaleString()}
-          note="View all colorectal screenings"
+          note="Clients screened (form or lab test)"
           icon={<ArrowUpRight className="w-4 h-4 text-green-600" />}
           onClick={handleColorectalScreeningsClick}
         />
         <ModuleCard
           title="Liver Screening"
           value={stats.liverScreenings.toLocaleString()}
-          note="View all liver screenings"
+          note="Clients screened (form or lab test)"
           icon={<ArrowUpRight className="w-4 h-4 text-green-600" />}
           onClick={handleLiverScreeningsClick}
         />
         <ModuleCard
-          title="Positive Findings"
+          title="Suspicious Findings"
           value={stats.positiveFindings.toLocaleString()}
-          note="View confirmed cases"
+          note="Clients with a suspicious / positive result"
           noteColor="text-red-500"
           icon={<Activity className="w-4 h-4 text-red-500" />}
           onClick={handlePositiveFindingsClick}
         />
       </div>
+
+      {/* Lab & data quality — same rules as the Screened Clients warnings and the All Test Results page */}
+      <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-gray-500">Lab &amp; data quality</h3>
+      <div className="grid gap-3 sm:gap-5 mb-6 sm:mb-8 grid-cols-2 md:grid-cols-3 xl:grid-cols-6">
+        <StatCard
+          title="Awaiting Results"
+          value={stats.awaitingResults.toLocaleString()}
+          note="Samples / tests taken, no result yet"
+          icon={<TestTube2 className="w-5 h-5 text-amber-700 dark:text-amber-100" />}
+          iconWrapperClass="bg-amber-100 dark:bg-amber-600"
+          onClick={() => screened({ lab: "pending" })}
+          clickable
+        />
+        <StatCard
+          title="Overdue Results"
+          value={stats.overdueResults.toLocaleString()}
+          note="Waiting more than 7 days"
+          icon={<Clock className="w-5 h-5 text-red-700 dark:text-red-100" />}
+          iconWrapperClass="bg-red-100 dark:bg-red-600"
+          onClick={() => router.push("/ncsr/screening-tests-page?tab=results")}
+          clickable
+        />
+        <StatCard
+          title="Tests Booked"
+          value={stats.bookedTests.toLocaleString()}
+          note="Upcoming booked tests"
+          icon={<CalendarClock className="w-5 h-5 text-blue-700 dark:text-blue-100" />}
+          iconWrapperClass="bg-blue-100 dark:bg-blue-700"
+        />
+        <StatCard
+          title="Results Without a Sample"
+          value={stats.resultsWithoutSample.toLocaleString()}
+          note="Result typed, no sample / test recorded"
+          icon={<AlertTriangle className="w-5 h-5 text-amber-700 dark:text-amber-100" />}
+          iconWrapperClass="bg-amber-100 dark:bg-amber-600"
+          onClick={() => screened({ lab: "no_sample" })}
+          clickable
+        />
+        <StatCard
+          title="Possible Duplicates"
+          value={stats.duplicateResults.toLocaleString()}
+          note="Clients with a repeated result"
+          icon={<Copy className="w-5 h-5 text-amber-700 dark:text-amber-100" />}
+          iconWrapperClass="bg-amber-100 dark:bg-amber-600"
+          onClick={() => router.push("/ncsr/test-results-page?duplicates=1")}
+          clickable
+        />
+        {stats.pendingDeletionRequests !== null && (
+          <StatCard
+            title="Deletion Requests"
+            value={stats.pendingDeletionRequests.toLocaleString()}
+            note="Waiting for admin approval"
+            icon={<Trash2 className="w-5 h-5 text-gray-700 dark:text-gray-100" />}
+            iconWrapperClass="bg-gray-100 dark:bg-gray-600"
+            onClick={() => router.push("/ncsr/deleted-records-page")}
+            clickable
+          />
+        )}
+      </div>
         </>
       )}
 
-      {/* Recent Activity section - same as before */}
+      {/* Recent Activity section */}
       <div className="mb-6 sm:mb-8">
         <PageTitle>Recent Screening Activity</PageTitle>
 
@@ -954,9 +1062,7 @@ function Dashboard() {
           <div className="mt-4">
             {/* Mobile cards */}
             <div className="grid grid-cols-1 gap-4 lg:hidden">
-              {activities
-                .slice((page - 1) * resultsPerPage, page * resultsPerPage)
-                .map((item, i) => (
+              {activities.map((item, i) => (
                   <ActivityCard
                     key={item.visitId || i}
                     item={item}
@@ -974,7 +1080,7 @@ function Dashboard() {
                       <tr>
                         <TableCell>Client</TableCell>
                         <TableCell>Client ID</TableCell>
-                        <TableCell>Screening Type</TableCell>
+                        <TableCell>Activity</TableCell>
                         <TableCell>Status</TableCell>
                         <TableCell>Facility</TableCell>
                         <TableCell>Date</TableCell>
@@ -982,12 +1088,7 @@ function Dashboard() {
                     </TableHeader>
 
                     <TableBody>
-                      {activities
-                        .slice(
-                          (page - 1) * resultsPerPage,
-                          page * resultsPerPage
-                        )
-                        .map((item, i) => (
+                      {activities.map((item, i) => (
                           <TableRow key={item.visitId || i}>
                             <TableCell>
                               <div className="text-sm">
@@ -1004,7 +1105,7 @@ function Dashboard() {
                             </TableCell>
 
                             <TableCell>
-                              <span className="text-sm break-words">
+                              <span className="text-sm whitespace-normal break-words">
                                 {item.screeningType}
                               </span>
                             </TableCell>
