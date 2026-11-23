@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   Mail, Users, UserRound, AtSign, Plus, Trash2, Pencil, Pause, Play, Eye, Send, Loader2, X, Search,
-  CalendarClock, ShieldAlert, Building2, CheckSquare, Square, Ban,
+  CalendarClock, ShieldAlert, Building2, CheckSquare, Square, Ban, Zap, BellRing,
 } from "lucide-react";
 import toast from "react-hot-toast";
 
@@ -449,6 +449,26 @@ export default function ReportSettingsPage() {
     }
   }
 
+  /** Send now (weekly summary) / Remind now (overdue results) — to everyone on the list, outside the schedule. */
+  async function sendNow(report: Report) {
+    const reminder = report.reportKey === "overdue_results";
+    const ok = window.confirm(
+      reminder
+        ? "Send the overdue results reminder now to everyone on the list who has overdue results?\n\nThe scheduled reminder still goes out as usual."
+        : "Send this week's summary now to everyone on the list?\n\nThe scheduled summary still goes out as usual."
+    );
+    if (!ok) return;
+    setBusy(`n${report.reportKey}`);
+    try {
+      const { data } = await api.post(`/report-settings/${report.reportKey}/send-now`);
+      toast.success(data.message ?? "Sending.", { duration: 6000 });
+    } catch (e) {
+      toast.error(friendlyError(e, "Could not send it now."));
+    } finally {
+      setBusy(null);
+    }
+  }
+
   async function sendTest(report: Report) {
     setBusy(`t${report.reportKey}`);
     try {
@@ -598,6 +618,16 @@ export default function ReportSettingsPage() {
                   <button type="button" className={btnOutline} onClick={() => openPreview(report)}><Eye className="w-4 h-4" /> Preview</button>
                   <button type="button" className={btnOutline} onClick={() => sendTest(report)} disabled={busy === `t${key}`}>
                     {busy === `t${key}` ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />} Send me a test
+                  </button>
+                  <button
+                    type="button"
+                    className={`${btn} bg-amber-500 hover:bg-amber-600 text-white`}
+                    onClick={() => sendNow(report)}
+                    disabled={busy === `n${key}` || people.length === 0}
+                    title={people.length === 0 ? "Add recipients first" : "Send to everyone on the list now"}
+                  >
+                    {busy === `n${key}` ? <Loader2 className="w-4 h-4 animate-spin" /> : key === "overdue_results" ? <BellRing className="w-4 h-4" /> : <Zap className="w-4 h-4" />}
+                    {key === "overdue_results" ? "Remind now" : "Send now"}
                   </button>
                 </div>
               </div>
