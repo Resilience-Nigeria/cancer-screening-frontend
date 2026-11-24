@@ -621,7 +621,7 @@ export default function ReportSettingsPage() {
                   </button>
                   <button
                     type="button"
-                    className={`${btn} bg-amber-500 hover:bg-amber-600 text-white`}
+                    className={`${btn} bg-orange-500 hover:bg-orange-600 text-white`}
                     onClick={() => sendNow(report)}
                     disabled={busy === `n${key}` || people.length === 0}
                     title={people.length === 0 ? "Add recipients first" : "Send to everyone on the list now"}
