@@ -2,11 +2,12 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useContext, useState, useMemo, useEffect } from "react";
+import { useCallback, useContext, useState, useMemo, useEffect } from "react";
 import { LogOut, Shield, Database, Building2, Users } from "lucide-react";
 import SidebarContext from "../../../context/SidebarContext";
 import routes, { IRoute, routeIsActive } from "../../../routes/sidebar";
 import SidebarSubmenu from "./SidebarSubmenu";
+import AppInstallPrompt from "./AppInstallPrompt";
 import Image from "next/image";
 import { logout } from "../../../lib/logout";
 import { getUser } from "../../../lib/auth";
@@ -53,11 +54,9 @@ export default function SidebarContent({ linkClicked }: SidebarContentProps) {
   // Get role name from user_role relationship (new RBAC) or fallback to old role field
   const userRoleName = user?.user_role?.roleName || user?.role;
 
-  // Filter routes based on user role
-  const visibleRoutes = useMemo(() => {
-    return routes.filter((route): route is IRoute => {
-      if (!route) return false;
-
+  // Whether one page is visible to this user.
+  const isPageVisible = useCallback(
+    (route: IRoute): boolean => {
       // Menu visibility is admin-configurable — null means everyone can
       // see it; an empty array means it's restricted to nobody; a
       // populated array restricts it to those roles. Fail open until
@@ -74,6 +73,11 @@ export default function SidebarContent({ linkClicked }: SidebarContentProps) {
         }
       }
 
+      // Optional hardcoded roles on a route (rarely used — prefer Menu Visibility).
+      if (route.roles && route.roles.length > 0) {
+        if (!userRoleName || !route.roles.includes(userRoleName)) return false;
+      }
+
       // Stage-gated routes (Stage 2/3/4) only show if the user's own
       // facility is configured to support that stage. Users with no
       // assigned facility (national-scoped roles) aren't tied to one
@@ -88,8 +92,26 @@ export default function SidebarContent({ linkClicked }: SidebarContentProps) {
       }
 
       return true;
-    });
-  }, [userRoleName, user, menuRules, menuRulesLoaded]);
+    },
+    [userRoleName, user, menuRules, menuRulesLoaded],
+  );
+
+  // Groups keep only the pages this user can see. A group with none is hidden;
+  // a group with just one is shown as that page on its own (no need to expand it).
+  const visibleRoutes = useMemo(() => {
+    const out: IRoute[] = [];
+    for (const route of routes) {
+      if (!route) continue;
+      if (route.routes && route.routes.length > 0) {
+        const children = route.routes.filter((c) => c.path && isPageVisible(c));
+        if (children.length === 0) continue;
+        out.push(children.length === 1 ? children[0] : { ...route, routes: children });
+      } else if (route.path && isPageVisible(route)) {
+        out.push(route);
+      }
+    }
+    return out;
+  }, [isPageVisible]);
 
   // Get role display name
   function getRoleDisplayName(): string {
@@ -220,22 +242,12 @@ export default function SidebarContent({ linkClicked }: SidebarContentProps) {
         {/* Navigation */}
         <ul id="sidebar" className="mt-6">
           {visibleRoutes.map((route) => {
-            // Handle submenu routes
+            // A group of pages (already filtered for this user)
             if (route.routes && route.routes.length > 0) {
-              // Filter submenu routes by role as well
-              const visibleSubRoutes = route.routes.filter((subRoute) => {
-                if (!subRoute.roles || subRoute.roles.length === 0) return true;
-                if (!userRoleName) return false;
-                return subRoute.roles.includes(userRoleName);
-              });
-
-              // Don't show parent if no child routes are visible
-              if (visibleSubRoutes.length === 0) return null;
-
               return (
                 <SidebarSubmenu
                   key={route.name}
-                  route={{ ...route, routes: visibleSubRoutes }}
+                  route={route}
                   linkClicked={linkClicked || closeSidebar}
                 />
               );
@@ -277,6 +289,9 @@ export default function SidebarContent({ linkClicked }: SidebarContentProps) {
           })}
         </ul>
       </div>
+
+      {/* "Get the mobile app" on phones/tablets (when turned on in Mobile App → App versions) */}
+      {isMounted && user ? <AppInstallPrompt /> : null}
 
       {/* Logout Button */}
       <div className="px-6 pb-4">
