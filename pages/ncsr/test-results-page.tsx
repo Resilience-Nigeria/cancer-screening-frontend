@@ -11,6 +11,7 @@ import { friendlyError } from "../../lib/apiError";
 import ResultAttachmentViewer from "../components/ResultAttachmentViewer";
 import TestResultModal from "../../components/TestResultModal";
 import SampleDeleteButton from "../../components/SampleDeleteButton";
+import SampleCorrectButton from "../../components/SampleCorrectButton";
 import { hpvRiskLabel } from "../../lib/hpvRisk";
 import { CANCER_TYPES, cancerName, findTest, resultLabel, testsFor, findingOf, FINDING_LABEL } from "../../lib/screeningTests";
 
@@ -341,7 +342,8 @@ export default function TestResultsPage() {
                   <p className="mt-3 text-sm text-gray-700 dark:text-gray-300 break-words">{t?.label ?? s.testType} <span className="text-gray-400">· {cancerName(s.cancerType)}</span></p>
                   {extra.length > 0 && <p className="text-xs text-gray-500 mt-1">{extra.join(" · ")}</p>}
                   <p className="mt-2 text-xs text-gray-500 break-words">
-                    {s.sampleRef} · {t?.kind === "procedure" ? "performed" : "taken"} {prettyDate(s.sampleDate)} · released {prettyDate(s.resultDate)}
+                    <b className="text-gray-700 dark:text-gray-200">{s.clientId}</b> · {t?.kind === "procedure" ? "performed" : "taken"} {prettyDate(s.sampleDate)} · released {prettyDate(s.resultDate)}
+                    <span className="ml-1 text-[10px] text-gray-400">{s.sampleRef}</span>
                   </p>
                   {s.facility?.facilityName && <p className="mt-1 text-xs text-gray-500">Done at {s.facility.facilityName}</p>}
                   <div className="mt-3 flex flex-wrap items-center gap-4">
@@ -356,6 +358,9 @@ export default function TestResultsPage() {
                         <Paperclip className="w-3 h-3" /> View printout
                       </button>
                     )}
+                    <span onClick={(e) => e.stopPropagation()}>
+                      <SampleCorrectButton sample={s} onDone={() => load(page)} />
+                    </span>
                     <DeleteResult s={s} />
                   </div>
                 </div>
@@ -388,7 +393,7 @@ export default function TestResultsPage() {
                       </td>
                       <td className="px-4 py-3 max-w-[13rem]">
                         <p className="text-gray-800 dark:text-gray-100 break-words">{t?.label ?? s.testType}</p>
-                        <p className="text-xs text-gray-500">{cancerName(s.cancerType)} · {s.sampleRef}</p>
+                        <p className="text-xs text-gray-500">{cancerName(s.cancerType)} <span className="text-[10px] text-gray-400">· {s.sampleRef}</span></p>
                       </td>
                       <td className="px-4 py-3 max-w-[13rem]">
                         <p className="text-gray-800 dark:text-gray-100 break-words">{s.facility?.facilityName ?? "—"}</p>
@@ -416,7 +421,10 @@ export default function TestResultsPage() {
                               <Paperclip className="w-3 h-3" /> Printout
                             </button>
                           )}
-                          <DeleteResult s={s} />
+                          <span onClick={(e) => e.stopPropagation()}>
+                      <SampleCorrectButton sample={s} onDone={() => load(page)} />
+                    </span>
+                    <DeleteResult s={s} />
                         </div>
                       </td>
                     </tr>

@@ -9,6 +9,8 @@ import { findTest, resultLabel, cancerName } from "../lib/screeningTests";
 import { VIRAL_LOAD_LABEL, hpvRiskLabel, HPV_TRUENAT_CATEGORIES } from "../lib/hpvRisk";
 import SampleDeleteButton from "./SampleDeleteButton";
 import ScreeningActionModal from "./ScreeningActionModal";
+import SampleCorrectButton from "./SampleCorrectButton";
+import ClientIdentifiers from "./ClientIdentifiers";
 
 const chip: Record<string, string> = {
   normal: "bg-green-100 text-green-800",
@@ -402,6 +404,9 @@ export default function LabTestsPanel({
         </div>
       </section>
 
+      {/* ── Patient ID and linked numbers (NCSR Client ID + service codes, lab and referral numbers) ── */}
+      {!clientId.startsWith("OFFLINE-") && <ClientIdentifiers key={`${clientId}-${rows.length}`} clientId={clientId} />}
+
       {/* ── Screenings done ───────────────────────────────────────────── */}
       <section className="rounded-2xl border border-gray-100 dark:border-gray-700 bg-white dark:bg-gray-800 p-4">
         <div className="flex items-center gap-2 mb-3">
@@ -417,7 +422,7 @@ export default function LabTestsPanel({
               <thead>
                 <tr className="text-left text-xs uppercase tracking-wide text-gray-500 border-b border-gray-100 dark:border-gray-700">
                   <th className="px-4 py-2">Test</th>
-                  <th className="px-4 py-2">Reference</th>
+                  <th className="px-4 py-2">Client ID</th>
                   <th className="px-4 py-2">Date</th>
                   <th className="px-4 py-2">Status</th>
                   <th className="px-4 py-2">Result</th>
@@ -434,7 +439,10 @@ export default function LabTestsPanel({
                   return (
                     <tr key={x.sampleId} className="align-top">
                       <td className="px-4 py-3 font-semibold text-gray-800 dark:text-gray-100">{t?.label ?? x.testType}</td>
-                      <td className="px-4 py-3 font-mono text-xs text-gray-600 dark:text-gray-300">{x.status === "booked" ? "—" : x.sampleRef}</td>
+                      <td className="px-4 py-3 text-xs">
+                        <b className="text-gray-800 dark:text-gray-100">{x.clientId || clientId}</b>
+                        {x.status !== "booked" && <span className="block font-mono text-[10px] text-gray-400">{x.sampleRef}</span>}
+                      </td>
                       <td className="px-4 py-3 text-gray-700 dark:text-gray-300">
                         {x.status === "booked" ? `Booked for ${fmt(x.sampleDate)}` : fmt(x.sampleDate)}
                         {x.status === "booked" && x.booked_facility?.facilityName && (
@@ -479,6 +487,7 @@ export default function LabTestsPanel({
                               {t?.kind === "procedure" ? "Perform now" : "Take sample now"}
                             </button>
                           )}
+                          {x.status !== "booked" && <SampleCorrectButton sample={x} onDone={() => load()} />}
                           <SampleDeleteButton sampleId={x.sampleId} label={`${t?.label ?? x.testType} · ${x.sampleRef ?? ""}`} hasResult={x.status === "result_released"} appearance="button" onDone={() => load()} />
                         </div>
                       </td>

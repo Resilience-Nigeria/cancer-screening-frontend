@@ -55,8 +55,11 @@ import { CERVICAL_RISK_GROUPS, cervicalRiskPatch } from "../../lib/cervicalRisk"
 import DateOfBirthField from "../components/DateOfBirthField";
 import BiodataExtraFields from "../components/BiodataExtraFields";
 import { findTest } from "../../lib/screeningTests";
-import LabTestsPanel from "../../components/LabTestsPanel";
-import SearchableSelect from "../../components/SearchableSelect";
+import LabTestsPanel from "../components/LabTestsPanel";
+import BreastNextStep from "../components/BreastNextStep";
+import ReportSummary from "../components/ReportSummary";
+import { breastNextStep, hydrateBreastScreening } from "../../lib/screeningWizardConfig";
+import SearchableSelect from "../components/SearchableSelect";
 import { getPreviousRoute, routeLabel } from "../../lib/routeHistory";
 
 // ---------------------------------------------------------------------------
@@ -95,12 +98,6 @@ const NEXT_OF_KIN_RELATIONSHIP_OPTIONS = [
   "Other",
 ];
 
-const RADIATION_TYPE_OPTIONS = [
-  { value: "", label: "Select" },
-  { value: "xray", label: "X-ray" },
-  { value: "ct_scan", label: "CT scan" },
-  { value: "other", label: "Other" },
-];
 
 const MEDICAL_HISTORY_GROUP: FieldGroup = {
   title: "Medical History — Confirm",
@@ -115,32 +112,6 @@ const MEDICAL_HISTORY_GROUP: FieldGroup = {
       options: CANCER_TYPE_SELECT_OPTIONS,
       colSpan: 1,
       showIf: (v) => v.previousCancer === "yes",
-    },
-    {
-      name: "ionizingRadiationExposure",
-      label: "Previous exposure to ionizing radiation",
-      type: "select",
-      options: [
-        { value: "yes", label: "Yes" },
-        { value: "no", label: "No" },
-      ],
-      colSpan: 1,
-    },
-    {
-      name: "ionizingRadiationType",
-      label: "Type of exposure",
-      type: "select",
-      options: RADIATION_TYPE_OPTIONS,
-      colSpan: 1,
-      showIf: (v) => v.ionizingRadiationExposure === "yes",
-    },
-    {
-      name: "ionizingRadiationOther",
-      label: "Other exposure (specify)",
-      type: "text",
-      colSpan: 2,
-      placeholder: "Describe the exposure",
-      showIf: (v) => v.ionizingRadiationExposure === "yes" && v.ionizingRadiationType === "other",
     },
     { name: "previousScreening", label: "Previous cancer screening", type: "select", options: yesNoUnknown, colSpan: 1 },
     {
@@ -352,6 +323,74 @@ export default function ClinicalScreeningPage() {
 
   const currentKey = STEPS[stepIndex];
 
+  // ── Entries are never lost (simulation report §2, §8) ─────────────────────
+  // 1. Everything typed for a client's visit is kept in this browser as a draft, so going to another page,
+  //    a refresh, or a session time-out + signing in again brings it back (offered when the same visit reopens).
+  // 2. The physical examination saves itself when you leave that step.
+  const examDirty = useRef(false);
+  const draftKey = clientId ? `ncsr:clinical-draft:${clientId}` : "";
+  const draftRestoredFor = useRef<string>("");
+
+  useEffect(() => {
+    if (!draftKey || !visitId) return;
+    const t = setTimeout(() => {
+      try {
+        window.localStorage.setItem(
+          draftKey,
+          JSON.stringify({ visitId: String(visitId), cancerTypes, screenings, examination, risk, outcome, step: currentKey, savedAt: Date.now() })
+        );
+      } catch {
+        /* storage full or blocked — nothing else to do */
+      }
+    }, 600);
+    return () => clearTimeout(t);
+  }, [draftKey, visitId, cancerTypes, screenings, examination, risk, outcome, currentKey]);
+
+  useEffect(() => {
+    if (!draftKey || !visitId || draftRestoredFor.current === `${draftKey}:${visitId}`) return;
+    draftRestoredFor.current = `${draftKey}:${visitId}`;
+    let d: any = null;
+    try {
+      d = JSON.parse(window.localStorage.getItem(draftKey) || "null");
+    } catch {
+      d = null;
+    }
+    if (!d || String(d.visitId) !== String(visitId) || Date.now() - Number(d.savedAt || 0) > 3 * 86400000) return;
+    const filled = (o: any) => Object.fromEntries(Object.entries(o || {}).filter(([, v]) => v !== "" && v !== null && v !== undefined && !(Array.isArray(v) && !v.length)));
+    if (d.cancerTypes?.length) setCancerTypes((cur) => (cur.length ? cur : d.cancerTypes));
+    if (d.screenings) {
+      setScreenings((cur) => {
+        const out = { ...cur };
+        Object.entries(d.screenings as Record<string, any>).forEach(([ct, row]) => (out[ct] = { ...(cur[ct] || {}), ...filled(row) }));
+        return out;
+      });
+    }
+    if (d.examination) {
+      setExamination((cur) => ({ ...cur, ...filled(d.examination) }));
+      if (Object.keys(filled(d.examination)).length) examDirty.current = true;
+    }
+    if (d.risk) setRisk((cur) => ({ ...cur, ...filled(d.risk) }));
+    if (d.outcome) setOutcome((cur) => ({ ...cur, ...filled(d.outcome) }));
+    toast.success("Restored entries for this visit that hadn't been saved yet.");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draftKey, visitId]);
+
+  const prevStep = useRef(currentKey);
+  useEffect(() => {
+    const was = prevStep.current;
+    prevStep.current = currentKey;
+    if (was !== "physicalExam" || currentKey === "physicalExam" || !examDirty.current || !visitId) return;
+    const hasValues = Object.values(examination).some((v) => v !== "" && v !== null && v !== undefined && v !== false);
+    if (!hasValues) return;
+    examDirty.current = false;
+    sendOrQueue({ method: "post", path: `/visits/${visitId}/examination`, body: examination, label: "Physical examination (auto-saved)" })
+      .then(({ queued }) => toast.success(queued ? "Physical examination kept on this device — will sync later." : "Physical examination saved."))
+      .catch(() => {
+        examDirty.current = true; // try again next time
+      });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentKey]);
+
   // Coming from the HPV result page: tick Cervical, tick the HPV method and fill in the lab result,
   // at the point the user reaches those steps (earlier steps reset these when a new visit starts).
   useEffect(() => {
@@ -411,18 +450,12 @@ export default function ClinicalScreeningPage() {
       riskGroupsForVerify.some((g) =>
         g.fields.some((f) => /screen/i.test(`${f.name} ${f.label}`) && !/^previousScreening/.test(f.name))
       );
-    // Exposure to ionizing radiation is not asked for cervical screening (it stays for the other cancer types).
-    // To bring it back for cervical, set HIDE_RADIATION_FOR_CERVICAL to false.
-    const HIDE_RADIATION_FOR_CERVICAL = true;
-    const hideRadiation =
-      HIDE_RADIATION_FOR_CERVICAL && cancerTypes.length > 0 && cancerTypes.every((ct) => ct === "cervical");
-
+    // The ionizing-radiation question was removed (simulation feedback).
     return {
       ...MEDICAL_HISTORY_GROUP,
       fields: MEDICAL_HISTORY_GROUP.fields.filter(
         (f) =>
-          !(cervicalAsksScreening && /^previousScreening/.test(f.name)) &&
-          !(hideRadiation && /^ionizingRadiation/.test(f.name))
+          !(cervicalAsksScreening && /^previousScreening/.test(f.name))
       ),
     };
   }, [cancerTypes, riskGroupsForVerify]);
@@ -824,7 +857,8 @@ export default function ClinicalScreeningPage() {
 
     const hydratedScreenings: Record<string, Record<string, any>> = {};
     types.forEach((t) => {
-      hydratedScreenings[t] = visit.screenings[t] || {};
+      const saved = visit.screenings[t] || {};
+      hydratedScreenings[t] = t === "breast" ? hydrateBreastScreening(saved) : saved;
     });
     setScreenings(hydratedScreenings);
 
@@ -916,7 +950,9 @@ export default function ClinicalScreeningPage() {
           params: { search: value },
         }));
       } catch (e: any) {
-        if (e?.response) throw e;
+        if (e?.response?.status === 404) data = { client: null };
+        else if (e?.response) throw e;
+        else {
         // No network: search only clients registered or opened on this device.
         const local = await findLocalClient(value);
         if (!local) {
@@ -926,6 +962,25 @@ export default function ClinicalScreeningPage() {
         }
         data = { client: local, offline: true };
         toast("Offline — client loaded from this device.", { icon: "📴" });
+        }
+      }
+
+      // Not found by phone / Client ID? Try every other number linked to a client
+      // (hospital number, CBE / ultrasound / biopsy / HPV codes, lab numbers, referral numbers).
+      if (!data?.client && !data?.offline) {
+        try {
+          const { data: ids } = await api.get("/identifiers/lookup", { params: { q: value } });
+          const hits: any[] = ids?.results ?? [];
+          const owners = Array.from(new Set(hits.map((h) => h.clientId)));
+          if (owners.length === 1) {
+            ({ data } = await api.get("/clients/search/details", { params: { search: owners[0] } }));
+            if (data?.client) toast.success(`${hits[0].matched} ${hits[0].value} belongs to ${data.client.fullName || owners[0]} (${owners[0]}).`);
+          } else if (owners.length > 1) {
+            toast(`That number matches ${owners.length} clients: ${owners.join(", ")}. Search with the NCSR Client ID.`, { icon: "ℹ️" });
+          }
+        } catch {
+          /* older server — carry on as before */
+        }
       }
 
       const found = data?.client;
@@ -1149,6 +1204,7 @@ export default function ClinicalScreeningPage() {
         provisional: { visit: { visitId: tempVisit } },
       });
       const newVisitId = data?.visit?.visitId ?? data?.visitId;
+      if (data?.resumed) toast.success("Continuing this client's unfinished visit from today.");
       setVisitId(newVisitId);
       return newVisitId;
     } catch (error: any) {
@@ -1433,6 +1489,22 @@ export default function ClinicalScreeningPage() {
     });
     setVisitId(visitData?.visit?.visitId ?? visitData?.visitId);
 
+    // The server continues today's unfinished visit instead of creating a duplicate (e.g. after the session timed out).
+    if (visitData?.resumed) {
+      toast.success("This client already has an unfinished visit today — continuing it.");
+      try {
+        const { data: inc } = await api.get(`/clients/${cId}/visits/incomplete`);
+        const v = (inc?.visits || []).find((x: any) => String(x.visitId) === String(visitData?.visit?.visitId));
+        if (inc?.riskProfile) setRisk((p) => ({ ...p, ...hydrateRiskProfile(inc.riskProfile) }));
+        if (v) {
+          await resumeVisit(v);
+          return;
+        }
+      } catch {
+        /* carry on with the visit id */
+      }
+    }
+
     if (isTempId(cId) || !navigator.onLine) return; // nothing to load for a client that isn't on the server yet
     try {
       const { data: rp } = await api.get(`/clients/${cId}/risk-profile`);
@@ -1637,6 +1709,7 @@ export default function ClinicalScreeningPage() {
               ...Object.fromEntries(Object.entries(screeningData).filter(([k]) => !k.startsWith("_m_"))),
               // The date field is no longer typed on this page; it follows the lab result, or today.
               screeningDate: screeningData.screeningDate || new Date().toISOString().slice(0, 10),
+              ...(ct === "breast" ? { recommendedNextStep: breastNextStep(screeningData, clientAge)?.test ?? null } : {}),
             },
             treatmentReferral
           ),
@@ -1650,6 +1723,10 @@ export default function ClinicalScreeningPage() {
         if (cx.methodHpv && cx.hpvSampleDate) {
           api.post(`/visits/${activeVisitId}/lab-sync`).catch(() => {});
         }
+      }
+      // The CBE typed here also becomes the visit's CBE test under Samples & Test Results (no second registration).
+      if (!anyQueued && cancerTypes.includes("breast" as CancerType)) {
+        api.post(`/visits/${activeVisitId}/breast-sync`).catch(() => {});
       }
       toast.success(anyQueued ? "Saved on this device — will sync later." : "Screening findings saved.");
       next();
@@ -1693,6 +1770,7 @@ export default function ClinicalScreeningPage() {
         body: examination,
         label: "Physical examination",
       });
+      examDirty.current = false;
       toast.success(queued ? "Saved on this device — will sync later." : "Physical examination saved.");
       next();
     } catch (err: any) {
@@ -1745,6 +1823,12 @@ export default function ClinicalScreeningPage() {
         toast.success("Screening outcome recorded — client referred.");
       } else {
         toast.success("Screening outcome recorded.");
+      }
+      // The visit is finished — its draft is no longer needed.
+      try {
+        if (draftKey) window.localStorage.removeItem(draftKey);
+      } catch {
+        /* ignore */
       }
       if (focus === "outcome" && !needsReferral) {
         router.push(`/ncsr/client-details?clientId=${encodeURIComponent(clientId)}`);
@@ -2592,6 +2676,20 @@ export default function ClinicalScreeningPage() {
                           });
                         }}
                       />
+                      {ct === "breast" && (
+                        <ReportSummary
+                          onApply={(fields) => setScreenings((prev) => ({ ...prev, breast: { ...(prev.breast || {}), ...fields } }))}
+                        />
+                      )}
+                      {ct === "breast" && clientId && (
+                        <BreastNextStep
+                          clientId={clientId}
+                          visitId={visitId}
+                          values={screenings.breast || {}}
+                          age={clientAge}
+                          alreadyInVisit={testsInVisit.breast}
+                        />
+                      )}
                     </div>
                   )}
                 </div>
@@ -2607,8 +2705,12 @@ export default function ClinicalScreeningPage() {
               groups={EXAM_GROUPS}
               values={examination}
               errors={{}}
-              onChange={(name, value) => setExamination((p) => ({ ...p, [name]: value }))}
+              onChange={(name, value) => {
+                examDirty.current = true;
+                setExamination((p) => ({ ...p, [name]: value }));
+              }}
             />
+            <p className="text-xs text-gray-500">Entries are kept if you move to another step or page, and saved automatically when you leave this step.</p>
           </div>
         )}
 

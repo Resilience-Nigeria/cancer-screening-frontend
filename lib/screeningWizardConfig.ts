@@ -55,6 +55,117 @@ const resultOptions = [
 ];
 
 // ---------------------------------------------------------------------------
+// Breast CBE — result per breast, physical changes, biopsy procedures, next step
+// ---------------------------------------------------------------------------
+
+export const CBE_RESULT_OPTIONS = [
+  { value: "", label: "Select result" },
+  { value: "normal", label: "Normal" },
+  { value: "lump_detected", label: "Lump detected" },
+  { value: "lump_not_detected", label: "Lump not detected (other changes)" },
+];
+
+export const BREAST_CHANGE_OPTIONS = [
+  { value: "nipple_discharge", label: "Nipple discharge" },
+  { value: "nipple_retraction", label: "Nipple retraction" },
+  { value: "skin_discoloration", label: "Skin discoloration" },
+  { value: "skin_dimpling", label: "Skin dimpling" },
+  { value: "skin_thickening", label: "Skin thickening" },
+  { value: "skin_ulceration", label: "Skin ulceration" },
+  { value: "visible_veins", label: "Visible / distended veins" },
+  { value: "asymmetry", label: "Breast asymmetry" },
+  { value: "swelling", label: "Breast swelling" },
+  { value: "other", label: "Other change" },
+];
+
+const SKIN_CHANGES = ["skin_discoloration", "skin_dimpling", "skin_thickening", "skin_ulceration"];
+
+export const BIOPSY_PROCEDURE_OPTIONS = [
+  { value: "", label: "Select procedure" },
+  { value: "fna", label: "Fine needle aspiration (FNA)" },
+  { value: "core_needle", label: "Core needle biopsy" },
+  { value: "vacuum_assisted", label: "Vacuum-assisted biopsy" },
+  { value: "excision", label: "Excision biopsy" },
+  { value: "incision", label: "Incision biopsy" },
+  { value: "punch", label: "Punch biopsy (skin)" },
+  { value: "other", label: "Other" },
+];
+
+function changesOf(v: Record<string, any>): string[] {
+  const raw = v.physicalChanges;
+  if (Array.isArray(raw)) return raw;
+  if (typeof raw === "string" && raw) {
+    try {
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed : [raw];
+    } catch {
+      return raw.split(",").map((x) => x.trim()).filter(Boolean);
+    }
+  }
+  return [];
+}
+const hasChange = (v: Record<string, any>, c: string) => changesOf(v).includes(c);
+
+/** Older records (before the CBE result / physical-changes fields) → the new fields, so they can be edited. */
+export function hydrateBreastScreening(v: Record<string, any>): Record<string, any> {
+  const out: Record<string, any> = { ...v, physicalChanges: changesOf(v) };
+  const legacy = (f?: string) => (f === "suspicious" ? "lump_detected" : f === "normal" ? "normal" : "");
+  if (!out.leftCbeResult && out.leftCbeFinding) out.leftCbeResult = legacy(out.leftCbeFinding);
+  if (!out.rightCbeResult && out.rightCbeFinding) out.rightCbeResult = legacy(out.rightCbeFinding);
+  if (!out.physicalChanges.length && out.breastNippleDischarge === "yes") out.physicalChanges = ["nipple_discharge"];
+  return out;
+}
+
+/**
+ * Keeps the older columns filled for reports/analytics:
+ *  - left/rightCbeFinding: suspicious when a lump is detected on that side, or "lump not detected" with physical changes;
+ *  - breastNippleDischarge / skinChanges: yes/no from the physical-changes list.
+ */
+export function deriveBreastFindings(p: Record<string, any>): Record<string, any> {
+  if (!("leftCbeResult" in p) && !("rightCbeResult" in p) && !("physicalChanges" in p)) return p;
+  const changes = changesOf(p);
+  const side = (r?: string) => (!r ? undefined : r === "lump_detected" || (r === "lump_not_detected" && changes.length > 0) ? "suspicious" : "normal");
+  const out: Record<string, any> = { ...p, physicalChanges: changes };
+  const l = side(p.leftCbeResult);
+  const r = side(p.rightCbeResult);
+  if (l) out.leftCbeFinding = l;
+  if (r) out.rightCbeFinding = r;
+  out.breastNippleDischarge = changes.includes("nipple_discharge") ? "yes" : "no";
+  out.skinChanges = changes.some((c) => SKIN_CHANGES.includes(c)) ? "yes" : "no";
+  if (!changes.includes("nipple_discharge")) out.dischargeType = null;
+  if (!changes.includes("other")) out.physicalChangesOther = null;
+  if (out.biopsyProcedure !== "other") out.biopsyProcedureOther = null;
+  return out;
+}
+
+/** True when the CBE found something that needs imaging. */
+export function breastCbeAbnormal(v: Record<string, any>): boolean {
+  if (!v.methodCbe && !v.leftCbeResult && !v.rightCbeResult) return false;
+  const r = [v.leftCbeResult, v.rightCbeResult];
+  // "Lump not detected" with no physical change ticked counts as normal (same rule as deriveBreastFindings).
+  return r.includes("lump_detected") || changesOf(v).length > 0;
+}
+
+export type BreastNextStep = { test: "breast_ultrasound" | "mammography"; label: string; reason: string };
+
+/**
+ * Next evaluation after an abnormal CBE (national protocol): under 40 → breast ultrasound; 40 and over → mammography.
+ * Null when the CBE is normal or not done. Change the age cut-off here if the protocol changes.
+ */
+export const BREAST_IMAGING_AGE_CUTOFF = 40;
+export function breastNextStep(v: Record<string, any>, ageYears?: number | null): BreastNextStep | null {
+  if (!breastCbeAbnormal(v)) return null;
+  const lumps = [v.leftCbeResult === "lump_detected" && "left", v.rightCbeResult === "lump_detected" && "right"].filter(Boolean);
+  const found = lumps.length ? `lump in the ${lumps.join(" and ")} breast${lumps.length > 1 ? "s" : ""}` : "breast changes on examination";
+  if (ageYears == null || Number.isNaN(ageYears)) {
+    return { test: "breast_ultrasound", label: "Breast ultrasound or mammography", reason: `Abnormal CBE (${found}). Age unknown — under ${BREAST_IMAGING_AGE_CUTOFF}: ultrasound; ${BREAST_IMAGING_AGE_CUTOFF}+: mammography.` };
+  }
+  return ageYears < BREAST_IMAGING_AGE_CUTOFF
+    ? { test: "breast_ultrasound", label: "Breast ultrasound", reason: `Abnormal CBE (${found}) in a client under ${BREAST_IMAGING_AGE_CUTOFF} (age ${ageYears}).` }
+    : { test: "mammography", label: "Mammography", reason: `Abnormal CBE (${found}) in a client aged ${BREAST_IMAGING_AGE_CUTOFF} or over (age ${ageYears}).` };
+}
+
+// ---------------------------------------------------------------------------
 // Cancer types (with gender + age relevance, used to filter the selector)
 // minAge / maxAge are INCLUSIVE and are the client's age in whole years today.
 // Types without limits are always offered. Add limits here for any other type.
@@ -908,60 +1019,52 @@ export const SCREENING_GROUPS: Record<CancerType, FieldGroup[]> = {
       ],
     },
 
-    // CBE section: findings + breast health/symptoms (only when CBE is selected)
+    // CBE section: result per breast + physical characteristics (only when CBE is selected).
+    // leftCbeFinding / rightCbeFinding (normal | suspicious), breastNippleDischarge and skinChanges are
+    // still saved for reports and analytics — they are worked out from these answers (deriveBreastFindings).
     {
       title: "Clinical Breast Exam (CBE)",
-      description: "Document each breast independently and record relevant symptoms during the clinical exam.",
+      description: "Record the result for each breast, then tick every physical change you see.",
       fields: [
         {
-          name: "leftCbeFinding",
-          label: "Left Breast",
+          name: "leftCbeResult",
+          label: "Left breast — CBE result",
           type: "select",
           colSpan: 1,
           showIf: (v) => !!v.methodCbe,
-          options: [
-            { value: "normal", label: "Normal" },
-            { value: "suspicious", label: "Suspicious" },
-          ],
+          options: CBE_RESULT_OPTIONS,
         },
         {
-          name: "rightCbeFinding",
-          label: "Right Breast",
+          name: "rightCbeResult",
+          label: "Right breast — CBE result",
           type: "select",
           colSpan: 1,
           showIf: (v) => !!v.methodCbe,
-          options: [
-            { value: "normal", label: "Normal" },
-            { value: "suspicious", label: "Suspicious" },
-          ],
+          options: CBE_RESULT_OPTIONS,
         },
         {
-          name: "breastLumps",
-          label: "Breast Lumps",
-          type: "select",
-          colSpan: 1,
+          name: "physicalChanges",
+          label: "Physical characteristics / breast changes",
+          type: "multiselect",
+          colSpan: 2,
           showIf: (v) => !!v.methodCbe,
-          options: [
-            { value: "", label: "Select" },
-            { value: "current", label: "Current" },
-            { value: "previous", label: "Previous" },
-            { value: "none", label: "None" },
-          ],
+          options: BREAST_CHANGE_OPTIONS,
+          help: "Tick all that apply. Leave empty if there are no changes.",
         },
         {
-          name: "breastNippleDischarge",
-          label: "Breast/Nipple Discharge",
-          type: "select",
-          options: yesNo,
-          colSpan: 1,
-          showIf: (v) => !!v.methodCbe,
+          name: "physicalChangesOther",
+          label: "Other change (describe)",
+          type: "text",
+          colSpan: 2,
+          placeholder: "e.g. peau d'orange, axillary swelling",
+          showIf: (v) => !!v.methodCbe && hasChange(v, "other"),
         },
         {
           name: "dischargeType",
-          label: "Discharge Type",
+          label: "Nipple discharge — type",
           type: "select",
-          colSpan: 2,
-          showIf: (v) => !!v.methodCbe && v.breastNippleDischarge === "yes",
+          colSpan: 1,
+          showIf: (v) => !!v.methodCbe && hasChange(v, "nipple_discharge"),
           options: [
             { value: "", label: "Select type" },
             { value: "bloody", label: "Bloody" },
@@ -972,20 +1075,25 @@ export const SCREENING_GROUPS: Record<CancerType, FieldGroup[]> = {
           ],
         },
         {
-          name: "skinChanges",
-          label: "Skin Appearance Changes",
+          name: "breastPain",
+          label: "Breast tenderness",
           type: "select",
           options: yesNo,
           colSpan: 1,
           showIf: (v) => !!v.methodCbe,
         },
         {
-          name: "breastPain",
-          label: "Breast Pain",
+          name: "breastLumps",
+          label: "History of breast lumps",
           type: "select",
-          options: yesNo,
           colSpan: 1,
           showIf: (v) => !!v.methodCbe,
+          options: [
+            { value: "", label: "Select" },
+            { value: "current", label: "Current" },
+            { value: "previous", label: "Previous" },
+            { value: "none", label: "None" },
+          ],
         },
         {
           name: "previousBiopsy",
@@ -1126,6 +1234,22 @@ export const SCREENING_GROUPS: Record<CancerType, FieldGroup[]> = {
       title: "Procedures & Follow-up",
       fields: [
         { name: "biopsyDone", label: "Biopsy done (this visit)", type: "checkbox", colSpan: 1 },
+        {
+          name: "biopsyProcedure",
+          label: "Biopsy procedure",
+          type: "select",
+          colSpan: 1,
+          showIf: (v) => !!v.biopsyDone || !!v.biopsyBookNow,
+          options: BIOPSY_PROCEDURE_OPTIONS,
+          help: "Picked the wrong one? Change it here and save again — it updates this visit, no new record.",
+        },
+        {
+          name: "biopsyProcedureOther",
+          label: "Other procedure (describe)",
+          type: "text",
+          colSpan: 1,
+          showIf: (v) => (!!v.biopsyDone || !!v.biopsyBookNow) && v.biopsyProcedure === "other",
+        },
         {
           name: "biopsyResult",
           label: "Biopsy Result",

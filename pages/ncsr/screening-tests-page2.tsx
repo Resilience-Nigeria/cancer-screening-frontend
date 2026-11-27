@@ -10,6 +10,7 @@ import api from "../../lib/api";
 import { friendlyError } from "../../lib/apiError";
 import { ageFromDob } from "../components/VisitDetailsFields";
 import ResultAttachmentViewer from "../components/ResultAttachmentViewer";
+import SampleDeleteButton from "../../components/SampleDeleteButton";
 import { HPV_RISK_OPTIONS, HPV_TRUENAT_CATEGORIES, VIRAL_LOAD_LABEL, hpvGroupCode, hpvRiskLabel } from "../../lib/hpvRisk";
 import { ACCEPTED_ATTACHMENTS, MAX_ATTACHMENT_MB, prepareImage } from "../../lib/imageUpload";
 import {
@@ -24,6 +25,8 @@ import {
   nextStep,
   resultLabel,
   testsFor,
+  extraOptions,
+  extraVisible,
 } from "../../lib/screeningTests";
 
 // Route of the Stage 2 clinical screening page (it reads ?search= on load). Change if yours differs.
@@ -304,7 +307,7 @@ export default function ScreeningTestsPage() {
     const sampleDate = String(selected.sampleDate).slice(0, 10);
 
     for (const f of selectedTest.extraFields ?? []) {
-      if (f.required && !String(resultForm.meta[f.name] ?? "").trim()) {
+      if (f.required && extraVisible(f, resultForm.meta) && !String(resultForm.meta[f.name] ?? "").trim()) {
         toast.error(`Select or enter: ${f.label}.`);
         return;
       }
@@ -359,6 +362,8 @@ export default function ScreeningTestsPage() {
       };
       if (selectedTest.extraFields?.length || isHpvPositive) {
         const meta: Record<string, any> = { ...resultForm.meta };
+        // Answers to questions that no longer apply (e.g. discharge type when there is no discharge) are not saved.
+        for (const f of selectedTest.extraFields ?? []) if (!extraVisible(f, meta)) delete meta[f.name];
         if (!isHpvPositive) {
           for (const k of ["riskCategory", "hrCategory", "ct", "riskSuggested", "riskOverridden", "hr1618", "level1618", "ct1618", "hrOther", "levelOther", "ctOther"]) delete meta[k];
         } else {
@@ -403,7 +408,7 @@ export default function ScreeningTestsPage() {
   }
 
   const goToClinical = (clientId: string) =>
-    router.push({ pathname: CLINICAL_SCREENING_PATH, query: { search: clientId, fromLab: "hpv" } });
+    router.push({ pathname: CLINICAL_SCREENING_PATH, query: { search: clientId } });
 
   const inputClass = "mt-2 rounded-2xl h-12";
   const pill = (active: boolean) =>
@@ -746,14 +751,25 @@ export default function ScreeningTestsPage() {
 
             {selected && selectedTest && !resultSaved && (
               <>
-                <div>
-                  <h3 className="text-lg font-semibold text-gray-800 dark:text-white break-words">
-                    {selected.client?.fullName || selected.clientId}
-                  </h3>
-                  <p className="text-xs text-gray-500">
-                    {selectedTest.label} · {selected.sampleRef} · {selectedTest.kind === "procedure" ? "performed" : "sample taken"}{" "}
-                    {prettyDate(selected.sampleDate)}
-                  </p>
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <h3 className="text-lg font-semibold text-gray-800 dark:text-white break-words">
+                      {selected.client?.fullName || selected.clientId}
+                    </h3>
+                    <p className="text-xs text-gray-500">
+                      {selectedTest.label} · {selected.sampleRef} · {selectedTest.kind === "procedure" ? "performed" : "sample taken"}{" "}
+                      {prettyDate(selected.sampleDate)}
+                    </p>
+                  </div>
+                  {/* Wrong sample? Admins delete it; others send a deletion request. Soft delete, restorable. */}
+                  <SampleDeleteButton
+                    sampleId={selected.sampleId}
+                    label={`${selectedTest.label} · ${selected.sampleRef}`}
+                    onDone={() => {
+                      setSelected(null);
+                      loadSamples();
+                    }}
+                  />
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <Label>
@@ -768,7 +784,7 @@ export default function ScreeningTestsPage() {
                     />
                   </Label>
 
-                  {selectedTest.extraFields?.map((f) => (
+                  {selectedTest.extraFields?.filter((f) => extraVisible(f, resultForm.meta)).map((f) => (
                     <Label key={f.name} className={f.name === "runStatus" ? "sm:col-span-2" : ""}>
                       <span className="text-sm font-semibold">
                         {f.label}
@@ -781,8 +797,8 @@ export default function ScreeningTestsPage() {
                           onChange={(e) => setResultForm((p) => ({ ...p, meta: { ...p.meta, [f.name]: e.target.value } }))}
                         >
                           <option value="">Select</option>
-                          {f.options?.map((o) => (
-                            <option key={o} value={o}>{o}</option>
+                          {extraOptions(f).map((o) => (
+                            <option key={o.value} value={o.value}>{o.label}</option>
                           ))}
                         </Select>
                       ) : (

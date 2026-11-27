@@ -10,7 +10,7 @@ import api from "../../lib/api";
 import { friendlyError } from "../../lib/apiError";
 import { ageFromDob } from "../components/VisitDetailsFields";
 import ResultAttachmentViewer from "../components/ResultAttachmentViewer";
-import SampleDeleteButton from "../../components/SampleDeleteButton";
+import SampleDeleteButton from "../components/SampleDeleteButton";
 import { HPV_RISK_OPTIONS, HPV_TRUENAT_CATEGORIES, VIRAL_LOAD_LABEL, hpvGroupCode, hpvRiskLabel } from "../../lib/hpvRisk";
 import { ACCEPTED_ATTACHMENTS, MAX_ATTACHMENT_MB, prepareImage } from "../../lib/imageUpload";
 import {
@@ -454,15 +454,18 @@ export default function ScreeningTestsPage() {
               <p className="text-sm text-gray-500">
                 {test.label} · {client?.fullName} · {prettyDate(savedSample.sampleDate)}
               </p>
-              <div className="inline-block rounded-xl bg-green-50 border border-green-200 px-4 py-2 text-lg font-bold tracking-wider text-green-800 select-all">
-                {savedSample.sampleRef}
+              {/* The client's ID is what staff see and write; the sample's own code stays small underneath. */}
+              <div className="inline-block rounded-xl bg-green-50 border border-green-200 px-4 py-2">
+                <span className="block text-[11px] font-medium uppercase tracking-wide text-green-700">Client ID</span>
+                <span className="block text-lg font-bold tracking-wider text-green-800 select-all">{savedSample.clientId || client?.clientId}</span>
               </div>
+              <p className="text-[11px] text-gray-400 select-all">Sample ref {savedSample.sampleRef}</p>
               <p className="text-xs text-gray-500">
-                {test.kind === "procedure" ? "Write this reference on the request form." : "Write this reference on the sample and the lab form."}
+                {test.kind === "procedure" ? "Write the Client ID on the request form." : "Write the Client ID on the sample and the lab form."}
               </p>
               {test.key === "hpv_dna" && (
                 <p className="text-xs text-blue-800 bg-blue-50 border border-blue-200 rounded-xl p-3 text-left max-w-md mx-auto">
-                  <b>Tip:</b> when the lab loads this sample on the Truenat machine, type <b>{savedSample.sampleRef}</b> in the
+                  <b>Tip:</b> when the lab loads this sample on the Truenat machine, type the Client ID <b>{savedSample.clientId || client?.clientId}</b> in the
                   machine&apos;s <b>Patient ID</b> field (not a running number like 001). The printout then matches this record
                   without any guessing.
                 </p>
@@ -719,7 +722,8 @@ export default function ScreeningTestsPage() {
                         </p>
                         <p className="text-xs font-medium text-green-700">{t?.label ?? s.testType} · {cancerName(s.cancerType)}</p>
                         <p className="text-xs text-gray-500 break-all">
-                          {s.clientId} · {s.sampleRef}
+                          <b className="text-gray-800 dark:text-gray-100">{s.clientId}</b>
+                          <span className="ml-1 text-[10px] text-gray-400">{s.sampleRef}</span>
                         </p>
                         <p className="text-xs text-gray-500">
                           {t?.kind === "procedure" ? "Performed" : "Taken"} {prettyDate(s.sampleDate)}

@@ -40,6 +40,7 @@ import {
   comorbiditiesToJson,
   dedupeFields,
   breastfeedingPatch,
+  deriveBreastFindings,
 } from "../../lib/screeningWizardConfig";
 import VisitDetailsFields, { initialVisitMeta, ageFromDob, VisitMeta } from "../components/VisitDetailsFields";
 import { CERVICAL_RISK_GROUPS, cervicalRiskPatch, hydrateCervicalRisk } from "../../lib/cervicalRisk";
@@ -134,7 +135,8 @@ export function buildScreeningPayload(
   data: Record<string, any>,
   referralValue?: string
 ): Record<string, any> {
-  const p: Record<string, any> = { ...data };
+  // Breast: CBE result per side + physical changes → also fill the older finding columns (reports keep working).
+  const p: Record<string, any> = deriveBreastFindings({ ...data });
 
   // Derive primary method from breast checkboxes
   if (p.methodMammography) p.method = "mammography";

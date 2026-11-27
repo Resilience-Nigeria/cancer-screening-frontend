@@ -54,6 +54,7 @@ import VisitDetailsFields, { initialVisitMeta, ageFromDob, VisitMeta } from "../
 import { CERVICAL_RISK_GROUPS, cervicalRiskPatch } from "../../lib/cervicalRisk";
 import DateOfBirthField from "../components/DateOfBirthField";
 import BiodataExtraFields from "../components/BiodataExtraFields";
+import { findTest } from "../../lib/screeningTests";
 import LabTestsPanel from "../../components/LabTestsPanel";
 import SearchableSelect from "../../components/SearchableSelect";
 import { getPreviousRoute, routeLabel } from "../../lib/routeHistory";
@@ -249,6 +250,22 @@ function blankBiodata(): Record<string, any> {
     phoneNotClients: false,
     caregiverName: "",
     caregiverPhoneNumber: "",
+    dobEstimated: false,
+    dobMode: "date",
+    age: "",
+    hasCaregiver: false,
+  };
+}
+
+// Extra, UI-only biodata keys: how the birth date was entered and whether a caregiver exists.
+function biodataExtras(c: any) {
+  const estimated = !!c?.dobEstimated;
+  const dob = (c?.dateOfBirth || "").slice(0, 10);
+  return {
+    dobEstimated: estimated,
+    dobMode: estimated ? "age" : "date",
+    age: estimated && dob ? String(Math.max(0, new Date().getFullYear() - Number(dob.slice(0, 4)))) : "",
+    hasCaregiver: !!(c?.caregiverName || c?.caregiverPhoneNumber || c?.phoneNotClients),
   };
 }
 
@@ -348,7 +365,9 @@ export default function ClinicalScreeningPage() {
       setScreenings((prev) => {
         const cur = prev.cervical || {};
         if (cur.hpvResult) return prev;   // never overwrite what is already recorded
-        return { ...prev, cervical: { ...cur, methodHpv: true, ...labHpv } };
+        const { sampleId: _sampleId, ...fields } = labHpv;
+        const finding = fields.hpvResult === "positive" ? "suspicious" : fields.hpvResult === "negative" ? "non_suspicious" : cur.screeningResult;
+        return { ...prev, cervical: { ...cur, methodHpv: true, ...fields, ...(finding ? { screeningResult: finding } : {}) } };
       });
       toast.success("HPV method selected and the lab result filled in.");
     }
@@ -368,12 +387,45 @@ export default function ClinicalScreeningPage() {
   // breast and cervical are selected.
   const riskGroupsForVerify = useMemo(() => {
     const base = getRiskGroupsFor(cancerTypes, biodata.gender);
-    return dedupeFields(
+    const merged = dedupeFields(
       cancerTypes.includes("cervical") && biodata.gender !== "male"
         ? [...base, ...CERVICAL_RISK_GROUPS]
         : base
     );
+    // Last menstrual period and age at first menstruation are not always known, so they are optional.
+    return merged.map((g) => ({
+      ...g,
+      fields: g.fields.map((f) =>
+        /menstrua|menarche|\blmp\b/i.test(`${f.name} ${f.label}`)
+          ? { ...f, required: false, label: /optional/i.test(f.label) ? f.label : `${f.label} (optional)` }
+          : f
+      ),
+    }));
   }, [cancerTypes, biodata.gender]);
+
+  // The cervical risk section already asks about earlier cervical screening. When it does, the general
+  // "Previous cancer screening" question is dropped for cervical clients so the history is asked once.
+  const medicalHistoryGroup = useMemo<FieldGroup>(() => {
+    const cervicalAsksScreening =
+      cancerTypes.includes("cervical") &&
+      riskGroupsForVerify.some((g) =>
+        g.fields.some((f) => /screen/i.test(`${f.name} ${f.label}`) && !/^previousScreening/.test(f.name))
+      );
+    // Exposure to ionizing radiation is not asked for cervical screening (it stays for the other cancer types).
+    // To bring it back for cervical, set HIDE_RADIATION_FOR_CERVICAL to false.
+    const HIDE_RADIATION_FOR_CERVICAL = true;
+    const hideRadiation =
+      HIDE_RADIATION_FOR_CERVICAL && cancerTypes.length > 0 && cancerTypes.every((ct) => ct === "cervical");
+
+    return {
+      ...MEDICAL_HISTORY_GROUP,
+      fields: MEDICAL_HISTORY_GROUP.fields.filter(
+        (f) =>
+          !(cervicalAsksScreening && /^previousScreening/.test(f.name)) &&
+          !(hideRadiation && /^ionizingRadiation/.test(f.name))
+      ),
+    };
+  }, [cancerTypes, riskGroupsForVerify]);
 
   // Prefill physical exam weight/height from the risk profile
   useEffect(() => {
@@ -499,8 +551,198 @@ export default function ClinicalScreeningPage() {
   // Prostate recall and urology bookings use the general referral-capable facility list.
   const referralFacilityOptions = useMemo(() => toFacilityOptions(referralFacilities), [referralFacilities]);
 
+  // Screening methods per cancer type. Fields starting with "_m_" exist only on this page (they mark a
+  // method as used for cancers whose form has no method checkbox) and are never sent to the API.
+  const METHOD_DEFS: Record<string, { field: string; label?: string; test?: string }[]> = {
+    cervical: [
+      { field: "methodHpv", test: "hpv_dna" },
+      { field: "methodPap", test: "cervical_cytology" },
+      { field: "methodVia", test: "via" },
+    ],
+    breast: [
+      { field: "methodCbe", test: "cbe" },
+      { field: "methodMammography", test: "mammography" },
+      { field: "methodUltrasound", test: "breast_ultrasound" },
+      { field: "_m_breast_biopsy", test: "breast_biopsy" },
+    ],
+    liver: [
+      { field: "_m_afp", test: "afp" },
+      { field: "_m_liver_ultrasound", test: "liver_ultrasound" },
+      { field: "_m_hbsag", test: "hbsag" },
+      { field: "_m_anti_hcv", test: "anti_hcv" },
+    ],
+    colorectal: [
+      { field: "_m_fit", test: "fit" },
+      { field: "_m_colonoscopy", test: "colonoscopy" },
+    ],
+    prostate: [
+      { field: "_m_psa", test: "psa" },
+      { field: "_m_dre", test: "dre" },
+    ],
+  };
+  const [testsInVisit, setTestsInVisit] = useState<Record<string, string[]>>({});
+
+  function methodsFor(ct: string) {
+    const v = screenings[ct] || {};
+    const used = testsInVisit[ct] || [];
+    return (METHOD_DEFS[ct] || []).map((d) => {
+      const hasRecord = !!d.test && used.includes(d.test);
+      return {
+        field: d.field,
+        test: d.test,
+        label: d.label || findTest(d.test)?.label || d.field,
+        checked: !!v[d.field] || hasRecord,
+        locked: hasRecord,
+      };
+    });
+  }
+
+  // Values the form needs from released lab results (results are never typed on this page).
+  const allFieldsFor = (ct: string) => (SCREENING_GROUPS[ct as CancerType] || []).flatMap((g) => g.fields);
+  function pickOption(field: any, candidates: string[]): string | undefined {
+    const opts: { value: string; label: string }[] = (field?.options || []).filter((o: any) => o.value !== "");
+    for (const c of candidates) {
+      const cl = c.toLowerCase();
+      const hit =
+        opts.find((o) => String(o.value).toLowerCase() === cl) ||
+        opts.find((o) => String(o.label).toLowerCase() === cl) ||
+        opts.find((o) => String(o.value).toLowerCase().includes(cl) || String(o.label).toLowerCase().includes(cl));
+      if (hit) return hit.value;
+    }
+    return undefined;
+  }
+
+  // Fields filled from a released lab result are locked, so the form always matches the lab.
+  const [labLocked, setLabLocked] = useState<Record<string, string[]>>({});
+
+  function applyLabResults(ct: string, rows: any[]) {
+    const latest = (key: string) =>
+      rows
+        .filter((x) => x.testType === key)
+        .sort((a, b) => String(b.resultDate).localeCompare(String(a.resultDate)) || b.sampleId - a.sampleId)[0];
+    const fields = allFieldsFor(ct);
+    const patch: Record<string, any> = {};
+    const lock: string[] = [];
+    const current = screenings[ct] || {};
+
+    if (ct === "prostate") {
+      const psa = latest("psa");
+      if (psa && psa.resultValue !== null && psa.resultValue !== undefined) {
+        patch.psaLevel = String(psa.resultValue);
+        if (!current.screeningDate) patch.screeningDate = String(psa.resultDate).slice(0, 10);
+      }
+      for (const k of ["freePsaPercent", "prostateVolumeCc"]) {
+        if (psa?.resultMeta?.[k] !== undefined && psa.resultMeta[k] !== "") patch[k] = String(psa.resultMeta[k]);
+      }
+      const dre = latest("dre");
+      const dreField = fields.find((f) => /^dre/i.test(f.name) && f.type === "select");
+      if (dre && dreField) {
+        const v = pickOption(dreField, dre.result === "abnormal" ? ["abnormal", "suspicious", "nodule"] : ["normal"]);
+        if (v) {
+          patch[dreField.name] = v;
+          lock.push(dreField.name);
+        }
+      }
+    }
+
+    if (ct === "breast") {
+      // CBE findings (both breasts, lumps, discharge, skin, pain, previous biopsy) from the CBE record.
+      const cbe = latest("cbe");
+      const cbeKeys = (findTest("cbe")?.extraFields || []).map((f) => f.name);
+      if (cbe?.resultMeta) for (const k of cbeKeys) if (cbe.resultMeta[k] !== undefined) patch[k] = cbe.resultMeta[k];
+
+      // Imaging findings per breast: mammography first, then breast ultrasound for anything not given.
+      const imagingKeys = ["leftBiradsScore", "rightBiradsScore", "leftBreastDensity", "rightBreastDensity", "leftImagingFinding", "rightImagingFinding"];
+      for (const img of [latest("mammography"), latest("breast_ultrasound")]) {
+        if (!img) continue;
+        for (const k of imagingKeys) {
+          const v = img.resultMeta?.[k];
+          if (v !== undefined && v !== "" && patch[k] === undefined) patch[k] = v;
+        }
+        // Older records with only the overall BI-RADS: use it for both breasts.
+        for (const k of ["leftBiradsScore", "rightBiradsScore"]) if (patch[k] === undefined && img.result) patch[k] = String(img.result);
+      }
+
+      const bx = latest("breast_biopsy");
+      if (bx) {
+        patch.biopsyDone = true;
+        lock.push("biopsyDone");
+        const malignant = bx.result === "invasive" || bx.result === "dcis";
+        const bf = fields.find((x) => x.name === "biopsyResult");
+        // DCIS / invasive → positive + malignant; atypical → positive + benign; benign → negative.
+        const bv = bf
+          ? pickOption(bf, malignant || bx.result === "atypical" ? ["positive"] : bx.result === "inadequate" ? ["inadequate"] : ["negative"])
+          : undefined;
+        if (bv) {
+          patch.biopsyResult = bv;
+          lock.push("biopsyResult");
+        }
+        const hf = fields.find((x) => x.name === "histologyResult");
+        const hv = hf ? pickOption(hf, malignant ? ["malignant"] : ["benign"]) : undefined;
+        if (hv && (malignant || bx.result === "atypical")) {
+          patch.histologyResult = hv;
+          lock.push("histologyResult");
+        }
+      }
+    }
+
+    const visible = new Set(getScreeningGroupsWithFacilities(ct as CancerType).flatMap((g) => g.fields.map((f) => f.name)));
+    const shownLock = lock.filter((n) => visible.has(n));
+    setLabLocked((prev) => (String(prev[ct] || []) === String(shownLock) ? prev : { ...prev, [ct]: shownLock }));
+    if (Object.keys(patch).length === 0) return;
+    setScreenings((prev) => {
+      const cur = prev[ct] || {};
+      const changed = Object.entries(patch).some(([k, v]) => cur[k] !== v);
+      return changed ? { ...prev, [ct]: { ...cur, ...patch } } : prev;
+    });
+  }
+
+  function toggleMethod(ct: string, field: string, checked: boolean) {
+    setScreenings((prev) => {
+      const cur = { ...(prev[ct] || {}), [field]: checked };
+      // Liver's form still needs its single "method" value; it follows the ticked tests.
+      if (ct === "liver") {
+        cur.method = cur._m_liver_ultrasound ? "uss" : cur._m_afp ? "afp" : cur.method || "";
+      }
+      return { ...prev, [ct]: cur };
+    });
+  }
+
+  // Results are entered in the testing module, so the result-entry groups are not shown here.
+  // Prostate keeps its own PSA/DRE form because its pathway is worked out from those values.
+  // What is recorded in the test pop-ups (Take a Sample / Record a Screening Result) is not repeated on
+  // this form. Every value still ends up on the screening record: the page copies it from the released
+  // result (see applyLabResults), so nothing is lost. Clinical questions, pathway, counselling, bookings
+  // and referral stay on the page.
+  //  - All: the "Screening Methods" checkboxes are the method rows above the form.
+  //  - Cervical: HPV result / booking → HPV DNA test.
+  //  - Breast: CBE findings → Clinical Breast Exam (CBE); BI-RADS, density, findings per breast →
+  //    Mammography / Breast ultrasound; biopsy result and histology → Breast biopsy / FNA.
+  //  - Prostate: PSA level, free PSA %, prostate volume → PSA blood test; DRE finding → DRE.
+  const RESULT_ENTRY_GROUPS: Record<string, string[]> = {
+    cervical: ["Screening Methods", "HPV", "HPV Test Booking"],
+    breast: ["Screening Methods", "Clinical Breast Exam (CBE)", "Imaging Findings"],
+    prostate: ["Screening Methods"],
+    colorectal: ["Screening Methods"],
+    liver: ["Screening Methods"],
+  };
+  const RESULT_ENTRY_FIELDS: Record<string, string[]> = {
+    cervical: ["screeningDate", "screeningResult"],
+    breast: ["screeningDate", "screeningResult", "biopsyDone", "biopsyResult", "histologyResult"],
+    prostate: ["psaLevel", "freePsaPercent", "prostateVolumeCc"],
+    colorectal: ["screeningDate", "screeningResult"],
+    liver: ["screeningDate", "screeningResult", "afpValue", "method"],
+  };
+  // The DRE finding is a dropdown whose name starts with "dre".
+  const isMovedField = (ct: string, f: { name: string; type?: string }) =>
+    (RESULT_ENTRY_FIELDS[ct] || []).includes(f.name) || (ct === "prostate" && /^dre/i.test(f.name) && f.type === "select");
+
   const getScreeningGroupsWithFacilities = (cancerType: CancerType): FieldGroup[] => {
-    const groups = SCREENING_GROUPS[cancerType] || [];
+    const dropGroups = RESULT_ENTRY_GROUPS[cancerType] || [];
+    const groups = (SCREENING_GROUPS[cancerType] || [])
+      .filter((g) => !dropGroups.includes(g.title || ""))
+      .map((g) => ({ ...g, fields: g.fields.filter((f) => !isMovedField(cancerType, f)) }))
+      .filter((g) => g.fields.length > 0);
 
     return groups.map((group) => ({
       ...group,
@@ -719,6 +961,7 @@ export default function ClinicalScreeningPage() {
           phoneNotClients: !!found.phoneNotClients,
           caregiverName: found.caregiverName || "",
           caregiverPhoneNumber: found.caregiverPhoneNumber || "",
+          ...biodataExtras(found),
         });
 
         // Opened from the Client Summary "Edit Details" button: go straight to the biodata form.
@@ -930,14 +1173,19 @@ export default function ClinicalScreeningPage() {
   // The exact client payload sent to the API. If the client has no phone of their own, the
   // caregiver's number becomes the contact number and is flagged as not belonging to the client.
   function clientPayload() {
-    const clientPhone = (biodata.phoneNumber || "").trim();
-    const caregiverPhone = (biodata.caregiverPhoneNumber || "").trim();
+    // UI-only keys never go to the API.
+    const { dobMode, age, hasCaregiver, ...data } = biodata;
+    const clientPhone = (data.phoneNumber || "").trim();
+    const caregiverPhone = hasCaregiver ? (data.caregiverPhoneNumber || "").trim() : "";
+    const caregiverName = hasCaregiver ? (data.caregiverName || "").trim() : "";
     const usingCaregiverAsContact = !clientPhone && !!caregiverPhone;
     return {
-      ...biodata,
+      ...data,
+      dateOfBirth: data.dateOfBirth || "",
+      dobEstimated: dobMode === "age",
       phoneNumber: clientPhone || caregiverPhone,
-      phoneNotClients: !!biodata.phoneNotClients || usingCaregiverAsContact,
-      caregiverName: (biodata.caregiverName || "").trim() || null,
+      phoneNotClients: (hasCaregiver && !!data.phoneNotClients) || usingCaregiverAsContact,
+      caregiverName: caregiverName || null,
       caregiverPhoneNumber: caregiverPhone || null,
     };
   }
@@ -947,7 +1195,11 @@ export default function ClinicalScreeningPage() {
     if (!clientId) return;
     const contact = clientPayload();
     if (!biodata.fullName || !biodata.gender || !contact.phoneNumber) {
-      toast.error("Full name, sex, and a phone number (the client's or a caregiver's) are required.");
+      toast.error("Full name, sex, and a phone number are required.");
+      return;
+    }
+    if (!contact.dateOfBirth) {
+      toast.error("Enter a date of birth, or switch to Age and enter the client's age.");
       return;
     }
     setBusy(true);
@@ -969,10 +1221,89 @@ export default function ClinicalScreeningPage() {
       toast.success("Details updated — no visit recorded.");
       window.scrollTo({ top: 0, behavior: "smooth" });
     } catch (err: any) {
+      if (handleIdChangeConflict(err, contact, "save")) return;
       applyServerErrors(err, "Could not update the client's details.");
     } finally {
       setBusy(false);
     }
+  }
+
+  // The Client ID is built from the state and LGA of residence, so a new client's choice is confirmed first.
+  const [confirmLocationOpen, setConfirmLocationOpen] = useState(false);
+  // Once a client has a real ID, only an admin can change the state/LGA behind it, and doing so changes the ID.
+  const [canChangeResidence, setCanChangeResidence] = useState(false);
+  useEffect(() => {
+    api
+      .get("/clients/id-change-access")
+      .then(({ data }) => setCanChangeResidence(!!data?.canChangeResidence))
+      .catch(() => setCanChangeResidence(false));
+  }, []);
+  const residenceLocked = !!clientId && !String(clientId).startsWith("OFFLINE-") && !canChangeResidence;
+
+  // Admin changed the state/LGA of an existing client: the server answers 409 with the new Client ID,
+  // and the admin confirms twice before it is applied everywhere.
+  const [idChange, setIdChange] = useState<null | {
+    phase: 1 | 2;
+    oldId: string;
+    newId: string;
+    reason: string;
+    contact: Record<string, any>;
+    then: "save" | "continue";
+  }>(null);
+
+  function handleIdChangeConflict(err: any, contact: Record<string, any>, then: "save" | "continue"): boolean {
+    const d = err?.response?.data;
+    if (err?.response?.status !== 409 || !d?.requiresIdChange) return false;
+    setIdChange({ phase: 1, oldId: d.oldClientId, newId: d.newClientId, reason: "", contact, then });
+    return true;
+  }
+
+  async function confirmIdChange() {
+    const d = idChange;
+    if (!d) return;
+    if (d.reason.trim().length < 5) {
+      toast.error("Give a short reason for the change.");
+      return;
+    }
+    if (typeof navigator !== "undefined" && navigator.onLine === false) {
+      toast.error("Changing the Client ID needs an internet connection.");
+      return;
+    }
+    setBusy(true);
+    try {
+      const { data } = await api.patch(`/clients/${d.oldId}`, {
+        ...d.contact,
+        confirmIdChange: true,
+        idChangeReason: d.reason.trim(),
+      });
+      const newId: string = data?.client?.clientId || d.newId;
+      setIdChange(null);
+      setClientId(newId);
+      saveLocalClient({ ...d.contact, clientId: newId });
+      toast.success(`Client ID changed from ${d.oldId} to ${newId}.`);
+      if (d.then === "continue") {
+        await createVisitAndLoadRisk(newId);
+        goTo("cancerTypeSelect");
+      } else {
+        setBiodataNotice(`Details updated. The Client ID is now ${newId}. No visit was recorded.`);
+        window.scrollTo({ top: 0, behavior: "smooth" });
+      }
+    } catch (err: any) {
+      applyServerErrors(err, "Could not change the Client ID.");
+    } finally {
+      setBusy(false);
+    }
+  }
+  function requestSubmitRegistration() {
+    if (clientId) {
+      submitRegistration();
+      return;
+    }
+    if (!biodata.stateOfResidence || !biodata.lgaOfResidence) {
+      toast.error("Select the client's state and LGA of residence.");
+      return;
+    }
+    setConfirmLocationOpen(true);
   }
 
   async function submitRegistration() {
@@ -980,7 +1311,11 @@ export default function ClinicalScreeningPage() {
     setBiodataNotice("");
     const contact = clientPayload();
     if (!biodata.fullName || !biodata.gender || !contact.phoneNumber) {
-      toast.error("Full name, sex, and a phone number (the client's or a caregiver's) are required.");
+      toast.error("Full name, sex, and a phone number are required.");
+      return;
+    }
+    if (!contact.dateOfBirth) {
+      toast.error("Enter a date of birth, or switch to Age and enter the client's age.");
       return;
     }
     if (contact.phoneNumber !== biodata.phoneNumber || contact.phoneNotClients !== !!biodata.phoneNotClients) {
@@ -1011,6 +1346,7 @@ export default function ClinicalScreeningPage() {
         toast.success("Client updated and visit created.");
         goTo("cancerTypeSelect");
       } catch (err: any) {
+        if (handleIdChangeConflict(err, contact, "continue")) return;
         applyServerErrors(err, "Could not save registration.");
       } finally {
         setBusy(false);
@@ -1144,6 +1480,7 @@ export default function ClinicalScreeningPage() {
       phoneNotClients: !!c.phoneNotClients,
       caregiverName: c.caregiverName || "",
       caregiverPhoneNumber: c.caregiverPhoneNumber || "",
+      ...biodataExtras(c),
     });
     setDuplicateMatch(null);
     setBusy(true);
@@ -1180,6 +1517,8 @@ export default function ClinicalScreeningPage() {
         screeningCategory: "new_client",
         otpSkipped: !!skip,
         otpSkipReason: skip?.reason ?? null,
+        // Kept so a record captured offline can still be traced after it syncs.
+        offlineId: typeof navigator !== "undefined" && navigator.onLine === false ? tempClient : undefined,
       };
       const { data, queued } = await sendOrQueue({
         method: "post",
@@ -1262,7 +1601,7 @@ export default function ClinicalScreeningPage() {
           return "Prostate PSA testing is deferred, so there is no result to save yet. Deselect Prostate and recall the client later.";
         }
         if (s.psaEligibility === "Eligible") {
-          return "Enter the PSA level (and DRE finding if done) so the prostate screening result can be determined.";
+          return "Enter the PSA level (or record the PSA result under PSA blood test), and the DRE finding if done, so the prostate screening result can be determined.";
         }
         return "Complete the prostate screening so a result can be determined.";
       }
@@ -1293,7 +1632,14 @@ export default function ClinicalScreeningPage() {
         const r = await sendOrQueue({
           method: "post",
           path: ENDPOINTS.screening(activeVisitId, ct),
-          body: buildScreeningPayload(screeningData, treatmentReferral),
+          body: buildScreeningPayload(
+            {
+              ...Object.fromEntries(Object.entries(screeningData).filter(([k]) => !k.startsWith("_m_"))),
+              // The date field is no longer typed on this page; it follows the lab result, or today.
+              screeningDate: screeningData.screeningDate || new Date().toISOString().slice(0, 10),
+            },
+            treatmentReferral
+          ),
           label: `${cancerLabel(ct as CancerType)} screening`,
         });
         if (r.queued) anyQueued = true;
@@ -1742,11 +2088,58 @@ export default function ClinicalScreeningPage() {
                 />
               </Label>
               <div className="col-span-2">
-                <span className="text-sm font-semibold">Date of Birth</span>
-                <DateOfBirthField
-                  value={biodata.dateOfBirth}
-                  onChange={(v) => setBiodata((p) => ({ ...p, dateOfBirth: v }))}
-                />
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-sm font-semibold">
+                    {biodata.dobMode === "age" ? "Age *" : "Date of Birth *"}
+                  </span>
+                  <div className="inline-flex rounded-xl border border-gray-200 dark:border-gray-600 overflow-hidden text-xs">
+                    {(["date", "age"] as const).map((m) => (
+                      <button
+                        key={m}
+                        type="button"
+                        onClick={() => setBiodata((p) => ({ ...p, dobMode: m }))}
+                        className={`px-3 py-1.5 ${biodata.dobMode === m ? "bg-green-700 text-white" : "bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300"}`}
+                      >
+                        {m === "date" ? "Date of birth" : "Age"}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                {biodata.dobMode === "age" ? (
+                  <>
+                    <Input
+                      type="number"
+                      inputMode="numeric"
+                      min={0}
+                      max={120}
+                      className="mt-2 rounded-2xl h-12"
+                      placeholder="Age in years"
+                      value={biodata.age}
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        const n = Number(v);
+                        const ok = v !== "" && Number.isFinite(n) && n >= 0 && n <= 120;
+                        setBiodata((p) => ({
+                          ...p,
+                          age: v,
+                          dobEstimated: true,
+                          // Stored as 1 January of the birth year.
+                          dateOfBirth: ok ? `${new Date().getFullYear() - n}-01-01` : "",
+                        }));
+                      }}
+                    />
+                    {biodata.dateOfBirth ? (
+                      <p className="mt-1 text-xs text-gray-500">
+                        Will be recorded as born in {biodata.dateOfBirth.slice(0, 4)} (estimated).
+                      </p>
+                    ) : null}
+                  </>
+                ) : (
+                  <DateOfBirthField
+                    value={biodata.dateOfBirth}
+                    onChange={(v) => setBiodata((p) => ({ ...p, dateOfBirth: v, dobEstimated: false }))}
+                  />
+                )}
               </div>
               <Label>
                 <span className="text-sm font-semibold">Sex *</span>
@@ -1763,7 +2156,7 @@ export default function ClinicalScreeningPage() {
               <div>
                 <Label>
                   <span className="text-sm font-semibold">
-                    Phone Number{biodata.caregiverPhoneNumber ? "" : " *"}
+                    Phone Number{biodata.hasCaregiver && biodata.caregiverPhoneNumber ? "" : " *"}
                   </span>
                   <Input
                     className="mt-2 rounded-2xl h-12"
@@ -1774,21 +2167,33 @@ export default function ClinicalScreeningPage() {
                     }}
                   />
                 </Label>
-                <label className="mt-2 flex items-center gap-2 text-xs text-gray-600 dark:text-gray-300">
+                <label className="mt-3 flex items-center gap-2 text-sm font-semibold text-gray-700 dark:text-gray-300">
+                  <input
+                    type="checkbox"
+                    checked={!!biodata.hasCaregiver}
+                    onChange={(e) =>
+                      setBiodata((p) => ({
+                        ...p,
+                        hasCaregiver: e.target.checked,
+                        ...(e.target.checked ? {} : { caregiverName: "", caregiverPhoneNumber: "", phoneNotClients: false }),
+                      }))
+                    }
+                  />
+                  Does the client have a caregiver?
+                </label>
+              </div>
+
+              {biodata.hasCaregiver ? (
+              <div className="col-span-2 rounded-2xl border border-gray-100 dark:border-gray-700 p-4">
+                <p className="text-sm font-semibold text-gray-700 dark:text-gray-300">Caregiver</p>
+                <label className="mt-1 mb-3 flex items-center gap-2 text-xs text-gray-600 dark:text-gray-300">
                   <input
                     type="checkbox"
                     checked={!!biodata.phoneNotClients}
                     onChange={(e) => setBiodata((p) => ({ ...p, phoneNotClients: e.target.checked }))}
                   />
-                  This number doesn't belong to the client
+                  The phone number above belongs to the caregiver
                 </label>
-              </div>
-
-              <div className="col-span-2 rounded-2xl border border-gray-100 dark:border-gray-700 p-4">
-                <p className="text-sm font-semibold text-gray-700 dark:text-gray-300">Caregiver</p>
-                <p className="text-xs text-gray-500 mb-3">
-                  Use this if the client has no phone. With no client phone number, the caregiver's number is used for contact.
-                </p>
                 <div className="grid grid-cols-2 gap-4">
                   <Label>
                     <span className="text-sm font-semibold">Caregiver's Name</span>
@@ -1814,6 +2219,7 @@ export default function ClinicalScreeningPage() {
                   </Label>
                 </div>
               </div>
+              ) : null}
               <Label>
                 <span className="text-sm font-semibold">Email Address <span className="text-gray-400 font-normal">(optional)</span></span>
                 <Input
@@ -1885,6 +2291,7 @@ export default function ClinicalScreeningPage() {
                 <Select
                   className="mt-2 rounded-2xl h-12"
                   value={biodata.stateOfResidence}
+                  disabled={residenceLocked}
                   onChange={(e) => setBiodata((p) => ({ ...p, stateOfResidence: e.target.value, lgaOfResidence: "" }))}
                 >
                   <option value="">Select state</option>
@@ -1898,7 +2305,7 @@ export default function ClinicalScreeningPage() {
                 <Select
                   className="mt-2 rounded-2xl h-12"
                   value={biodata.lgaOfResidence}
-                  disabled={!biodata.stateOfResidence}
+                  disabled={!biodata.stateOfResidence || residenceLocked}
                   onChange={(e) => setBiodata((p) => ({ ...p, lgaOfResidence: e.target.value }))}
                 >
                   <option value="">Select LGA</option>
@@ -1908,6 +2315,16 @@ export default function ClinicalScreeningPage() {
                     ))}
                 </Select>
               </Label>
+              {residenceLocked && (
+                <p className="col-span-2 -mt-2 text-xs text-gray-500">
+                  The state and LGA of residence are locked because the Client ID is based on them. Only an admin can change them.
+                </p>
+              )}
+              {!!clientId && !String(clientId).startsWith("OFFLINE-") && canChangeResidence && (
+                <p className="col-span-2 -mt-2 text-xs text-amber-700">
+                  Changing the state or LGA of residence will change this client&apos;s ID. You will be asked to confirm.
+                </p>
+              )}
               <Label>
                 <span className="text-sm font-semibold">State of Origin</span>
                 <Select
@@ -2023,7 +2440,7 @@ export default function ClinicalScreeningPage() {
               onChange={(name, value) => setRisk((p) => ({ ...p, [name]: value }))}
             />
             <GroupedForm
-              groups={[MEDICAL_HISTORY_GROUP]}
+              groups={[medicalHistoryGroup]}
               values={risk}
               errors={{}}
               onChange={(name, value) => setRisk((p) => ({ ...p, [name]: value }))}
@@ -2068,50 +2485,46 @@ export default function ClinicalScreeningPage() {
 
         {currentKey === "screening" && (
           <div className="space-y-8">
-            <h3 className="text-lg font-semibold text-gray-800 dark:text-white">G + H. Symptom Assessment & Screening Tests</h3>
+            <h3 className="text-lg font-semibold text-gray-800 dark:text-white">G + H. Symptoms & Screening Tests</h3>
 
             {cancerTypes.length === 0 && (
               <p className="text-sm text-amber-600">No cancer type selected — go back and select at least one.</p>
             )}
 
-            {/* Cancer type specific forms with facility options injected */}
+            {/* Screening methods used in this visit, across every selected cancer type */}
+            {cancerTypes.length > 0 && (
+              <div className="rounded-2xl border border-green-100 dark:border-gray-700 bg-green-50/50 dark:bg-gray-800 p-4">
+                <p className="text-sm font-semibold text-gray-800 dark:text-white mb-2">Screening methods used in this visit</p>
+                {cancerTypes.some((ct) => methodsFor(ct).some((m) => m.checked)) ? (
+                  <div className="space-y-1.5">
+                    {cancerTypes.map((ct) => {
+                      const used = methodsFor(ct).filter((m) => m.checked);
+                      if (used.length === 0) return null;
+                      return (
+                        <div key={ct} className="flex flex-wrap items-center gap-1.5 text-sm">
+                          <span className="font-semibold text-gray-700 dark:text-gray-300 mr-1">{cancerLabel(ct)}:</span>
+                          {used.map((m) => (
+                            <span key={m.field} className="px-2.5 py-0.5 rounded-full bg-white dark:bg-gray-900 border border-green-200 text-green-800 text-xs font-semibold">
+                              {m.label}
+                            </span>
+                          ))}
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <p className="text-xs text-gray-500">None yet. Tick the methods used below.</p>
+                )}
+              </div>
+            )}
+
             {cancerTypes.map((ct) => {
               const groupsWithFacilities = getScreeningGroupsWithFacilities(ct);
 
               return (
                 <div key={ct} className="border-t border-gray-100 dark:border-gray-700 pt-6 first:border-t-0 first:pt-0">
                   <p className="text-sm font-bold text-green-700 uppercase tracking-wide mb-3">{cancerLabel(ct)}</p>
-                  {ct === "cervical" && hpvLab.released && (
-                    <div className="mb-3 rounded-xl border border-green-200 bg-green-50 text-green-900 text-sm p-3 flex gap-2">
-                      <Lock className="w-4 h-4 mt-0.5 shrink-0" />
-                      <span>
-                        The HPV result comes from the testing module, so the HPV fields are locked. To correct it, edit the result on the Samples &amp; Test Results page.
-                      </span>
-                    </div>
-                  )}
-                  <GroupedForm
-                    lockedFields={
-                      ct !== "cervical"
-                        ? undefined
-                        : hpvLab.released
-                        ? ["methodHpv", "hpvResult", "hpvGenotype", "hpvSampleDate", "hpvResultDate"]
-                        : hpvLab.hasSample
-                        ? ["hpvSampleDate"]
-                        : undefined
-                    }
-                    groups={groupsWithFacilities}
-                    values={screenings[ct] || {}}
-                    errors={screeningErrors[ct] || {}}
-                    onChange={(name, value) => {
-                      setScreenings((prev) => {
-                        const currentScreening = prev[ct] || {};
-                        const updatedScreening = { ...currentScreening, [name]: value };
-                        return { ...prev, [ct]: updatedScreening };
-                      });
-                    }}
-                  />
-
-                  {/* Samples and lab results for this client. Same records as the Samples & Test Results pages. */}
+                  {/* Methods with their actions, and every screening done. Same records as the Samples & Test Results pages. */}
                   {clientId && (
                     <LabTestsPanel
                       clientId={clientId}
@@ -2119,11 +2532,35 @@ export default function ClinicalScreeningPage() {
                       visitId={visitId}
                       acceptSampleId={labHpv?.sampleId ?? null}
                       onHpvState={setHpvLab}
+                      methods={methodsFor(ct)}
+                      onToggleMethod={(field, checked) => toggleMethod(ct, field, checked)}
+                      onTestsInVisit={(keys) =>
+                        setTestsInVisit((p) => (String(p[ct] || []) === String(keys) ? p : { ...p, [ct]: keys }))
+                      }
+                      onVisitResults={(rows) => applyLabResults(ct, rows)}
+                      onFinding={ct === "prostate" ? undefined : (f) =>
+                        setScreenings((prev) => {
+                          const cur = prev[ct] || {};
+                          if (!f) return prev;
+                          if (cur.screeningResult === f.screeningResult && cur.screeningDate === f.screeningDate) return prev;
+                          return { ...prev, [ct]: { ...cur, ...f } };
+                        })
+                      }
                       hpvFormEmpty={ct === "cervical" && !screenings.cervical?.hpvResult}
                       onHpvResult={(v) =>
                         setScreenings((prev) => ({
                           ...prev,
-                          cervical: { ...(prev.cervical || {}), methodHpv: true, ...v },
+                          cervical: {
+                            ...(prev.cervical || {}),
+                            methodHpv: true,
+                            ...v,
+                            // the finding follows the lab result
+                            ...(v.hpvResult === "positive"
+                              ? { screeningResult: "suspicious" }
+                              : v.hpvResult === "negative"
+                              ? { screeningResult: "non_suspicious" }
+                              : {}),
+                          },
                         }))
                       }
                       onHpvSample={(v) =>
@@ -2134,6 +2571,28 @@ export default function ClinicalScreeningPage() {
                         })
                       }
                     />
+                  )}
+                  {groupsWithFacilities.length > 0 && (
+                    <div className="mt-5">
+                      {(labLocked[ct] || []).length > 0 && (
+                        <p className="mb-3 rounded-xl border border-green-200 bg-green-50 text-green-900 text-xs px-3 py-2">
+                          Fields filled from released lab results are locked. To change them, correct the result in the testing module.
+                        </p>
+                      )}
+                      <GroupedForm
+                        lockedFields={labLocked[ct]}
+                        groups={groupsWithFacilities}
+                        values={screenings[ct] || {}}
+                        errors={screeningErrors[ct] || {}}
+                        onChange={(name, value) => {
+                          setScreenings((prev) => {
+                            const currentScreening = prev[ct] || {};
+                            const updatedScreening = { ...currentScreening, [name]: value };
+                            return { ...prev, [ct]: updatedScreening };
+                          });
+                        }}
+                      />
+                    </div>
                   )}
                 </div>
               );
@@ -2297,6 +2756,83 @@ export default function ClinicalScreeningPage() {
               <ChevronLeft className="w-4 h-4" /> Back
             </button>
 
+            {idChange && (
+              <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 p-4" role="dialog" aria-modal="true">
+                <div className="w-full max-w-lg rounded-3xl bg-white dark:bg-gray-800 p-6 shadow-2xl">
+                  {idChange.phase === 1 ? (
+                    <>
+                      <h3 className="text-lg font-semibold text-gray-800 dark:text-white">This will change the Client ID</h3>
+                      <p className="mt-2 text-sm text-gray-600 dark:text-gray-300">
+                        The Client ID is built from the state and LGA of residence. Saving this change gives the client a new ID, and the new ID replaces the old one everywhere in the app (visits, samples and results, referrals, risk profile and more).
+                      </p>
+                      <div className="mt-4 rounded-2xl bg-amber-50 border border-amber-200 p-4 text-sm space-y-2">
+                        <div className="flex justify-between gap-3"><span className="text-gray-600">Current ID</span><span className="font-mono font-semibold break-all text-right">{idChange.oldId}</span></div>
+                        <div className="flex justify-between gap-3"><span className="text-gray-600">New ID</span><span className="font-mono font-semibold break-all text-right text-green-800">{idChange.newId}</span></div>
+                        <div className="flex justify-between gap-3"><span className="text-gray-600">New residence</span><span className="font-semibold text-right">{biodata.lgaOfResidence}, {biodata.stateOfResidence}</span></div>
+                      </div>
+                      <p className="mt-3 text-xs text-gray-500">Searching by the old ID will still find this client, and the change is logged.</p>
+                      <div className="mt-5 flex flex-col-reverse sm:flex-row gap-2 sm:justify-end">
+                        <Button layout="outline" className="rounded-2xl" onClick={() => setIdChange(null)}>Cancel</Button>
+                        <Button className="rounded-2xl bg-green-700 border-green-700 hover:bg-green-800" onClick={() => setIdChange({ ...idChange, phase: 2 })}>
+                          I understand, continue
+                        </Button>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <h3 className="text-lg font-semibold text-gray-800 dark:text-white">Are you sure?</h3>
+                      <p className="mt-2 text-sm text-gray-600 dark:text-gray-300">
+                        <span className="font-mono">{idChange.oldId}</span> will become <span className="font-mono font-semibold">{idChange.newId}</span> for every record of this client.
+                      </p>
+                      <label className="block mt-4 text-sm font-semibold text-gray-700 dark:text-gray-300">
+                        Reason for the change
+                        <textarea
+                          rows={2}
+                          value={idChange.reason}
+                          onChange={(e) => setIdChange({ ...idChange, reason: e.target.value })}
+                          className="mt-1 w-full rounded-2xl border border-gray-200 dark:border-gray-600 dark:bg-gray-900 p-3 text-sm"
+                          placeholder="e.g. Wrong LGA selected at registration"
+                        />
+                      </label>
+                      <div className="mt-5 flex flex-col-reverse sm:flex-row gap-2 sm:justify-end">
+                        <Button layout="outline" className="rounded-2xl" disabled={busy} onClick={() => setIdChange({ ...idChange, phase: 1 })}>Back</Button>
+                        <Button className="rounded-2xl bg-red-600 border-red-600 hover:bg-red-700" disabled={busy} onClick={confirmIdChange}>
+                          {busy ? "Changing…" : "Yes, change the Client ID"}
+                        </Button>
+                      </div>
+                    </>
+                  )}
+                </div>
+              </div>
+            )}
+            {currentKey === "registration" && confirmLocationOpen && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" role="dialog" aria-modal="true">
+                <div className="w-full max-w-md rounded-3xl bg-white dark:bg-gray-800 p-6 shadow-2xl">
+                  <h3 className="text-lg font-semibold text-gray-800 dark:text-white">Confirm state and LGA</h3>
+                  <p className="mt-1 text-sm text-gray-600 dark:text-gray-300">
+                    The Client ID is generated from the state and LGA of residence and cannot be changed by a desk officer afterwards.
+                  </p>
+                  <div className="mt-4 rounded-2xl bg-green-50 dark:bg-gray-700 border border-green-100 dark:border-gray-600 p-4 space-y-2 text-sm">
+                    <div className="flex justify-between gap-3"><span className="text-gray-500">State of residence</span><span className="font-semibold text-right">{biodata.stateOfResidence}</span></div>
+                    <div className="flex justify-between gap-3"><span className="text-gray-500">LGA of residence</span><span className="font-semibold text-right">{biodata.lgaOfResidence}</span></div>
+                  </div>
+                  <div className="mt-5 flex flex-col-reverse sm:flex-row gap-2 sm:justify-end">
+                    <Button layout="outline" className="rounded-2xl" onClick={() => setConfirmLocationOpen(false)}>
+                      Go back and change
+                    </Button>
+                    <Button
+                      className="rounded-2xl bg-green-700 border-green-700 hover:bg-green-800"
+                      onClick={() => {
+                        setConfirmLocationOpen(false);
+                        submitRegistration();
+                      }}
+                    >
+                      Yes, it is correct
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            )}
             {currentKey === "registration" && (
               <div className="flex flex-col-reverse sm:flex-row gap-2 items-stretch sm:items-center">
                 {clientId && (
@@ -2309,7 +2845,7 @@ export default function ClinicalScreeningPage() {
                     Save changes only
                   </Button>
                 )}
-                <Button onClick={submitRegistration} disabled={busy} className="h-11 px-5 rounded-2xl bg-green-700 border-green-700 hover:bg-green-800">
+                <Button onClick={requestSubmitRegistration} disabled={busy} className="h-11 px-5 rounded-2xl bg-green-700 border-green-700 hover:bg-green-800">
                   {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <span className="inline-flex items-center justify-center gap-1">Save & Continue <ChevronRight className="w-4 h-4" /></span>}
                 </Button>
               </div>
